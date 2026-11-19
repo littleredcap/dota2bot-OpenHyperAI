@@ -158,13 +158,17 @@ end
 local EarthBind         = bot:GetAbilityByName('meepo_earthbind')
 local Poof              = bot:GetAbilityByName('meepo_poof')
 -- Patch 7.42: Dig is now granted by Aghanim's Scepter, not Shard.
--- MegaMeepo was removed; the new Divided We Stand Shard pickup/Fling
--- combo has different semantics and needs a separately verified implementation.
+-- MegaMeepo was removed. Divided We Stand now picks up a friendly unit
+-- after Shard; meepo_fling_release throws that unit (client KV 6983).
 local Dig               = bot:GetAbilityByName('meepo_petrify')
+local ShardPickup       = bot:GetAbilityByName('meepo_divided_we_stand')
+local ShardFling        = bot:GetAbilityByName('meepo_fling_release')
 
 local EarthBindDesire, EarthBindLocation
 local PoofDesire, PoofTarget
 local DigDesire
+local ShardFlingDesire, ShardFlingTarget
+local ShardPickupDesire, ShardPickupTarget
 
 local Meepos = {}
 
@@ -182,6 +186,8 @@ function X.SkillsComplement()
     EarthBind      = bot:GetAbilityByName('meepo_earthbind')
     Poof           = bot:GetAbilityByName('meepo_poof')
     Dig            = bot:GetAbilityByName('meepo_petrify')
+    ShardPickup    = bot:GetAbilityByName('meepo_divided_we_stand')
+    ShardFling     = bot:GetAbilityByName('meepo_fling_release')
 
     -- Cache per-tick variables
     Meepos       = J.GetMeepos()
@@ -190,6 +196,14 @@ function X.SkillsComplement()
     nAllyHeroes  = J.GetNearbyHeroes(bot, 1200, false, BOT_MODE_NONE)
     nEnemyHeroes = J.GetNearbyHeroes(bot, 1200, true, BOT_MODE_NONE)
     bAttacking   = J.IsAttacking(bot)
+
+    -- Throw promptly: the carried unit is dropped after 5 seconds.
+    ShardFlingDesire, ShardFlingTarget = X.ConsiderShardFling()
+    if ShardFlingDesire > 0
+    then
+        bot:Action_UseAbilityOnEntity(ShardFling, ShardFlingTarget)
+        return
+    end
 
     PoofDesire, PoofTarget = X.ConsiderPoof()
     if PoofDesire > 0
@@ -215,6 +229,14 @@ function X.SkillsComplement()
         return
     end
 
+    -- Conservative first use: carry a normal allied lane creep as ammunition
+    -- only when an enemy hero is already in the 7.42 Fling range.
+    ShardPickupDesire, ShardPickupTarget = X.ConsiderShardPickup()
+    if ShardPickupDesire > 0
+    then
+        bot:ActionQueue_UseAbilityOnEntity(ShardPickup, ShardPickupTarget)
+        return
+    end
 end
 
 function X.ConsiderEarthBind()
@@ -686,5 +708,91 @@ function X.ConsiderDig()
     return BOT_ACTION_DESIRE_NONE
 end
 
+
+
+-- 7.42 Shard: Divided We Stand becomes a short-range friendly-unit pickup.
+-- Avoid carrying another Meepo initially: damage is shared while carried,
+-- so an unsafe pickup can kill all Meepos. Normal lane creeps suffice for
+-- the offensive Fling case; rescue/combo variants require engine validation.
+function X.ConsiderShardPickup()
+    if ShardPickup == nil or ShardFling == nil
+    or bot.HasShard == nil or not bot:HasShard()
+    or not ShardPickup:IsTrained()
+    or not ShardPickup:IsFullyCastable()
+    or not ShardFling:IsHidden()
+    or J.IsRetreating(bot)
+    or not J.IsGoingOnSomeone(bot)
+    then
+        return BOT_ACTION_DESIRE_NONE, nil
+    end
+
+    local flingRange = ShardFling:GetSpecialValueInt('range')
+    if flingRange == nil or flingRange <= 0 then
+        return BOT_ACTION_DESIRE_NONE, nil
+    end
+
+    local enemies = J.GetNearbyHeroes(bot, flingRange, true, BOT_MODE_NONE)
+    local validEnemy = false
+    for _, enemy in pairs(enemies or {}) do
+        if J.IsValidHero(enemy)
+        and J.CanCastOnNonMagicImmune(enemy)
+        and not J.IsSuspiciousIllusion(enemy)
+        and J.IsInRange(bot, enemy, flingRange)
+        then
+            validEnemy = true
+            break
+        end
+    end
+    if not validEnemy then return BOT_ACTION_DESIRE_NONE, nil end
+
+    -- The Shard pickup cast range is 250. Prefer the live value when
+    -- the engine exposes it, never expand beyond the patch limit.
+    local pickupRange = math.min(250, ShardPickup:GetCastRange())
+    if pickupRange <= 0 then
+        return BOT_ACTION_DESIRE_NONE, nil
+    end
+
+    local creeps = bot:GetNearbyCreeps(pickupRange, false)
+    for _, creep in pairs(creeps or {}) do
+        if J.IsValid(creep)
+        and creep:GetTeam() == bot:GetTeam()
+        and string.find(creep:GetUnitName(), '^npc_dota_creep_') ~= nil
+        and J.IsInRange(bot, creep, pickupRange)
+        then
+            return BOT_ACTION_DESIRE_HIGH, creep
+        end
+    end
+
+    return BOT_ACTION_DESIRE_NONE, nil
+end
+
+-- 7.42 Shard secondary action: fling the carried unit at a visible enemy
+-- hero. Fling is hidden until the carrier has picked up a unit.
+function X.ConsiderShardFling()
+    if ShardFling == nil
+    or ShardFling:IsHidden()
+    or not ShardFling:IsFullyCastable()
+    then
+        return BOT_ACTION_DESIRE_NONE, nil
+    end
+
+    local flingRange = ShardFling:GetSpecialValueInt('range')
+    if flingRange == nil or flingRange <= 0 then
+        return BOT_ACTION_DESIRE_NONE, nil
+    end
+
+    local enemies = J.GetNearbyHeroes(bot, flingRange, true, BOT_MODE_NONE)
+    for _, enemy in pairs(enemies or {}) do
+        if J.IsValidHero(enemy)
+        and J.CanCastOnNonMagicImmune(enemy)
+        and not J.IsSuspiciousIllusion(enemy)
+        and J.IsInRange(bot, enemy, flingRange)
+        then
+            return BOT_ACTION_DESIRE_HIGH, enemy
+        end
+    end
+
+    return BOT_ACTION_DESIRE_NONE, nil
+end
 
 return X
