@@ -6,10 +6,9 @@ on:
       - fix/issue-176-base-creep-defense
   workflow_dispatch:
 
-# Temporary during generated Lua synchronization: only this fix branch can
-# push its own bots/FunLib/aba_defend.lua output. No PR or main auto-merge.
+# Read-only; generated Lua is committed and checked for drift.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-test-and-sync-generated-lua:
@@ -36,11 +35,5 @@ jobs:
           luac5.1 -p bots/FunLib/aba_defend.lua
           luac5.1 -p tests/test_issue176_base_creeps.lua
           lua5.1 tests/test_issue176_base_creeps.lua
-      - name: Synchronize generated Lua to this fix branch only
-        if: success()
-        run: |
-          git add bots/FunLib/aba_defend.lua
-          if ! git diff --cached --quiet; then
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'build: sync generated aba_defend.lua for issue 176'
-            git push origin HEAD:fix/issue-176-base-creep-defense
-          fi
+      - name: Verify generated Lua matches TypeScript source
+        run: git diff --exit-code -- bots/FunLib/aba_defend.lua
