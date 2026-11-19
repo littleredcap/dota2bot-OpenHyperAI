@@ -44,6 +44,8 @@
 
 | VT-018 / release_gate | [Issue #170 Draft PR #10](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/10)：放逐与队友伤害冲突 | 实际对局演示 OD Astral、SD Disruption、Eul 追击吹风：敌方低 HP 正被队友普攻、2+ 队友集火、敌人已受控时不应普通进攻放逐；敌人引导关键技能时仍可打断；我方英雄面临危险时仍可救援。进一步覆盖 **Sniper/Lion/Lina 未命中大招、WD 持续伤害、凤凰蛋和多次 Eul** 等当前规则未能识别的场景，记录误拦截与漏保护。 | [Lua Mock 10/10](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44544655042)；跨英雄技能时序/真实强度 **blocked_no_client** |
 
+| VT-019 / research | [上游 Issue #159](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159)：敌人多数死亡后 Bot 仍打野、不推塔 | 在固定游戏构建、无 FretBots 额外资源时，分别检查敌方 0/1/2/3 名英雄存活、我方附近 1/2/3 名队友、近远 T2/高地与兵线是否到位的场景：实际 `GetFarmDesire` / `GetPushDesire` / 其它模式的候选值、最终选择及后续动作。既要避免优势时长期刷野，也不应因修改而让单个核心无兵线强行冲高。优先验证 `aba_push.ts` 深入敌方基地时少于 3 名附近友军限制，以及 `mode_farm_generic.lua` 对敌方少量存活英雄的提前退出；**目前未提交修复** | 仅 [Issue #159](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159) + 静态 E2 假设；**planned / blocked_no_client** |
+
 ## 4. 执行顺序和所需最小证据
 
 未来首次可用客户端时，不应让所有测试混在一起跑数十局：先验证 *脚本加载版本* → VT-001/002/005 的 Meepo API → VT-007 Roshan 计时 → VT-006 购物 → 后续策略场景；只在相应行为能正确触发并观察时才进入完整对局与对照。
