@@ -38,6 +38,11 @@ return function(options)
     local CACHE_ENEMY_AROUND_LOC_HZ = 0.35
     local _cacheEnemyAroundLoc = {}
     local currentTime = 100
+    -- TSTL's inline standard library is outside the extracted helper body;
+    -- provide its string-includes primitive in this isolated mock only.
+    local function __TS__StringIncludes(s, search)
+        return string.find(s, search, 1, true) ~= nil
+    end
     local function DotaTime() return currentTime end
     local function _keyLoc(loc, rad) return tostring(loc.x) .. "|" .. tostring(rad) end
     local function updateDefendUnitStateCache()
@@ -182,9 +187,7 @@ test("weighted threat includes real creep collection, not only heroes", function
     local wave={}
     for i=1,6 do wave[#wave+1]=creep(i*80,nil) end
     local g=create({creeps=wave})
-    local actual=g.weighted()
-    if actual ~= 1 then io.write("DEBUG generated threat helper:\n",production,"\n") end
-    eq(actual,1,"Six ordinary creeps contribute to base pressure")
+    eq(g.weighted(),1,"Six ordinary creeps contribute to base pressure")
 end)
 
 test("generated mode checks emergency before team-pushing and hero-only early exits", function()
