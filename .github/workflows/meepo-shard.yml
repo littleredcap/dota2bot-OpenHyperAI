@@ -1,0 +1,39 @@
+name: Meepo 7.42 Shard regression
+
+on:
+  pull_request:
+    branches:
+      - oha-next
+      - fix/7.42-meepo-overlord
+  push:
+    branches:
+      - feature/7.42-meepo-shard
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  meepo-shard-lua51:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+          lua5.1 -v
+
+      - name: Check production/test syntax
+        run: |
+          luac5.1 -p bots/BotLib/hero_meepo.lua
+          luac5.1 -p tests/test_patch742_meepo_shard.lua
+          luac5.1 -p tests/test_patch742_compat.lua
+
+      - name: Check 7.42 compatibility
+        run: lua5.1 tests/test_patch742_compat.lua
+
+      - name: Check 7.42 Shard pickup and Fling
+        run: lua5.1 tests/test_patch742_meepo_shard.lua
