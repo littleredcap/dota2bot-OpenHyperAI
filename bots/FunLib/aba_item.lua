@@ -782,7 +782,7 @@ Item['item_mage_slayer']	= GetItemComponents( 'item_mage_slayer' )[1]
 
 -- Item['item_eternal_shroud'] removed from game in 7.41
 
-Item['item_helm_of_the_overlord']	= GetItemComponents( 'item_helm_of_the_overlord' )[1]
+-- Patch 7.42: Helm of the Overlord was removed; do not query its recipe.
 
 Item['item_overwhelming_blink']	= GetItemComponents( 'item_overwhelming_blink' )[1]
 
