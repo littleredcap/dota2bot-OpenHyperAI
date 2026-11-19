@@ -25,8 +25,9 @@
 | C742-03 / 优先（加强模式） | **中立装备从五阶改为四阶**，新的时间为 0:00 / 15:00 / 30:00 / 50:00，且每阶通过预定池选项 | [FretBots/SettingsDefault.lua:63–73](../bots/FretBots/SettingsDefault.lua) 仍设置 `maxPerTier`、`timings`、`timingsDefault` 五个值；[FretBots/SettingsNeutralItemTable.lua:148–165](../bots/FretBots/SettingsNeutralItemTable.lua) 仍有 `tier=5`；[Buff/NeutralItems.lua:123,298–312](../bots/Buff/NeutralItems.lua) 仍按五阶发放 | FretBots / Buff **额外发放机制**与正式 7.42 不一致；不能直接推断普通无加强模式也会生成这些物品。是否保留作弊/增强模式的自定义时间须单独决策 |
 | C742-04 / 优先（加强模式） | **多项中立装备轮出或改阶** | [FretBots/SettingsNeutralItemTable.lua](../bots/FretBots/SettingsNeutralItemTable.lua) 仍**启用**已轮出的 `item_duelist_gloves`、`item_occult_bracelet`、`item_dagger_of_ristul`、`item_essence_ring`、`item_poor_mans_shield`、`item_searing_signet`、`item_medallion_of_courage`、`item_unrelenting_eye`、`item_flayers_bota`、`item_spider_legs`、`item_desolator_2` 等；`item_psychic_headband`、`item_rattlecage`、`item_dezun_bloodrite` 等阶数仍旧 | 额外发放逻辑确实会从该候选表选取装备（[FretBots/NeutralItems.lua:124–145](../bots/FretBots/NeutralItems.lua)），但轮出物品的 `CreateItem` 在当前引擎会失败、返回 nil 还是仍可创建，**需要测试后判断**。不能只改数字而不核对完整池 |
 | C742-05 / 优先 | **Roshan 每次死亡后基础复活时间递减 1 分钟，最低 5 分钟** | [jmz_func.lua:4977–4990](../bots/FunLib/jmz_func.lua) 的 `J.IsRoshanAlive()` 在击杀后使用固定的常规 `11 * 60` 秒，Turbo 为 `6 * 60` 秒；[mode_roshan_generic.lua:108–123](../bots/mode_roshan_generic.lua) 依赖该判断 | 7.42 中可能已经刷新、但脚本仍认为未刷新，延迟接近 Roshan 或错误改变模式欲望；是**静态策略风险**，尚未获得游戏内日志 |
+| C742-06 / 优先 | **Leshrac Nihilism 7.42 重做为范围缴械、持续驱散；不再让自己虚无** | [hero_leshrac.lua:943–970](../bots/BotLib/hero_leshrac.lua) 原实现若检测到足以致命的来袭攻击弹道，即使附近没有敌人也想施放 Nihilism；但 7.42 已失去自身虚无效果。原句柄也未做 nil 保护 | 施法的**旧自保理由已失效**，可能浪费神杖关键技能、错误解除敌人的负面状态。已于 [Draft PR #8](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/8) 保守修正，9 项 Lua Mock 通过，未实机验证 |
 
-**注意：** 上表是五组兼容性问题，不是“五个已经实机复现的 Bug”。并且 C742-03、04 为可选/加强模式，不能与标准 Bot 模式混算影响范围。
+**注意：** 上表是六组兼容性问题，不是“五个已经实机复现的 Bug”。并且 C742-03、04 为可选/加强模式，不能与标准 Bot 模式混算影响范围。
 
 ### 1.1 具体版本变化与当前数据
 
@@ -43,7 +44,7 @@
 | Meepo 新技能结构 | Shard 现在作用于 Divided We Stand，Dig 改为 Scepter；Fling 是新的附属行动 | 旧技能名在代码中直接调用已如 C742-01；**新附属技能的准确内部名**须以 7.42 客户端数据核对，不能猜测 | E1（API 身份）+ E2（旧调用） |
 | Beastmaster Scepter | 删除 Drums of Slom，Scepter 提供 **Summon Ancient Thunderhide** | [hero_beastmaster.lua:166](../bots/BotLib/hero_beastmaster.lua) 的旧 Drums 引用已注释，不能算活跃旧技能；尚未找到 Thunderhide 主动使用逻辑，可能是未实现的**新能力缺口** | E1 / 功能缺口 |
 | Chaos Knight | 删除 Fundamental Forging，新增带主动效果的 **Ahead, Armageddon** | [hero_chaos_knight.lua](../bots/BotLib/hero_chaos_knight.lua) 主要使用 `sAbilityList` 的原有技能索引和 Q/W/R 考虑函数，新主动尚需专门实现/适配；技能槽变化需游戏数据确认 | E1 / 功能缺口 |
-| Leshrac Nihilism | 重做为**无目标**范围缴械和持续驱散，不再自身虚无 | [hero_leshrac.lua:943–970](../bots/BotLib/hero_leshrac.lua) 仍以受敌方攻击/撤退条件决定施放；施法接口为无目标，与 7.42 表面目标类型相容，但**策略触发条件是否合理**需复查 | E1（策略风险），非已确认施法类型错误 |
+| Leshrac Nihilism 实机行为 | 7.42 保留无目标施放，但效果改为缴械/持续驱散，不再自身虚无 | 原触发理由与 7.42 冲突已单独列为 C742-06；**实际 Bot API 可用性、持续驱散是否会移除队友控制、何时值得施放**尚需客户端验证 | E2 已定位逻辑冲突；策略收益与引擎结果仍 E1/未知 |
 | 新购买装备 / Item Potency | 7.42 加入新购物装备、移除 `Javelin`、`Khanda` 等，调整多种物品合成；新增 Item Potency 机制 | 128 个英雄文件的**指定字符串扫描**发现兽王/狼人仍购入 Overlord（C742-02），但不是所有物品和合成条件的全量核验。合成优先复用 `GetItemComponents()`，避免照抄旧配方 | E1 / 后续审查 |
 
 ## 3. 本轮实际完成的检查与限制
@@ -62,6 +63,7 @@
 | C | Roshan：不再仅凭死后固定 11 分钟推断存活；依据可验证的游戏时间/状态接口与 7.42 规则修订 | 多次击杀和不同复活时间下的离线用例；在不知当前状态时保留保守处理和未知状态 |
 | D | FretBots/ Buff：针对加强模式调整有效四阶池，清理轮出项，核验内部 ID 与新发放语义 | 有效列表仅包含目标版本允许的候选、阶数正确、无 nil item 发放；仍区分标准对局与额外发放 |
 | E | 新目标、新主动能力和新物品：Greater Horn of Battle、Beastmaster、Chaos Knight、Leshrac 与地图坐标 | 核对当前游戏数据和 API 可用性后分别建小 PR；不把未实现新功能称为已存在 Bug |
+| F | Leshrac Nihilism：新版自保方式、可见敌方目标与短 CD 触发 | [Draft PR #8](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/8) 已修复旧弹道自保判定、刷新神杖句柄，9 项 Lua 5.1 Mock 通过；**未在 Dota 7.42 验证实际施法与驱散收益** |
 
 本清单不是所有英雄或所有机制的最终适配验收。每项修复都要说明 E2 静态依据、离线覆盖和实机未验证部分，默认通过 PR 审查，不直接修改 `main`。
 
