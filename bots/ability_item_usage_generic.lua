@@ -8,6 +8,8 @@ local team = GetTeam()
 local bDebugMode = ( 10 == 10 )
 
 local J = require( GetScriptDirectory()..'/FunLib/jmz_func' )
+local Banish = require( GetScriptDirectory()..'/FunLib/oha_banish' )
+local Trace = require( GetScriptDirectory()..'/FunLib/oha_decision_trace' )
 local Utils = require( GetScriptDirectory()..'/FunLib/utils' )
 local BotBuild = dofile( GetScriptDirectory().."/BotLib/"..string.gsub( botName, "npc_dota_", "" ) )
 local Localization = require( GetScriptDirectory()..'/FunLib/localization' )
@@ -1933,7 +1935,9 @@ X.ConsiderItemDesire["item_cyclone"] = function( hItem )
 		if botName == "npc_dota_hero_invoker" and J.IsGoingOnSomeone(bot) then
 			if J.IsValidHero(botTarget)
 			and not J.IsSuspiciousIllusion(botTarget)
-			and J.GetMP(bot) > 0.5 then
+			and J.GetMP(bot) > 0.5
+			and not Banish.ShouldHoldEnemyBanish(bot, botTarget, J,
+				{intent = "SETUP_COMBO", action = "eul_combo"}) then
 				-- Should check if the target is already stuned etc.
 				hEffectTarget = botTarget
 				sCastMotive = '预设连招:'..J.Chat.GetNormName( hEffectTarget )
@@ -1970,6 +1974,8 @@ X.ConsiderItemDesire["item_cyclone"] = function( hItem )
 		end
 
 		if J.IsRunning( botTarget ) and botTarget:GetCurrentMovementSpeed() > 440
+		and not Banish.ShouldHoldEnemyBanish(bot, botTarget, J,
+			{intent = "STOP_ESCAPE", action = "eul_escape"})
 		then
 			hEffectTarget = botTarget
 			sCastMotive = '阻止逃跑:'..J.Chat.GetNormName( hEffectTarget )
@@ -8376,6 +8382,7 @@ end
 function ItemUsageThink()
 	if RefreshBotHandle() then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+	Trace.Observe(bot)
 	if bot.lastItemFrameProcessTime == nil then bot.lastItemFrameProcessTime = DotaTime() end
 	if DotaTime() > 30 and (DotaTime() - bot.lastItemFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) then return end
 	bot.lastItemFrameProcessTime = DotaTime()
@@ -8385,6 +8392,7 @@ end
 function AbilityUsageThink()
 	if RefreshBotHandle() then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+	Trace.Observe(bot)
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
 	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) and bot.isBear == nil then return end
 	bot.lastAbilityFrameProcessTime = DotaTime()

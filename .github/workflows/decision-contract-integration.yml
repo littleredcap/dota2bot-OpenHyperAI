@@ -1,0 +1,42 @@
+name: Combined decision behavior contracts
+
+on:
+  push:
+    branches: [integration/decision-contracts-159-170-176]
+  pull_request:
+    branches: [infra/decision-quality]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  combined-lua51-and-tstl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install build dependencies
+        run: PUPPETEER_SKIP_DOWNLOAD=1 npm ci --legacy-peer-deps --ignore-scripts --no-audit
+      - name: Build TypeScript-owned Lua
+        run: npm run build
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+      - name: Validate production Lua and contracts
+        run: |
+          for f in bots/FunLib/aba_push.lua bots/FunLib/aba_defend.lua bots/FunLib/oha_banish.lua bots/FunLib/oha_decision_trace.lua bots/BotLib/hero_obsidian_destroyer.lua bots/BotLib/hero_shadow_demon.lua bots/ability_item_usage_generic.lua tests/test_issue159_endgame_push.lua tests/test_issue170_banish_focus.lua tests/test_issue176_base_creeps.lua tests/test_decision_trace.lua tests/test_joint_decision_contracts.lua; do luac5.1 -p "$f"; done
+          lua5.1 tests/test_decision_trace.lua
+          lua5.1 tests/test_issue170_banish_focus.lua
+          lua5.1 tests/test_issue176_base_creeps.lua
+          lua5.1 tests/test_issue159_endgame_push.lua
+          lua5.1 tests/test_joint_decision_contracts.lua
+      - name: Verify offline diagnostic log analyzer
+        run: python3 -m unittest discover -s tests -p 'test_analyze_decision_logs.py'
+      - name: Verify both generated Lua sources agree with TypeScript
+        run: git diff --exit-code -- bots/FunLib/aba_push.lua bots/FunLib/aba_defend.lua

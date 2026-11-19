@@ -1,0 +1,35 @@
+name: Issue 170 offensive banish guard
+
+on:
+  push:
+    branches: [fix/issue-170-banish-friendly-fire]
+  pull_request:
+    branches: [oha-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lua51:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+      - name: Validate modified Lua syntax
+        run: |
+          luac5.1 -p bots/FunLib/oha_banish.lua
+          luac5.1 -p bots/BotLib/hero_obsidian_destroyer.lua
+          luac5.1 -p bots/BotLib/hero_shadow_demon.lua
+          luac5.1 -p bots/ability_item_usage_generic.lua
+          luac5.1 -p tests/test_issue170_banish_focus.lua
+          luac5.1 -p bots/FunLib/oha_decision_trace.lua
+          luac5.1 -p tests/test_decision_trace.lua
+      - name: Verify banish and cooldown diagnostic regression
+        run: |
+          lua5.1 tests/test_issue170_banish_focus.lua
+          lua5.1 tests/test_decision_trace.lua
