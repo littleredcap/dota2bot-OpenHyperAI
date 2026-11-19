@@ -15,7 +15,7 @@ Independent design references, not drop-in dependencies:
 ## 2. Required decision contract
 
 For every new rule or suppression, document:
-1. **Intent:** INTERUPT (interrupt), SAVE_ALLY, PEEL, STOP_ESCAPE, SETUP_COMBO, ISOLATE, NORMAL, DEFEND_BASE, ENDGAME_PUSH.
+1. **Intent:** INTERRUPT (interrupt), SAVE_ALLY, PEEL, STOP_ESCAPE, SETUP_COMBO, ISOLATE, NORMAL, DEFEND_BASE, ENDGAME_PUSH.
 2. **Inputs and provenance:** visible target, ally attack target, lane state, cooldown (self only), timing, current mode. Explain missing or unreliable signals.
 3. **Positive conditions:** when the new action is desirable.
 4. **Counterexamples:** when the same action should still happen, or should be suppressed.

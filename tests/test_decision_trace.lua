@@ -89,12 +89,12 @@ test("sampling avoids repeating the expensive inventory scan every frame",functi
     Trace.Observe(b)
     assert(n==scanned and n>0)
 end)
-print=realPrint
 local failed=0
 for _,t in ipairs(tests) do
     local ok,err=pcall(t[2])
     if ok then io.write("PASS: ",t[1],"\n")
     else failed=failed+1;io.stderr:write("FAIL: ",t[1]," :: ",tostring(err),"\n") end
 end
+print=realPrint
 if failed>0 then os.exit(1) end
 io.write(string.format("%d tests, all passed\n",#tests))
