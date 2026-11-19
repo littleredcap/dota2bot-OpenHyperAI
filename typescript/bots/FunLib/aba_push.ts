@@ -278,6 +278,18 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     const alliesHere = getCachedAlliesNearLoc(bot.GetLocation(), 1600);
     const enemiesHere = getCachedEnemiesNearLoc(bot.GetLocation(), 1600);
 
+    // Issue #159: a decisive late-game numbers advantage should permit a
+    // coordinated high-ground push even before allies are within 1600 units.
+    // Keep the existing base-defense, local-fight, and low-HP safety gates.
+    const decisivePushWindow =
+        gameState.currentTime >= StartToPushTime &&
+        gameState.aliveEnemyCount <= 2 &&
+        gameState.aliveAllyCount >= 3 &&
+        gameState.aliveAllyCoreCount >= 1 &&
+        gameState.aliveAllyCount >= gameState.aliveEnemyCount + 2 &&
+        jmz.GetHP(bot) >= 0.6 &&
+        enemiesHere.length === 0;
+
     // --- Strong base-defense gate for push ---
     const team = gameState.team;
     const ourAncient = gameState.ourAncient;
@@ -298,7 +310,7 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     const enemyFountain = gameState.team === Team.Radiant ? DireFountainTpPoint : RadiantFountainTpPoint;
     const laneFront = GetLaneFrontLocation(gameState.team, lane, 0);
     if (GetLocationToLocationDistance(laneFront, enemyFountain) < 5000) {
-        if (alliesHere.length < 3 || gameState.aliveAllyCount < gameState.aliveEnemyCount) {
+        if ((!decisivePushWindow && alliesHere.length < 3) || gameState.aliveAllyCount < gameState.aliveEnemyCount) {
             nMaxDesire = math.min(nMaxDesire, 0.08);
         }
     }
@@ -450,6 +462,10 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     // Decide which lane to push; consider mid early, ally proximity, etc.
     const pushLane = WhichLaneToPush(bot, lane);
     const isCurrentLanePushLane = pushLane === lane;
+    // Avoid high desire on all three lane modes during a closing window.
+    if (decisivePushWindow && !isCurrentLanePushLane) {
+        return BotModeDesire.VeryLow;
+    }
 
     // Enhanced group push logic - more aggressive when team has advantages
     if ((!jmz.IsCore(bot) && isCurrentLanePushLane) || (jmz.IsCore(bot) && ((jmz.IsLateGame() && isCurrentLanePushLane) || isMidOrEarlyGame))) {
@@ -490,7 +506,10 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
                 nPushDesire = nPushDesire + groupBonus;
             }
 
-            return RemapValClamped(nPushDesire * jmz.GetHP(bot), 0, 1, 0, nMaxDesire) as BotModeDesire;
+            const pushDesire = RemapValClamped(nPushDesire * jmz.GetHP(bot), 0, 1, 0, nMaxDesire);
+            // Outrank optional farming during the short numbers window.
+            // Emergency defense and retreat still have higher priority.
+            return (decisivePushWindow ? Math.max(pushDesire, 0.88) : pushDesire) as BotModeDesire;
         }
     }
 

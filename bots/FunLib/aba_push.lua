@@ -146,6 +146,7 @@ function ____exports.GetPushDesireHelper(bot, lane)
         bot:GetLocation(),
         1600
     )
+    local decisivePushWindow = gameState.currentTime >= StartToPushTime and gameState.aliveEnemyCount <= 2 and gameState.aliveAllyCount >= 3 and gameState.aliveAllyCoreCount >= 1 and gameState.aliveAllyCount >= gameState.aliveEnemyCount + 2 and jmz.GetHP(bot) >= 0.6 and #enemiesHere == 0
     local team = gameState.team
     local ourAncient = gameState.ourAncient
     local enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(
@@ -164,7 +165,7 @@ function ____exports.GetPushDesireHelper(bot, lane)
     local enemyFountain = gameState.team == Team.Radiant and DireFountainTpPoint or RadiantFountainTpPoint
     local laneFront = GetLaneFrontLocation(gameState.team, lane, 0)
     if GetLocationToLocationDistance(laneFront, enemyFountain) < 5000 then
-        if #alliesHere < 3 or gameState.aliveAllyCount < gameState.aliveEnemyCount then
+        if not decisivePushWindow and #alliesHere < 3 or gameState.aliveAllyCount < gameState.aliveEnemyCount then
             nMaxDesire = math.min(nMaxDesire, 0.08)
         end
     end
@@ -284,6 +285,9 @@ function ____exports.GetPushDesireHelper(bot, lane)
     end
     local pushLane = ____exports.WhichLaneToPush(bot, lane)
     local isCurrentLanePushLane = pushLane == lane
+    if decisivePushWindow and not isCurrentLanePushLane then
+        return BotModeDesire.VeryLow
+    end
     if not jmz.IsCore(bot) and isCurrentLanePushLane or jmz.IsCore(bot) and (jmz.IsLateGame() and isCurrentLanePushLane or isMidOrEarlyGame) then
         local allowNumbers = eAliveCount == 0 or aAliveCoreCount >= eAliveCoreCount or aAliveCoreCount >= 1 and aAliveCount >= eAliveCount + 2 or networthAdvantage > 8000 and aAliveCount >= eAliveCount - 1 or levelAdvantage > 2 and aAliveCount >= eAliveCount - 1
         if allowNumbers then
@@ -320,13 +324,14 @@ function ____exports.GetPushDesireHelper(bot, lane)
                 )
                 nPushDesire = nPushDesire + groupBonus
             end
-            return RemapValClamped(
+            local pushDesire = RemapValClamped(
                 nPushDesire * jmz.GetHP(bot),
                 0,
                 1,
                 0,
                 nMaxDesire
             )
+            return decisivePushWindow and math.max(pushDesire, 0.88) or pushDesire
         end
     end
     return lane == Lane.Mid and BotModeDesire.VeryLow or BOT_MODE_DESIRE_EXTRA_LOW
