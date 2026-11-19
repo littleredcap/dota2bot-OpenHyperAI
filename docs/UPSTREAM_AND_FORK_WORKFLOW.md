@@ -171,7 +171,7 @@ git push -u origin port/canshuqwp-specific-fix
 | T2：真实自动对局 | **需要另外配置**安装 Dota 2 的本地 Linux/Windows 主机或云端测试机 | AI 自主打完对局、采集日志、GPM/XPM/死亡/行为、A/B 和队伍镜像 | 否；由测试平台自动执行 |
 | T3：人工游戏体验 | 正式发布或特别异常时 | 观察动作抖动、团战合理性、用户体验；可以只复核短场景/录像 | 偶尔需要，非逐 PR 门槛 |
 
-**当前能力与限制（2026-11-19）：** OHA-Next 尚未完成 T0/T1 CI 的落地，也**没有已配置的 Dota 2 真实自动对局主机**。不能声称 GitHub Actions 普通托管 Runner 可以直接运行完整 Dota 2 对局。T2 落地前，不可将“静态测试成功”写作“游戏内验证通过”。
+**当前能力与限制（2026-11-19）：** [PR #1](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/1) 已加入首批 Lua 5.1 语法检查与 5 个离线行为回归用例；[GitHub Actions 测试](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44456852894)已通过，但该 PR 仍是 Draft，且 CI 尚未覆盖全部英雄和模块。**没有已配置的 Dota 2 真实自动对局主机。** 不能声称 GitHub Actions 普通托管 Runner 可以直接运行完整 Dota 2 对局。T2 落地前，不可将“静态/模拟测试成功”写作“游戏内验证通过”。
 
 ### 6.1 哪些情况允许不做人工测试
 
