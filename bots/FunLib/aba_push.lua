@@ -148,7 +148,10 @@ function IsCriticalBaseCreepAttack(ancient)
             end
         end
     end
-    return attackers > 0 and ancient:GetHealth() / math.max(ancient:GetMaxHealth(), 1) <= 0.45
+    return attackers > 0 and ancient:GetHealth() / math.max(
+        ancient:GetMaxHealth(),
+        1
+    ) <= 0.45
 end
 function ____exports.GetPushDesireHelper(bot, lane)
     if bot.laneToPush == nil then
@@ -848,24 +851,24 @@ function ____exports.PushThink(bot, lane)
     local towerDistanceToFountain = bTowerNearby and GetUnitToLocationDistance(nEnemyTowers[1], vTeamFountain) or 0
     for ____, creep in ipairs(nCreeps) do
         do
-            local __continue127
+            local __continue128
             repeat
                 if not jmz.IsValid(creep) or not jmz.CanBeAttacked(creep) then
-                    __continue127 = true
+                    __continue128 = true
                     break
                 end
                 if jmz.IsTormentor(creep) or jmz.IsRoshan(creep) then
-                    __continue127 = true
+                    __continue128 = true
                     break
                 end
                 if bTowerNearby and GetUnitToLocationDistance(creep, vTeamFountain) >= towerDistanceToFountain then
-                    __continue127 = true
+                    __continue128 = true
                     break
                 end
                 bot:Action_AttackUnit(creep, true)
                 return
             until true
-            if not __continue127 then
+            if not __continue128 then
                 break
             end
         end
