@@ -164,6 +164,11 @@ local Dig               = bot:GetAbilityByName('meepo_petrify')
 local ShardPickup       = bot:GetAbilityByName('meepo_divided_we_stand')
 local ShardFling        = bot:GetAbilityByName('meepo_fling_release')
 
+-- Experimental 7.42 Shard ability prototype. Keep disabled until the real
+-- client validates castability and VT-003's creep/wave/disarm opportunity costs.
+-- Mock success alone is not enough to enable a potentially losing action.
+local ENABLE_EXPERIMENTAL_SHARD_AI = false
+
 local EarthBindDesire, EarthBindLocation
 local PoofDesire, PoofTarget
 local DigDesire
@@ -715,7 +720,8 @@ end
 -- so an unsafe pickup can kill all Meepos. Normal lane creeps suffice for
 -- the offensive Fling case; rescue/combo variants require engine validation.
 function X.ConsiderShardPickup()
-    if ShardPickup == nil or ShardFling == nil
+    if not ENABLE_EXPERIMENTAL_SHARD_AI
+    or ShardPickup == nil or ShardFling == nil
     or bot.HasShard == nil or not bot:HasShard()
     or not ShardPickup:IsTrained()
     or not ShardPickup:IsFullyCastable()
@@ -769,7 +775,8 @@ end
 -- 7.42 Shard secondary action: fling the carried unit at a visible enemy
 -- hero. Fling is hidden until the carrier has picked up a unit.
 function X.ConsiderShardFling()
-    if ShardFling == nil
+    if not ENABLE_EXPERIMENTAL_SHARD_AI
+    or ShardFling == nil
     or ShardFling:IsHidden()
     or not ShardFling:IsFullyCastable()
     then
