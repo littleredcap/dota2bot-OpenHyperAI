@@ -14,6 +14,15 @@
 >
 > 分支、外部来源与测试门槛：[UPSTREAM_AND_FORK_WORKFLOW.md](UPSTREAM_AND_FORK_WORKFLOW.md)
 
+## 当前实施焦点（2026-11-19 21:19 起）
+
+用户最新明确要求：**先不继续扩展整局攻略/战术体系，优先解决重要开源 Issue 与 Dota 2 7.42 版本兼容。** 下文已经记录的策略图谱与 R/I/W 评估原则保留供将来使用，当前不为此开发全局策略架构、自动研究任务、watchdog 或批量游戏测试机。
+
+- **已提交但未实机验证的局部修复：** 7.42 Meepo/Overlord [PR #4](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/4)、实验默认关闭的魔晶 [PR #5](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/5)、Roshan 刷新 [PR #6](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/6)、[Issue #155](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/155) 丢弃/回收冲突 [PR #7](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/7)、7.42 Leshrac Nihilism [PR #8](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/8)。这些工作分别审核，不直接合并。
+- **接下来优先核查的问题：** [#176 小兵偷家未回防](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/176)（防守模块 TS 状态主要由敌方英雄触发、权重遍历与小兵列表不一致）、[#170 放逐反而帮助敌人](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/170)、[#159 团战获胜但不会推进](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159)。这些属于上游报告 + 静态风险/待确认，不宣称已实机复现或修复。
+- **7.42 正确性前置：** 优先验证英雄技能句柄/施法类型、已移除装备和 Roshan/Tormentor 规则；涉及 TypeScript 自动生成的 `aba_defend.lua` 等文件，必须修改 TS 真源并进行正式构建，不能只手改生成 Lua。
+- **策略研发暂缓：** F-10/F-11 的新战术开发 deferred；保留 Meepo 实验功能关闭和已成熟代码，不引入未验证的技能策略或额外资源。
+
 ## 当前项目执行次序（2026-11-19 已调整）
 
 按最新要求，**现在优先梳理、实现 AI 玩法功能需求，且以公平获胜概率作为最终目标**，暂不搭建全员故障监控、独立引擎观察者、批量真实对局及数据回传系统。[需求文档](OHA_NEXT_REQUIREMENTS.md) 第 3 节新增 F-01～F-09 功能候选及可检查验收。当前先核对 7.42 目标版本差异；技能、物品或模式相关修改须先指向具体证据与复现条件，不能把其他 Fork 的修复说明直接当成我们已存在的 Bug。需求文档区分 E0～E4 证据等级与 P0～P2 优先级；已有 Lua 回归 CI 可以继续使用。
