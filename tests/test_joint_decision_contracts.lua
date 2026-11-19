@@ -66,7 +66,7 @@ return function(world)
     local function GetTeamMember(i) return members[i] end
     local function updateDefendUnitStateCache() return {enemyHeroes={},enemyCreeps=creeps} end
     local function updateUnitStateCache() return {enemyCreeps=creeps} end
-]]..defenderFns..criticalFn..[[
+]]..defenderFns.."\n"..criticalFn.."\n"..[[
     local function pushOpportunity(bot)
         local gameState={
             ourAncient=ancient,
