@@ -253,13 +253,13 @@ function WeightedEnemiesAroundLocation(vLoc: Vector, nRadius: number): number {
     for (const unit of unitState.enemyCreeps) {
         if (jmz.IsValid(unit) && GetUnitToLocationDistance(unit, vLoc) <= nRadius) {
             const name = unit.GetUnitName();
-            if (string.find(name, "upgraded_mega") !== null) {
+            if (name.includes("upgraded_mega")) {
                 count += 0.6;
-            } else if (string.find(name, "upgraded") !== null) {
+            } else if (name.includes("upgraded")) {
                 count += 0.4;
-            } else if (string.find(name, "siege") !== null) {
+            } else if (name.includes("siege")) {
                 count += 0.5;
-            } else if (string.find(name, "warlock_golem") !== null || string.find(name, "lone_druid_bear") !== null) {
+            } else if (name.includes("warlock_golem") || name.includes("lone_druid_bear")) {
                 count += 1;
             } else {
                 count += 0.2;
