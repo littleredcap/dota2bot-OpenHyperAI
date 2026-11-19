@@ -150,7 +150,10 @@ test("explicit watched ability is not sampled twice when discovered from slots",
     local a=spell(0,20,true)
     a.GetName=function() return "obsidian_destroyer_astral_imprisonment" end
     b.slots={[1]=a}
-    b.GetAbilityByName=function() error("must use already-discovered handle") end
+    b.GetAbilityByName=function(_,name)
+        if name=="obsidian_destroyer_astral_imprisonment" then error("must use already-discovered handle") end
+        return nil
+    end
     cfg.WatchAllActiveAbilities=true
     _G.testClock=230
     Trace.Observe(b)
