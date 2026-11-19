@@ -4991,6 +4991,8 @@ function J.IsRoshanAlive()
 end
 
 function J.HasEnoughDPSForRoshan(heroes)
+    if heroes == nil or #heroes == 0 then return false end
+
     local DPS = 0
     local DPSThreshold = 0
     local plannedTimeToKill = 60
@@ -5014,8 +5016,8 @@ function J.HasEnoughDPSForRoshan(heroes)
         DPS = DPS + dps
     end
 
-    DPS =  DPS / #heroes
-
+    -- This checks the team's combined damage against Roshan's total HP.
+    -- Do not divide by hero count: the threshold is total required DPS.
     DPSThreshold = roshanHealth / plannedTimeToKill
     return DPS >= DPSThreshold
 end
