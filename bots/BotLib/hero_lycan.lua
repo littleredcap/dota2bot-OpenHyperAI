@@ -89,7 +89,7 @@ sRoleItemsBuyList['pos_3'] = {
     "item_magic_wand",
     "item_helm_of_the_dominator",
     "item_ring_of_basilius",
-    "item_helm_of_the_overlord",--
+    -- Patch 7.42: Helm of the Overlord removed; keep valid Dominator.
     "item_vladmir",--
     "item_ancient_janggo",
     "item_aghanims_shard",
