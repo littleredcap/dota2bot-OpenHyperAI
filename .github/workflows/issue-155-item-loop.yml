@@ -1,0 +1,29 @@
+name: Issue 155 item drop pickup regression
+
+on:
+  pull_request:
+    branches: [oha-next]
+  push:
+    branches: [fix/issue-155-drop-pickup-loop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lua51:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+      - name: Check syntax
+        run: |
+          luac5.1 -p bots/mode_team_roam_generic.lua
+          luac5.1 -p bots/item_purchase_generic.lua
+          luac5.1 -p tests/test_issue155_drop_pickup.lua
+      - name: Run regression tests
+        run: lua5.1 tests/test_issue155_drop_pickup.lua

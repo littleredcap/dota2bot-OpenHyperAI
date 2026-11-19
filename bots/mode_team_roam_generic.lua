@@ -1665,19 +1665,27 @@ function TrySellOrDropItem()
 	then
 		lastCheckBotToDropTime = DotaTime()
 
-		-- 再尝试丢/卖掉
+		-- Issue #155: a deliberately dropped backpack item must not be picked
+		-- straight back up by item_purchase_generic's generic owned-item loop.
 		if bot:GetLevel() >= 6 and bot:GetNetWorth() >= 14000 and Utils.CountBackpackEmptySpace(bot) <= 1 then
 			for i = 1, #Item['tEarlyConsumableItem']
 			do
 				local itemName = Item['tEarlyConsumableItem'][i]
-				local itemSlot = bot:FindItemSlot( itemName )
+				local itemSlot = bot:FindItemSlot(itemName)
 				if itemSlot >= 6 and itemSlot <= 8
 				then
-					local distance = bot:DistanceFromFountain()
-					if distance <= 300 then
-						bot:ActionImmediate_SellItem( bot:GetItemInSlot( itemSlot ))
-					elseif distance >= 3000 then
-						bot:Action_DropItem( bot:GetItemInSlot( itemSlot ), bot:GetLocation() )
+					local item = bot:GetItemInSlot(itemSlot)
+					if item ~= nil then
+						local distance = bot:DistanceFromFountain()
+						if distance <= 300 then
+							bot:ActionImmediate_SellItem(item)
+							return
+						elseif distance >= 3000 then
+							bot.ohaDiscardedItems = bot.ohaDiscardedItems or {}
+							bot.ohaDiscardedItems[item] = true
+							bot:Action_DropItem(item, bot:GetLocation())
+							return -- one item operation per tick; avoid overwriting actions
+						end
 					end
 				end
 			end
