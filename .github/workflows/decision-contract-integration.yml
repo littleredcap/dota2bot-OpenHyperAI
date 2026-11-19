@@ -36,5 +36,7 @@ jobs:
           lua5.1 tests/test_issue176_base_creeps.lua
           lua5.1 tests/test_issue159_endgame_push.lua
           lua5.1 tests/test_joint_decision_contracts.lua
+      - name: Verify offline diagnostic log analyzer
+        run: python3 -m unittest discover -s tests -p 'test_analyze_decision_logs.py'
       - name: Verify both generated Lua sources agree with TypeScript
         run: git diff --exit-code -- bots/FunLib/aba_push.lua bots/FunLib/aba_defend.lua
