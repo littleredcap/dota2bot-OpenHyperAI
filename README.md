@@ -96,6 +96,7 @@ This project uses [Claude Code](https://claude.ai/claude-code) for AI-assisted d
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Complete codebase architecture, file map, naming conventions, all systems explained |
 | [docs/OHA_NEXT_ARCHITECTURE.md](docs/OHA_NEXT_ARCHITECTURE.md) | OHA-Next target architecture, incremental migration and delivery milestones |
 | [docs/OHA_NEXT_REQUIREMENTS.md](docs/OHA_NEXT_REQUIREMENTS.md) | OHA-Next requirements, acceptance criteria, implementation status and open decisions |
+| [docs/OHA_NEXT_STRENGTH_OBJECTIVE.md](docs/OHA_NEXT_STRENGTH_OBJECTIVE.md) | User-confirmed goal A: strongest fair-play AI, win-rate criteria, constraints and evidence standards |
 | [docs/MATCH_DATA_PIPELINE.md](docs/MATCH_DATA_PIPELINE.md) | Planned match telemetry, validation, evidence bundles and assistant access |
 | [docs/PATCH_UPDATE_GUIDE.md](docs/PATCH_UPDATE_GUIDE.md) | Step-by-step runbook for updating when a new Dota 2 patch drops |
 | [docs/UPSTREAM_AND_FORK_WORKFLOW.md](docs/UPSTREAM_AND_FORK_WORKFLOW.md) | OHA-Next: upstream synchronization, community Fork selection, attribution and PR review |
