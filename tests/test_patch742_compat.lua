@@ -37,6 +37,13 @@ test("removed MegaMeepo and old Fling actions are no longer referenced", functio
     assert(not meepoSource:find("function X.ConsiderMegaMeepoFling()", 1, true))
 end)
 
+test("Meepo default builds do not spend gold on the unvalidated 7.42 Shard", function()
+    -- This checks active source references, not comments or user overrides.
+    local code = meepoSource:gsub("%-%-[^\\r\\n]*", "")
+    assert(not code:find('"item_aghanims_shard"', 1, true),
+        "Meepo default buy lists still purchase unvalidated Shard")
+end)
+
 local skillsSource = extractFunction(
     meepoPath,
     "function X.SkillsComplement()",
