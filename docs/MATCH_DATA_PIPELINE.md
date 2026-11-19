@@ -1,12 +1,14 @@
 # OHA-Next：对局采集、数据协议与助手读取
 
-> 状态：设计 v0；尚未实现 OHA-Next 的真实对局采集与自动回传。
+> 状态：**deferred / 长期设计**。2026-11-19 用户决定先做玩法需求；当前不开发故障监控、批量对局及自动回传。以下是保留的未来架构，不是当前实施计划。
 >
 > 更新日期：2026-11-19（北京时间）
 >
 > 架构：[OHA_NEXT_ARCHITECTURE.md](OHA_NEXT_ARCHITECTURE.md)
 >
 > 验收：[OHA_NEXT_REQUIREMENTS.md](OHA_NEXT_REQUIREMENTS.md)
+
+**本轮实施边界：** 不配置测试主机、不加 Bot 埋点、不部署 watchdog、不运行或自动上传实战数据。本文件仅供未来恢复验证基础设施时参考；当前功能改动按 [OHA_NEXT_REQUIREMENTS.md](OHA_NEXT_REQUIREMENTS.md) 中 F 类需求推进。
 
 ## 1. 对局结束后，数据如何到达助手
 
