@@ -37,6 +37,7 @@ local stickySource = extractFunction(
 local makeSticky = assert(loadstring([[
 return function()
     local time = 0
+    local TARGET_LOCK_SEC = 1.2
     local targetUnit = nil
     local targetLockUntil = -90
     local targetSetCalls = 0
