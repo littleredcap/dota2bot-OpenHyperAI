@@ -182,7 +182,9 @@ test("weighted threat includes real creep collection, not only heroes", function
     local wave={}
     for i=1,6 do wave[#wave+1]=creep(i*80,nil) end
     local g=create({creeps=wave})
-    eq(g.weighted(),1,"Six ordinary creeps contribute to base pressure")
+    local actual=g.weighted()
+    if actual ~= 1 then io.write("DEBUG generated threat helper:\n",production,"\n") end
+    eq(actual,1,"Six ordinary creeps contribute to base pressure")
 end)
 
 test("generated mode checks emergency before team-pushing and hero-only early exits", function()
