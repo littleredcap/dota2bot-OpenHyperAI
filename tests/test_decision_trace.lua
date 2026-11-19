@@ -18,6 +18,7 @@ local function actor(name)
     function bot:GetPlayerID() return 1 end
     function bot:GetMana() return self.mana end
     function bot:GetAbilityByName(n) return self.spells[n] end
+    function bot:GetAbilityInSlot(slot) return self.slots and self.slots[slot] end
     function bot:GetItemInSlot(slot) return self.items[slot] end
     return bot
 end
@@ -88,6 +89,76 @@ test("sampling avoids repeating the expensive inventory scan every frame",functi
     local scanned=n
     Trace.Observe(b)
     assert(n==scanned and n>0)
+end)
+
+test("whole-hero opt-in records unlisted active cooldowns and missing levels",function()
+    clear()
+    local b=actor("npc_dota_hero_obsidian_destroyer")
+    local ready=spell(7.3,20,false)
+    ready.GetName=function() return "obsidian_destroyer_arcane_orb" end
+    local unlearned=spell(0,0,false)
+    unlearned.GetName=function() return "obsidian_destroyer_untrained_active" end
+    unlearned.GetLevel=function() return 0 end
+    b.slots={[0]=ready,[1]=unlearned}
+    cfg.WatchAllActiveAbilities=true
+    _G.testClock=170
+    Trace.Observe(b)
+    local out=table.concat(stdout,"\n")
+    assert(out:find("action=obsidian_destroyer_arcane_orb verdict=STATUS reason=COOLDOWN",1,true))
+    assert(out:find("action=obsidian_destroyer_untrained_active verdict=STATUS reason=UNLEARNED",1,true))
+    cfg.WatchAllActiveAbilities=false
+end)
+
+test("whole-hero scanner excludes passive skills, talents and generic_hidden",function()
+    clear()
+    local b=actor("npc_dota_hero_obsidian_destroyer")
+    local passive=spell(0,0,true)
+    passive.GetName=function() return "obsidian_destroyer_passive" end
+    passive.IsPassive=function() return true end
+    local talent=spell(0,0,true)
+    talent.GetName=function() return "special_bonus_damage" end
+    talent.IsTalent=function() return true end
+    local hidden=spell(0,0,false)
+    hidden.GetName=function() return "generic_hidden" end
+    b.slots={[0]=passive,[1]=talent,[2]=hidden}
+    cfg.WatchAllActiveAbilities=true
+    _G.testClock=190
+    Trace.Observe(b)
+    local out=table.concat(stdout,"\n")
+    assert(not out:find("action=obsidian_destroyer_passive",1,true))
+    assert(not out:find("action=special_bonus_damage",1,true))
+    assert(not out:find("action=generic_hidden",1,true))
+    cfg.WatchAllActiveAbilities=false
+end)
+
+test("cast gate distinguishes silence from ready spell state",function()
+    clear()
+    local b=actor("npc_dota_hero_obsidian_destroyer")
+    b.IsSilenced=function() return true end
+    b.spells["obsidian_destroyer_astral_imprisonment"]=spell(0,20,true)
+    _G.testClock=210
+    Trace.Observe(b)
+    local out=table.concat(stdout,"\n")
+    assert(out:find("system=BOT action=cast_gate verdict=STATUS reason=SILENCED",1,true))
+    assert(out:find("verdict=STATUS reason=READY",1,true))
+    assert(not out:find("verdict=BLOCK",1,true))
+end)
+
+test("explicit watched ability is not sampled twice when discovered from slots",function()
+    clear()
+    local b=actor("npc_dota_hero_obsidian_destroyer")
+    local a=spell(0,20,true)
+    a.GetName=function() return "obsidian_destroyer_astral_imprisonment" end
+    b.slots={[1]=a}
+    b.GetAbilityByName=function(_,name)
+        if name=="obsidian_destroyer_astral_imprisonment" then error("must use already-discovered handle") end
+        return nil
+    end
+    cfg.WatchAllActiveAbilities=true
+    _G.testClock=230
+    Trace.Observe(b)
+    assert(table.concat(stdout,"\n"):find("action=obsidian_destroyer_astral_imprisonment",1,true))
+    cfg.WatchAllActiveAbilities=false
 end)
 local failed=0
 for _,t in ipairs(tests) do

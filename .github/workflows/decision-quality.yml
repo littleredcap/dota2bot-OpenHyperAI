@@ -26,3 +26,5 @@ jobs:
           luac5.1 -p bots/Customize/decision_trace.lua
           luac5.1 -p tests/test_decision_trace.lua
           lua5.1 tests/test_decision_trace.lua
+      - name: Offline decision log analyzer regression
+        run: python3 -m unittest discover -s tests -p 'test_analyze_decision_logs.py'
