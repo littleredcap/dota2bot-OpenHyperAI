@@ -95,6 +95,7 @@ This project uses [Claude Code](https://claude.ai/claude-code) for AI-assisted d
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Complete codebase architecture, file map, naming conventions, all systems explained |
 | [docs/PATCH_UPDATE_GUIDE.md](docs/PATCH_UPDATE_GUIDE.md) | Step-by-step runbook for updating when a new Dota 2 patch drops |
+| [docs/UPSTREAM_AND_FORK_WORKFLOW.md](docs/UPSTREAM_AND_FORK_WORKFLOW.md) | OHA-Next: upstream synchronization, community Fork selection, attribution and PR review |
 | [docs/BOT_API_REFERENCE.md](docs/BOT_API_REFERENCE.md) | Comprehensive Valve bot scripting API reference with examples |
 | [CLAUDE.md](CLAUDE.md) | AI coding assistant guide - common tasks, rules, and workflows |
 
