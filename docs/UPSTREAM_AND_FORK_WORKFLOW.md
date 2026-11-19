@@ -14,10 +14,10 @@
 2. **上游变更：先同步 `main`，再验证后集成到 `oha-next`**。不要自动把上游每次提交直接合进正在测试的 OHA-Next。
 3. **其他 Fork：按具体提交或模块审查，选择性移植**。默认不做跨 Fork 的整仓库合并；规模大的重构重新设计分批引入。
 4. **所有代码改动经过独立分支与 PR**：记录来源、理由、兼容版本、测试和回滚方式。默认由仓库所有者审查后合并，禁止直接自动合并。
-5. **先基线再优化**：正常对局（无额外金币、经验、属性或中立物品作弊）作为强度比较基准；FretBots 增强难度另作评测。
+5. **用户已选择目标 A：公平规则下尽可能提高获胜概率**。正常对局（不靠额外金币、经验、属性、专属中立装备或非法战争迷雾信息）作为强度比较基准；FretBots/ Buff 增强难度另作评测。合法发育产生更多 GPM/XPM 不算作弊，拟人化不是目标。强度定义见 [OHA_NEXT_STRENGTH_OBJECTIVE.md](OHA_NEXT_STRENGTH_OBJECTIVE.md)。
 6. **外部代码的许可与署名是合入条件**：没有确认再分发权限的项目可以阅读、讨论设计，但不得直接复制其受保护的代码。
 
-本规范约定仓库协作与验证流程；需求与验收见 [OHA_NEXT_REQUIREMENTS.md](OHA_NEXT_REQUIREMENTS.md)，目标架构与推进路线见 [OHA_NEXT_ARCHITECTURE.md](OHA_NEXT_ARCHITECTURE.md)，对局数据采集和助手读取见 [MATCH_DATA_PIPELINE.md](MATCH_DATA_PIPELINE.md)。[ARCHITECTURE.md](ARCHITECTURE.md) 保留现有代码地图，Dota 2 版本适配的数据核验步骤仍以 [PATCH_UPDATE_GUIDE.md](PATCH_UPDATE_GUIDE.md) 为基础。
+本规范约定仓库协作与验证流程；**经用户确认的公平强度目标**见 [OHA_NEXT_STRENGTH_OBJECTIVE.md](OHA_NEXT_STRENGTH_OBJECTIVE.md)，需求与验收见 [OHA_NEXT_REQUIREMENTS.md](OHA_NEXT_REQUIREMENTS.md)，目标架构与推进路线见 [OHA_NEXT_ARCHITECTURE.md](OHA_NEXT_ARCHITECTURE.md)，对局数据采集和助手读取见 [MATCH_DATA_PIPELINE.md](MATCH_DATA_PIPELINE.md)。[ARCHITECTURE.md](ARCHITECTURE.md) 保留现有代码地图，Dota 2 版本适配的数据核验步骤仍以 [PATCH_UPDATE_GUIDE.md](PATCH_UPDATE_GUIDE.md) 为基础。
 
 ## 2. 分支与职责
 
@@ -197,6 +197,10 @@ T2 任务需提供版本 / 构建身份、游戏构建、双方阵容与阵营�
 对比前先验证双方版本隔离，再使用匹配条件并交换阵营。两个版本分别自博弈的天辉胜率不能证明候选更强；所有尝试与排除原因都须报告。先小规模校准，再扩展批量测试。
 
 **批量测试的前置门槛：** 100 局局末战绩不能证明不存在**Bug 导致的原地不动**；验证 watchdog 时必须分别注入“Bot 仍发心跳但不再有行动进展”与“Lua 失效导致 Bot 不再上报，而引擎实体仍在”的场景。第二类需要经验证的独立引擎观察，不能指望出错脚本自证故障。应保存位置、时间线、最近命令和错误证据；正常蹲守、死亡、暂停不应被简单误判。零告警必须同时报告全员覆盖率和外部观察能力，否则视为未知。
+
+### 强度声明分级（与 E0～E4 缺陷证据分开）
+
+未来每项功能 PR 需注明其类型：`compatibility_identified`（仅定位适配问题）、`logic_checked`（局部逻辑检查）、`game_checked`（真实场景核验）、`strength_signal`（有限公平对照初步信号）、`strength_supported`（有足够公平对照和泛化证据支持）或 `regression`/`inconclusive`。仅有离线单测不等于胜率增长，严禁以较高 GPM、KDA 或击杀数直接替代获胜能力。细则见 [OHA_NEXT_STRENGTH_OBJECTIVE.md](OHA_NEXT_STRENGTH_OBJECTIVE.md)。
 
 ### 6.3 每个 PR 的填写内容
 
