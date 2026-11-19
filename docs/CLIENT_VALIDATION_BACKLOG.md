@@ -38,6 +38,10 @@
 | VT-012 / research | F-07 / 新候选 F-10 **敌方打 Roshan 时是否争夺** | 可见敌方打盾 vs 敌人消失的“怀疑”两种不同情报；不同人数、技能/CD、TP、距离、兵线、基地风险；记录 contest / steal / trade / defend / scout 选择，验证无作弊透视和允许改变计划 | **planned，当前只研究，不运行** |
 | VT-013 / research | F-06/F-07 **关键目标后的转换** | 抢到 Aegis 或拿到新 Tormentor 掉落后，能否合理处理兵线、推塔、控图与撤退；避免只为拿奖励而送团灭 | **planned，当前只研究，不运行** |
 
+| VT-015 / release_gate | [PR #7：Issue #155 物品循环](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/7) | 在真实 Dota 7.42 中，Bot 野外背包紧张时主动丢弃 Magic Wand/Stick/Quelling Blade 后，`mode_team_roam_generic.lua` 写入的 `bot.ohaDiscardedItems[item]` 是否可被 `item_purchase_generic.lua` 跨脚本读取并阻止同一物品被捡回；正常意外掉落物仍能拾回；后期主动丢弃莲花不循环；实际游戏无动作反复覆盖 | 上游 [#155](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/155) + [Lua CI 9/9](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44533284252)；**blocked_no_client** |
+| VT-016 / release_gate | [PR #8：7.42 Leshrac Nihilism](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/8) | 无神杖时 `GetAbilityByName('leshrac_greater_lightning_storm')` nil/隐藏情况，神杖后句柄、`IsTrained`、`radius` 和实际无目标施放；确认 7.42 已无自身虚无、缴械/基础驱散是否生效以及是否意外解除敌方所受队友控制 | 官方 7.42 + [Lua CI 9/9](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44534515652)；**blocked_no_client** |
+| VT-017 / research | [上游 Issue #176](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/176)：纯敌方兵线威胁远古 | 敌方英雄不在高地，仅数名可见小兵攻击 T4/Ancient 时，验证能否触发基地紧急防守、是否会由于 `teamIsPushing` 与 `lEnemies.length===0` 提前返回；尽量只派必要防守者而不是全员无脑回防。**当前没有修复 PR**，先核对 TS 源 + 生成 Lua 的一致性 | Issue 报告 + 静态源码风险；**planned / 未开始实机** |
+
 ## 4. 执行顺序和所需最小证据
 
 未来首次可用客户端时，不应让所有测试混在一起跑数十局：先验证 *脚本加载版本* → VT-001/002/005 的 Meepo API → VT-007 Roshan 计时 → VT-006 购物 → 后续策略场景；只在相应行为能正确触发并观察时才进入完整对局与对照。
