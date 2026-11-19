@@ -79,7 +79,7 @@
 
 | ID / 建议优先级 | 功能目标 | 可检查的验收 | 初步文件/模块 | 状态 | 证据等级/实际依据 |
 | --- | --- | --- | --- | --- | --- |
-| F-01 / P0 | **7.42 目标版本兼容**：核对英雄技能、物品、中立物品、地图目标与时间规则 | 在目标游戏构建下核对结构性改动；静态扫描的内部名称/技能槽/施法方式有明确差异清单和修复记录；未完成实机核验不得声称“全部兼容” | `bots/BotLib/`、`bots/FunLib/`、`typescript/bots/`、`docs/PATCH_UPDATE_GUIDE.md` | 已完成第一轮静态核查，详见 [PR #3](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/3)；运行代码未修复 | E2（部分静态差异已定位）：Meepo 旧能力调用、已移除的 Overlord 出装、加强模式中立物品五阶/轮出项、Roshan 固定复活时间；**未做游戏内复现，不能声称全面扫描或已兼容** |
+| F-01 / P0 | **7.42 目标版本兼容**：核对英雄技能、物品、中立物品、地图目标与时间规则 | 在目标游戏构建下核对结构性改动；静态扫描的内部名称/技能槽/施法方式有明确差异清单和修复记录；未完成实机核验不得声称“全部兼容” | `bots/BotLib/`、`bots/FunLib/`、`typescript/bots/`、`docs/PATCH_UPDATE_GUIDE.md` | 第一轮静态审计在 [PR #3](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/3)；Meepo 旧能力、Overlord 引用已开始修复，见 Draft [PR #4](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/4)（[Lua CI 六项通过](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44498389965)），**尚未合入/实机验证** | E2（部分静态差异已定位）：Meepo 旧能力及 Overlord 引用在 Draft PR #4 修正，修复后 Lua 5.1 mock 六项通过；加强模式中立物品、Roshan 动态复活及 Meepo 新 Shard 主动仍未适配。**没有游戏内复现、兼容覆盖或胜率证明** |
 | F-02 / P1（按个案定位） | **英雄技能与物品决策正确性**：减少错误施法、错误目标、控制/救援技能误用、命令冲突 | 有复现用例；合法目标、施法条件、技能时序和特殊状态被覆盖，至少有对应 Lua 测试；对未实测的引擎行为注明风险 | `bots/BotLib/hero_*.lua`、`bots/ability_item_usage_generic.lua` | 候选 | E0：整体能力提升方向，未针对特定英雄/技能定位错误；具体个案须另立证据 |
 | F-03 / P1（待验证） | **基础行为风险调查**：核对是否存在模式反复切换、TP 往返、防守折返或无效等待，**确认具体触发条件后再修复** | 对具体已知触发条件加入回归，显示退出条件/冷却/目标失效逻辑；没有实测不宣称消灭全部隐蔽停滞 | `bots/mode_*_generic.lua`、公共辅助函数 | 候选 | TP：E1+E2（外部修复报告 + 本分支静态风险），**未在本项目实机复现**；其他模式问题仍待各自核验 |
 | F-04 / P1 | **对线与资源分配**：补刀、反补、换血；辅助让核心资源、打野不互抢 | 对线优先级与队友角色冲突有场景断言，支持/核心的分配规则一致，不会阻止安全的正常收钱/支援 | `bots/mode_laning_generic.lua`、`bots/mode_farm_generic.lua`、角色相关模块 | 候选 | E1：部分资源争抢有 Fork 报告；当前 OHA-Next 未就具体场景确认 |
@@ -213,5 +213,6 @@
 | 2026-11-19 | 引入 E0～E4 证据等级，区分外部报告、源码风险和复现；TP 往返改为待调查，F-02/F-03 从 P0 下调至 P1 | 用户质疑 P0 Bug 认定依据，尤其 TP 往返；已核对 Fork 提交 c06f5df8 与本分支源码 | PR #2：更正 F 类需求证据和优先级 |
 | 2026-11-19 | F-01 第一次 7.42 结构性静态审计：记录五组 E2 差异，分开实战未验证项 | 官方 7.42 补丁与 oha-next cb814c6 的源码对照 | [PR #3](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/3)，仅审计未修复 |
 | 2026-11-19 | 用户明确选择目标 A；新增 U-08、S-01～S-05 和 D-15～D-17，区分公平胜率、代理指标、缺陷证据与强度证据 | 用户选择“尽可能强的 AI，以公平条件下的实战获胜能力为核心” | [强度目标文档](OHA_NEXT_STRENGTH_OBJECTIVE.md) + PR #2；未部署强度评测设施 |
+| 2026-11-19 | F-01 第一批代码修复：Meepo 旧技能、Dig 安全保护、Overlord 公共配方/英雄出装；新增六项 Lua 5.1 回归 | 7.42 官方补丁 + PR #3 静态审计 | Draft [PR #4](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/4)；[CI 六项通过](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44498389965)；未合并/未实机验证 |
 
 后续 PR 应填写关联需求 ID、实际改变的行为、验证证据与未覆盖项。新增或取消需求时保留原因，不把原需求悄悄改成已经实现的版本。
