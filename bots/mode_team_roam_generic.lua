@@ -52,8 +52,14 @@ local targetLockUntil = -90
 
 local function SetStickyTarget(t)
     if t == nil then return end
-    -- Don't switch targets too fast
-    if targetUnit ~= nil and targetUnit ~= t and DotaTime() < targetLockUntil then
+    -- Keep the existing lock deadline when reconsidering the same target.
+    if targetUnit == t then return end
+    -- Don't switch targets until the lock expires, unless the old target is invalid.
+    if targetUnit ~= nil
+        and DotaTime() < targetLockUntil
+        and J.Utils.IsValidUnit(targetUnit)
+        and X.CanBeAttacked(targetUnit)
+    then
         return
     end
     targetUnit = t
@@ -111,7 +117,6 @@ function GetDesireHelper()
     target, ShouldHelpWhenCoreIsTargeted = X.ConsiderHelpWhenCoreIsTargeted()
     if ShouldHelpWhenCoreIsTargeted then
         SetStickyTarget(target)
-        targetUnit = target
         return RemapValClamped(J.GetHP(bot), 0, 0.5, BOT_MODE_DESIRE_NONE, 0.98)
     end
 
@@ -121,7 +126,6 @@ function GetDesireHelper()
     target, ShouldHelpAlly = ConsiderHelpAlly()
     if ShouldHelpAlly then
         SetStickyTarget(target)
-        targetUnit = target
         return RemapValClamped(J.GetHP(bot), 0, 0.6, BOT_MODE_DESIRE_NONE, 0.98)
     end
 
