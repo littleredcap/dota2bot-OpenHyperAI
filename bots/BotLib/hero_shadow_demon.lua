@@ -2,6 +2,7 @@ local X             = {}
 local bot           = GetBot()
 
 local J             = require( GetScriptDirectory()..'/FunLib/jmz_func' )
+local Banish        = require( GetScriptDirectory()..'/FunLib/oha_banish' )
 local Minion        = dofile( GetScriptDirectory()..'/FunLib/aba_minion' )
 local sTalentList   = J.Skill.GetTalentList( bot )
 local sAbilityList  = J.Skill.GetAbilityList( bot )
@@ -133,6 +134,7 @@ function X.SkillsComplement()
 
     DisruptionDesire, DisruptionTarget = X.ConsiderDisruption()
     if DisruptionDesire > 0
+    and not Banish.ShouldHoldEnemyBanish(bot, DisruptionTarget, J)
     then
         bot:Action_UseAbilityOnEntity(Disruption, DisruptionTarget)
         return
