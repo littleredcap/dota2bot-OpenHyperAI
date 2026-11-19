@@ -128,8 +128,14 @@ function IsOurBaseUnderCreepAttack(ancient)
     if ancient == nil then
         return false
     end
-    local base1 = GetTower(GetTeam(), Tower.Base1)
-    local base2 = GetTower(GetTeam(), Tower.Base2)
+    local base1 = GetTower(
+        GetTeam(),
+        Tower.Base1
+    )
+    local base2 = GetTower(
+        GetTeam(),
+        Tower.Base2
+    )
     for ____, creep in ipairs(updateUnitStateCache().enemyCreeps) do
         if jmz.IsValid(creep) then
             local target = creep:GetAttackTarget()
@@ -838,24 +844,24 @@ function ____exports.PushThink(bot, lane)
     local towerDistanceToFountain = bTowerNearby and GetUnitToLocationDistance(nEnemyTowers[1], vTeamFountain) or 0
     for ____, creep in ipairs(nCreeps) do
         do
-            local __continue121
+            local __continue127
             repeat
                 if not jmz.IsValid(creep) or not jmz.CanBeAttacked(creep) then
-                    __continue121 = true
+                    __continue127 = true
                     break
                 end
                 if jmz.IsTormentor(creep) or jmz.IsRoshan(creep) then
-                    __continue121 = true
+                    __continue127 = true
                     break
                 end
                 if bTowerNearby and GetUnitToLocationDistance(creep, vTeamFountain) >= towerDistanceToFountain then
-                    __continue121 = true
+                    __continue127 = true
                     break
                 end
                 bot:Action_AttackUnit(creep, true)
                 return
             until true
-            if not __continue121 then
+            if not __continue127 then
                 break
             end
         end
