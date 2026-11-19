@@ -26,6 +26,8 @@ return function(options)
         x=0,
         IsAlive=function() return true end,
         IsBuilding=function() return true end,
+        GetHealth=function() return options.ancientHP or 1000 end,
+        GetMaxHealth=function() return 1000 end,
         GetLocation=function(self) return {x=self.x} end,
     }
     local t4a = {x=80}
@@ -97,6 +99,7 @@ local function bot(id, x, opts)
         hero=true, core=opts.core or false, x=x, alive=opts.alive ~= false,
         IsBot=function() return opts.human ~= true end,
         IsIllusion=function() return opts.illusion == true end,
+        GetCurrentMovementSpeed=function() return opts.speed or 300 end,
         GetPlayerID=function() return id end,
     }
 end
@@ -175,6 +178,43 @@ test("closest available bot is selected, not a dead or human hero", function()
     eq(g.desire(far),nil,"Other bots retain ordinary defense options")
 end)
 
+test("four active base attackers recruit two defenders, not the whole team",function()
+    local members={bot(1,300),bot(2,500),bot(3,700),bot(4,900)}
+    local wave={creep(50,nil),creep(60,nil),creep(70,nil),creep(80,nil)}
+    local g=create({members=members,creeps=wave})
+    for _,c in ipairs(wave) do c.GetAttackTarget=function() return g.ancient end end
+    eq(g.desire(members[1]),0.97,"First defender")
+    eq(g.desire(members[2]),0.97,"Second defender")
+    eq(g.desire(members[3]),nil,"Others keep original duties")
+end)
+test("eight attackers recruit three defenders",function()
+    local members={bot(1,300),bot(2,500),bot(3,700),bot(4,900)}
+    local wave={}
+    for i=1,8 do wave[#wave+1]=creep(i*40,nil) end
+    local g=create({members=members,creeps=wave})
+    for _,c in ipairs(wave) do c.GetAttackTarget=function() return g.ancient end end
+    eq(g.desire(members[3]),0.97,"Third responder")
+    eq(g.desire(members[4]),nil,"No unnecessary fourth defender")
+end)
+test("critical Ancient HP recruits extra defenders even for one attacker",function()
+    local members={bot(1,300),bot(2,500),bot(3,700),bot(4,900)}
+    local c=creep(50,nil)
+    local g=create({members=members,creeps={c},ancientHP=150})
+    c.GetAttackTarget=function() return g.ancient end
+    eq(g.desire(members[1]),0.97,"One")
+    eq(g.desire(members[2]),0.97,"Two")
+    eq(g.desire(members[3]),0.97,"Three")
+    eq(g.desire(members[4]),nil,"Only necessary responders")
+end)
+test("select by walking ETA rather than raw distance",function()
+    local slow=bot(1,550,{speed=250})
+    local fast=bot(2,700,{speed=500})
+    local c=creep(40,nil)
+    local g=create({members={slow,fast},creeps={c}})
+    c.GetAttackTarget=function() return g.ancient end
+    eq(g.desire(fast),0.97,"Faster arrival despite farther straight distance")
+    eq(g.desire(slow),nil,"Slower arrival not chosen")
+end)
 test("enemy heroes at base use existing teamfight logic instead", function()
     local a=bot(1,400)
     local unit=creep(100,nil)

@@ -291,35 +291,73 @@ function GetBaseCreepAttacker(ancient: Unit | null): Unit | null {
     return null;
 }
 
-function GetBaseCreepDefender(ancientLoc: Vector): Unit | null {
+// Count only visible attackers actively targeting Ancient/T4, not nearby waves.
+function GetBaseCreepThreatCount(ancient: Unit | null): number {
+    if (!IsValidBuildingTarget(ancient)) return 0;
+    const leftT4 = GetTower(nTeam, Tower.Base1);
+    const rightT4 = GetTower(nTeam, Tower.Base2);
+    let count = 0;
+    for (const creep of updateDefendUnitStateCache().enemyCreeps) {
+        if (jmz.IsValid(creep) &&
+            GetUnitToLocationDistance(creep, ancient.GetLocation()) <= BASE_THREAT_RADIUS) {
+            const target = creep.GetAttackTarget();
+            if (target === ancient || (leftT4 != null && target === leftT4)
+                || (rightT4 != null && target === rightT4)) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
+// Estimated walk ETA is less misleading than pure distance when hero speeds
+// differ. TP pathing is deliberately excluded: actual legal destinations vary.
+function GetBaseCreepDefender(ancientLoc: Vector, alreadyAssigned: Unit[]): Unit | null {
     let best: Unit | null = null;
-    let bestDistance = math.huge;
+    let bestETA = math.huge;
     for (let i = 1; i <= GetTeamPlayers(nTeam).length; i++) {
         const member = GetTeamMember(i);
         if (member && member.IsBot() && jmz.IsValidHero(member) && !member.IsIllusion()) {
-            const distance = GetUnitToLocationDistance(member, ancientLoc);
-            if (distance < bestDistance) {
-                best = member;
-                bestDistance = distance;
+            let eligible = true;
+            for (const other of alreadyAssigned) {
+                if (other.GetPlayerID() === member.GetPlayerID()) eligible = false;
+            }
+            if (eligible) {
+                const distance = GetUnitToLocationDistance(member, ancientLoc);
+                const eta = distance / math.max(member.GetCurrentMovementSpeed(), 250);
+                if (eta < bestETA) {
+                    best = member;
+                    bestETA = eta;
+                }
             }
         }
     }
     return best;
 }
 
-// Returns null if ordinary defend logic should continue, otherwise the
-// creep-only emergency result. We select a single bot and one (mid) mode,
-// avoiding a full-team retreat over one creep attacking a T4.
+// A single creep gets one defender. Large active waves / a critical Ancient
+// recruit 2-3 defenders, leaving all others free to evaluate ordinary modes.
 function GetCreepBaseDefenseDesire(bot: Unit, lane: Lane, ancient: Unit | null): BotModeDesire | null {
     if (!IsValidBuildingTarget(ancient)
         || jmz.Utils.CountEnemyHeroesNear(ancient.GetLocation(), 2200) > 0
         || GetBaseCreepAttacker(ancient) === null) return null;
-    const defender = GetBaseCreepDefender(ancient.GetLocation());
-    if (defender === null) return null;
-    if (defender.GetPlayerID() === bot.GetPlayerID() && lane === Lane.Mid) {
-        return 0.97 as BotModeDesire;
+    const attackers = GetBaseCreepThreatCount(ancient);
+    const ancientHP = ancient.GetHealth() / math.max(ancient.GetMaxHealth(), 1);
+    let required = 1;
+    if (attackers >= 8 || ancientHP <= 0.2) required = 3;
+    else if (attackers >= 4 || ancientHP <= 0.45) required = 2;
+    const assigned: Unit[] = [];
+    for (let i = 0; i < required; i++) {
+        const defender = GetBaseCreepDefender(ancient.GetLocation(), assigned);
+        if (defender === null) break;
+        assigned.push(defender);
     }
-    // Other bots must still evaluate ordinary defense of other lanes.
+    for (const defender of assigned) {
+        if (defender.GetPlayerID() === bot.GetPlayerID() && lane === Lane.Mid) {
+            return 0.97 as BotModeDesire;
+        }
+    }
+    // Unselected bots continue evaluating other lane-defense duties.
     return null;
 }
 
