@@ -436,6 +436,23 @@ local function TurboModeGeneralPurchase()
 	end
 end
 
+-- Issue #155: respect intentional inventory discards while preserving the
+-- normal recovery of valuable items accidentally dropped on the ground.
+-- The marker is stored on the bot handle so mode_team_roam and purchase logic
+-- can agree without accessing each other's script-local variables.
+local function ShouldRecoverOwnedDrop(drop, hero)
+	if drop == nil or drop.owner ~= hero or drop.item == nil or drop.item:IsNull() then
+		return false
+	end
+	if hero.ohaDiscardedItems ~= nil and hero.ohaDiscardedItems[drop.item] then
+		return false
+	end
+	if Item.GetEmptyInventoryAmount(hero) <= 0 then
+		return false
+	end
+	return not string.find(drop.item:GetName(), 'token')
+end
+
 function ItemPurchaseThink()
 	currentTime = DotaTime()
 
@@ -655,10 +672,11 @@ function ItemPurchaseThink()
 	botStashValue = bot:GetStashValue()
 	botDistanceFromFountain = bot:DistanceFromFountain()
 
-	-- try to recover own dropped items (generic, not only for bear)
+	-- Recover genuine owned drops, but not low-value items deliberately
+	-- discarded to clear slots (or anything we cannot currently carry).
 	local dropped = GetDroppedItemList()
 	for _, d in pairs(dropped) do
-		if d ~= nil and d.owner == bot and d.item ~= nil and not string.find(d.item:GetName(), 'token') then
+		if ShouldRecoverOwnedDrop(d, bot) then
 			local dist = GetUnitToLocationDistance(bot, d.location)
 			if dist > 200 and dist < 1000 then
 				bot:Action_MoveToLocation(d.location)
@@ -1149,8 +1167,14 @@ function ItemPurchaseThink()
 		for _, lotusName in ipairs(tDropLotus) do
 			local slot = bot:FindItemSlot(lotusName)
 			if slot >= 0 then
-				bot:Action_DropItem(bot:GetItemInSlot(slot), bot:GetLocation())
-				print("[Item] Core "..botName.." dropped "..lotusName.." (past 30min)")
+				local item = bot:GetItemInSlot(slot)
+				if item ~= nil then
+					bot.ohaDiscardedItems = bot.ohaDiscardedItems or {}
+					bot.ohaDiscardedItems[item] = true
+					bot:Action_DropItem(item, bot:GetLocation())
+					print("[Item] Core "..botName.." discarded "..lotusName.." (past 30min)")
+					return -- only one deliberate drop each tick
+				end
 			end
 		end
 	end
