@@ -224,6 +224,24 @@ const BASE_ANC_RADIUS = 2200;
 type LaneState = { target?: Unit | null; lockUntil?: number };
 const ObjectiveState: Record<number, Partial<Record<Lane, LaneState>>> = {};
 
+// A purely observed Ancient/T4 creep attack takes precedence over an endgame
+// push window. Enemy buyback/cooldowns are hidden and NOT considered here.
+function IsOurBaseUnderCreepAttack(ancient: Unit | null): boolean {
+    if (ancient === null) return false;
+    const base1 = GetTower(GetTeam(), Tower.Base1);
+    const base2 = GetTower(GetTeam(), Tower.Base2);
+    for (const creep of updateUnitStateCache().enemyCreeps) {
+        if (jmz.IsValid(creep)) {
+            const target = creep.GetAttackTarget();
+            if (target === ancient || (base1 !== null && target === base1)
+                || (base2 !== null && target === base2)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 /* -----------------------------------------------------------------------------
  * Desire front-door
  * ---------------------------------------------------------------------------*/
@@ -288,7 +306,9 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         gameState.aliveAllyCoreCount >= 1 &&
         gameState.aliveAllyCount >= gameState.aliveEnemyCount + 2 &&
         jmz.GetHP(bot) >= 0.6 &&
-        enemiesHere.length === 0;
+        enemiesHere.length === 0 &&
+        !(jmz.IsDefending(bot) && nModeDesire >= 0.8) &&
+        !IsOurBaseUnderCreepAttack(gameState.ourAncient);
 
     // --- Strong base-defense gate for push ---
     const team = gameState.team;
@@ -309,8 +329,14 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     // Don't push deep (past T2 toward enemy base) when alone or outnumbered
     const enemyFountain = gameState.team === Team.Radiant ? DireFountainTpPoint : RadiantFountainTpPoint;
     const laneFront = GetLaneFrontLocation(gameState.team, lane, 0);
+    // Approaching is different from committing alone on the enemy high ground.
+    // Support can be a second allied hero OR a real allied creep wave nearby.
+    const nearEnemyBase = GetUnitToLocationDistance(bot, enemyFountain) < 3200;
+    const nearbyAlliedWave = bot.GetNearbyLaneCreeps(1100, false);
+    const safeClosingWindow = decisivePushWindow &&
+        (!nearEnemyBase || alliesHere.length >= 2 || nearbyAlliedWave.length >= 2);
     if (GetLocationToLocationDistance(laneFront, enemyFountain) < 5000) {
-        if ((!decisivePushWindow && alliesHere.length < 3) || gameState.aliveAllyCount < gameState.aliveEnemyCount) {
+        if ((!safeClosingWindow && alliesHere.length < 3) || gameState.aliveAllyCount < gameState.aliveEnemyCount) {
             nMaxDesire = math.min(nMaxDesire, 0.08);
         }
     }
@@ -509,7 +535,7 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
             const pushDesire = RemapValClamped(nPushDesire * jmz.GetHP(bot), 0, 1, 0, nMaxDesire);
             // Outrank optional farming during the short numbers window.
             // Emergency defense and retreat still have higher priority.
-            return (decisivePushWindow ? Math.max(pushDesire, 0.88) : pushDesire) as BotModeDesire;
+            return (safeClosingWindow ? Math.max(pushDesire, 0.88) : pushDesire) as BotModeDesire;
         }
     }
 
