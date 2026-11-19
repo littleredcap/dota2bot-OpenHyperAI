@@ -18,6 +18,7 @@ return function(state, hp, enemies)
     local StartToPushTime = 16 * 60
     local jmz = { GetHP = function() return hp end }
     return ]] .. expr .. [[
+
 end
 ]], "production-closing-window"))()
 
