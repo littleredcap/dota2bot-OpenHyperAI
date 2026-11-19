@@ -12,6 +12,7 @@ This is the **dota2bot-OpenHyperAI** project -- Lua bot scripts for Dota 2 that 
 - **[docs/OHA_NEXT_REQUIREMENTS.md](docs/OHA_NEXT_REQUIREMENTS.md)** -- User requirements, engineering decisions, acceptance criteria and unresolved choices
 - **[docs/OHA_NEXT_STRENGTH_OBJECTIVE.md](docs/OHA_NEXT_STRENGTH_OBJECTIVE.md)** -- User-confirmed goal A: maximum fair-play win probability, without resource/vision cheats or humanlike-play constraints
 - **[docs/GAMEPLAY_RESEARCH_AND_IDEAS.md](docs/GAMEPLAY_RESEARCH_AND_IDEAS.md)** -- Source-backed strategy hypotheses, opportunities/costs, and proactive research ideas (not proven bugs)
+- **[docs/GAMEPLAY_STRATEGY_CATALOG.md](docs/GAMEPLAY_STRATEGY_CATALOG.md)** -- Lifecycle-wide hero/role/team strategies and R/I/W maturity gates; do not buy an unexploitable new active item early
 - **[docs/CLIENT_VALIDATION_BACKLOG.md](docs/CLIENT_VALIDATION_BACKLOG.md)** -- Test cases that require a real Dota client; blocked cases remain open despite passing mocks
 - **[docs/MATCH_DATA_PIPELINE.md](docs/MATCH_DATA_PIPELINE.md)** -- Planned telemetry, data validity, upload and assistant access
 - **[docs/UPSTREAM_AND_FORK_WORKFLOW.md](docs/UPSTREAM_AND_FORK_WORKFLOW.md)** -- Branch roles, provenance and risk-based T0–T3 verification
