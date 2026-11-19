@@ -23,6 +23,7 @@ local function eq(actual, expected, label)
 end
 
 local path = "bots/BotLib/hero_meepo.lua"
+local productionFile = readFile(path)
 local skills = extract(path, "function X.SkillsComplement()", "\nfunction X.ConsiderEarthBind()")
 local dig = extract(path, "function X.ConsiderDig()", "\n-- 7.42 Shard:")
 local pickup = extract(path, "function X.ConsiderShardPickup()", "\n-- 7.42 Shard secondary action:")
@@ -105,6 +106,7 @@ return function(config)
             return target.distance <= range
         end
     }
+    local ENABLE_EXPERIMENTAL_SHARD_AI = config.experimental ~= false
     local BOT_MODE_NONE = 0
     local BOT_ACTION_DESIRE_NONE = 0
     local BOT_ACTION_DESIRE_HIGH = 0.9
@@ -146,6 +148,30 @@ local tests = {}
 local function test(name, fn)
     tests[#tests + 1] = {name=name, fn=fn}
 end
+
+test("production leaves unverified Shard AI disabled", function()
+    assert(productionFile:find("local ENABLE_EXPERIMENTAL_SHARD_AI = false", 1, true),
+        "Experimental Shard AI must not be enabled in the real bot before client validation")
+end)
+
+test("experimental gate disables both pickup and Fling", function()
+    local noPickup = makeBot({
+        shard = true,
+        experimental = false,
+        enemies = {enemy(350)},
+        creeps = {creep(150)}
+    })
+    noPickup.tick()
+    eq(#noPickup.actions(), 0, "Disabled Shard pickup")
+    local noFling = makeBot({
+        shard = true,
+        experimental = false,
+        carrying = true,
+        enemies = {enemy(350)}
+    })
+    noFling.tick()
+    eq(#noFling.actions(), 0, "Disabled Shard fling")
+end)
 
 test("no Shard means no pickup", function()
     local b = makeBot({enemies = {enemy(500)}, creeps = {creep(100)}})
