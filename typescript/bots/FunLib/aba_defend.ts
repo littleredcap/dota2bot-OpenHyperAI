@@ -243,25 +243,25 @@ function WeightedEnemiesAroundLocation(vLoc: Vector, nRadius: number): number {
     const unitState = updateDefendUnitStateCache();
     let count = 0;
     for (const unit of unitState.enemyHeroes) {
+        if (jmz.IsValidHero(unit) && GetUnitToLocationDistance(unit, vLoc) <= nRadius
+            && !jmz.IsSuspiciousIllusion(unit)) {
+            count += jmz.IsCore(unit) ? 1 : 0.5;
+        }
+    }
+    // The previous function iterated only enemyHeroes; its creep branches
+    // were unreachable. Include the actual visible enemy creep collection.
+    for (const unit of unitState.enemyCreeps) {
         if (jmz.IsValid(unit) && GetUnitToLocationDistance(unit, vLoc) <= nRadius) {
             const name = unit.GetUnitName();
-            if (jmz.IsValidHero(unit) && !jmz.IsSuspiciousIllusion(unit)) {
-                count += jmz.IsCore(unit) ? 1 : 0.5;
-            } else if (string.find(name, "upgraded_mega") !== null) {
+            if (string.find(name, "upgraded_mega") !== null) {
                 count += 0.6;
             } else if (string.find(name, "upgraded") !== null) {
                 count += 0.4;
-            } else if (string.find(name, "siege") !== null && string.find(name, "upgraded") === null) {
+            } else if (string.find(name, "siege") !== null) {
                 count += 0.5;
             } else if (string.find(name, "warlock_golem") !== null || string.find(name, "lone_druid_bear") !== null) {
                 count += 1;
-            } else if (
-                unit.IsCreep() ||
-                unit.IsAncientCreep() ||
-                unit.IsDominated() ||
-                unit.HasModifier("modifier_chen_holy_persuasion") ||
-                unit.HasModifier("modifier_dominated")
-            ) {
+            } else {
                 count += 0.2;
             }
         }
@@ -270,6 +270,56 @@ function WeightedEnemiesAroundLocation(vLoc: Vector, nRadius: number): number {
     count = math.floor(count);
     _cacheEnemyAroundLoc[key] = { t: now, count };
     return count;
+}
+
+// Issue #176: a *visible* enemy creep actually hitting an Ancient/T4
+// is an immediate base threat even without a visible enemy hero.
+// Merely passing by the high ground is NOT enough to call the team home.
+function GetBaseCreepAttacker(ancient: Unit | null): Unit | null {
+    if (!IsValidBuildingTarget(ancient)) return null;
+    const leftT4 = GetTower(nTeam, Tower.Base1);
+    const rightT4 = GetTower(nTeam, Tower.Base2);
+    for (const creep of updateDefendUnitStateCache().enemyCreeps) {
+        if (!jmz.IsValid(creep)
+            || GetUnitToLocationDistance(creep, ancient.GetLocation()) > BASE_THREAT_RADIUS) continue;
+        const target = creep.GetAttackTarget();
+        if (target === ancient || (leftT4 != null && target === leftT4)
+            || (rightT4 != null && target === rightT4)) {
+            return creep;
+        }
+    }
+    return null;
+}
+
+function GetBaseCreepDefender(ancientLoc: Vector): Unit | null {
+    let best: Unit | null = null;
+    let bestDistance = math.huge;
+    for (let i = 1; i <= GetTeamPlayers(nTeam).length; i++) {
+        const member = GetTeamMember(i);
+        if (member && member.IsBot() && jmz.IsValidHero(member) && !member.IsIllusion()) {
+            const distance = GetUnitToLocationDistance(member, ancientLoc);
+            if (distance < bestDistance) {
+                best = member;
+                bestDistance = distance;
+            }
+        }
+    }
+    return best;
+}
+
+// Returns null if ordinary defend logic should continue, otherwise the
+// creep-only emergency result. We select a single bot and one (mid) mode,
+// avoiding a full-team retreat over one creep attacking a T4.
+function GetCreepBaseDefenseDesire(bot: Unit, lane: Lane, ancient: Unit | null): BotModeDesire | null {
+    if (!IsValidBuildingTarget(ancient)
+        || jmz.Utils.CountEnemyHeroesNear(ancient.GetLocation(), 2200) > 0
+        || GetBaseCreepAttacker(ancient) === null) return null;
+    const defender = GetBaseCreepDefender(ancient.GetLocation());
+    if (defender === null) return null;
+    if (defender.GetPlayerID() === bot.GetPlayerID() && lane === Lane.Mid) {
+        return 0.97 as BotModeDesire;
+    }
+    return BotModeDesire.VeryLow;
 }
 
 function GetThreatenedLane(): Lane {
@@ -632,6 +682,18 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     ds.defendLoc = locationState.laneFronts[lane];
     const distanceToDefendLoc = GetUnitToLocationDistance(bot, ds.defendLoc);
 
+    // This must precede the normal "keep pushing" and hero-only early
+    // returns. Otherwise creeps can destroy Ancient while nobody defends.
+    const creepBaseDesire = GetCreepBaseDefenseDesire(bot, lane, ancient);
+    if (creepBaseDesire !== null) {
+        if (creepBaseDesire > 0.9 && ancient) {
+            baseThreatUntil = DotaTime() + BASE_THREAT_HOLD;
+            ds.defendLoc = ancient.GetLocation();
+            (bot as any).laneToDefend = Lane.Mid;
+        }
+        return creepBaseDesire;
+    }
+
     // -- 如果不在当前线上，且等级低，不防守
     const botLevel = bot.GetLevel();
     if (
@@ -956,6 +1018,14 @@ export function DefendThink(bot: Unit, lane: Lane) {
 
         if (jmz.IsValidHero(enemiesNear[0]) && jmz.IsInRange(bot, enemiesNear[0], nSearchRange)) {
             bot.Action_AttackUnit(enemiesNear[0], true);
+            return;
+        }
+
+        // Hit the actual creep threatening the Ancient/T4 instead of
+        // attack-moving randomly within base while it keeps damaging us.
+        const baseCreep = GetBaseCreepAttacker(ancient);
+        if (baseCreep && GetUnitToUnitDistance(bot, baseCreep) <= BASE_THREAT_RADIUS) {
+            bot.Action_AttackUnit(baseCreep, true);
             return;
         }
 
