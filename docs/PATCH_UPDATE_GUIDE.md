@@ -4,6 +4,8 @@ This is a step-by-step runbook for quickly updating the bot scripts when Valve r
 
 **Last updated for:** Patch 7.41a (March 2026)
 
+> **7.42 audit status (2026-11-19):** The repository is **not yet updated for 7.42**. Verified structural differences and remaining uncertainties are recorded in [PATCH_7_42_AUDIT.md](PATCH_7_42_AUDIT.md). Do not change the last-verified version based on an audit alone.
+
 ---
 
 ## How to Check for New Patches
