@@ -819,24 +819,24 @@ function ____exports.PushThink(bot, lane)
     local towerDistanceToFountain = bTowerNearby and GetUnitToLocationDistance(nEnemyTowers[1], vTeamFountain) or 0
     for ____, creep in ipairs(nCreeps) do
         do
-            local __continue120
+            local __continue121
             repeat
                 if not jmz.IsValid(creep) or not jmz.CanBeAttacked(creep) then
-                    __continue120 = true
+                    __continue121 = true
                     break
                 end
                 if jmz.IsTormentor(creep) or jmz.IsRoshan(creep) then
-                    __continue120 = true
+                    __continue121 = true
                     break
                 end
                 if bTowerNearby and GetUnitToLocationDistance(creep, vTeamFountain) >= towerDistanceToFountain then
-                    __continue120 = true
+                    __continue121 = true
                     break
                 end
                 bot:Action_AttackUnit(creep, true)
                 return
             until true
-            if not __continue120 then
+            if not __continue121 then
                 break
             end
         end
