@@ -10,14 +10,14 @@
 
 ## 1. 决策摘要
 
-1. **主线稳定、上游可追踪**：`main` 尽量作为上游镜像，禁止在其上直接实施 OHA-Next 定制开发；`oha-next` 是我们的集成/稳定开发分支。
+1. **主线可控、上游可追踪**：`main` 尽量作为上游镜像，禁止在其上直接实施 OHA-Next 定制开发；`oha-next` 是我们的开发集成分支，不自动等同于稳定发布。
 2. **上游变更：先同步 `main`，再验证后集成到 `oha-next`**。不要自动把上游每次提交直接合进正在测试的 OHA-Next。
 3. **其他 Fork：按具体提交或模块审查，选择性移植**。默认不做跨 Fork 的整仓库合并；规模大的重构重新设计分批引入。
 4. **所有代码改动经过独立分支与 PR**：记录来源、理由、兼容版本、测试和回滚方式。默认由仓库所有者审查后合并，禁止直接自动合并。
 5. **先基线再优化**：正常对局（无额外金币、经验、属性或中立物品作弊）作为强度比较基准；FretBots 增强难度另作评测。
 6. **外部代码的许可与署名是合入条件**：没有确认再分发权限的项目可以阅读、讨论设计，但不得直接复制其受保护的代码。
 
-本规范仅约定仓库协作流程；Dota 2 版本适配的具体数据核验步骤仍以 [PATCH_UPDATE_GUIDE.md](PATCH_UPDATE_GUIDE.md) 为基础，架构定位见 [ARCHITECTURE.md](ARCHITECTURE.md)。
+本规范约定仓库协作与验证流程；需求与验收见 [OHA_NEXT_REQUIREMENTS.md](OHA_NEXT_REQUIREMENTS.md)，目标架构与推进路线见 [OHA_NEXT_ARCHITECTURE.md](OHA_NEXT_ARCHITECTURE.md)，对局数据采集和助手读取见 [MATCH_DATA_PIPELINE.md](MATCH_DATA_PIPELINE.md)。[ARCHITECTURE.md](ARCHITECTURE.md) 保留现有代码地图，Dota 2 版本适配的数据核验步骤仍以 [PATCH_UPDATE_GUIDE.md](PATCH_UPDATE_GUIDE.md) 为基础。
 
 ## 2. 分支与职责
 
@@ -25,7 +25,7 @@
 | --- | --- | --- |
 | `forest0xia/...:main` | 上游原版 OHA | 只读取与跟踪 |
 | `littleredcap/...:main` | 尽可能纯净的上游同步镜像 | 只做上游快进同步；不要直接开发 |
-| `littleredcap/...:oha-next` | 我们的主开发/已验证集成线 | 仅接收审核通过的 PR |
+| `littleredcap/...:oha-next` | 我们的开发集成线 | 仅接收审核通过的 PR；实验状态与稳定发布分开标注 |
 | `fix/*`, `feature/*`, `docs/*` | 单功能修改 | 从 `oha-next` 分出，提交 PR 到 `oha-next` |
 | `integration/upstream-*` | 上游更新集成与冲突处理 | 从 `oha-next` 分出，合并上游镜像后测通再发 PR |
 | `port/<source>-*` | 从其他 Fork 移植 | 从 `oha-next` 分出，记录外部来源提交并单独测试 |
@@ -73,7 +73,7 @@ git pull --ff-only origin oha-next
 git switch -c integration/upstream-YYYYMMDD
 git merge --no-ff origin/main
 
-# 审查冲突、构建、测试、游戏冒烟测试
+# 审查冲突、构建；按第 6 节的变更风险选择离线 / 真实测试
 git diff --check
 npm ci
 npm run build
@@ -83,7 +83,7 @@ git push -u origin integration/upstream-YYYYMMDD
 
 **只创建 PR：** `integration/upstream-YYYYMMDD` → `oha-next`；PR 必须列出上游起止 SHA、冲突处理与验证记录。
 
-- **简单无冲突更新**：走常规自动化检查 + 游戏冒烟测试。
+- **简单无冲突更新**：按第 6 节选择检查；纯文档无需游戏测试，涉及运行行为时补相应离线 / 自动游戏场景。
 - **地图、技能、物品、经济或机器人行为的重大更新**：额外运行对应英雄/模式的回归测试；不通过时先保留上游镜像更新，暂缓 `oha-next` 集成。
 - **上游修复与我们的改造冲突**：以实际测试和代码正确性决定保留/融合/替换，不默认“上游优先”或“我们优先”。
 - **紧急单点修复**：可从上游挑选具体提交到独立 `fix/*` 分支，但随后仍须处理常规同步的重复提交或冲突。
@@ -164,10 +164,12 @@ git push -u origin port/canshuqwp-specific-fix
 
 **开发原则：不要求仓库所有者对每个 PR 亲自进入 Dota 2 打一局。** 维护者负责提供可复现的自动测试和对照数据，人工操作仅保留在重要版本、重大行为变更或自动测试无法解释的异常。
 
+下表描述目标验证体系；当前实际覆盖范围见表后的能力说明，不表示这些检查已全部配置。
+
 | 等级 | 实施位置 | 检查项 | 仓库所有者是否必须操作 |
 | --- | --- | --- | --- |
 | T0：静态检查 | GitHub Actions / 本地 CI | `git diff --check`、Lua 5.1 语法、TypeScript 编译、引用/配置校验 | 否；每 PR 自动运行 |
-| T1：离线行为单测 | Lua 模拟 Bot API、确定性场景 | 目标锁定、技能合法性、伤害估算、模式优先级、装备/技能数据等 | 否；每个功能 PR 应增加对应断言 |
+| T1：离线行为单测 | Lua 模拟 Bot API、确定性场景 | 目标锁定、技能合法性、伤害估算、模式优先级、装备/技能数据等 | 否；验证受影响行为，必要时增加对应断言 |
 | T2：真实自动对局 | **需要另外配置**安装 Dota 2 的本地 Linux/Windows 主机或云端测试机 | AI 自主打完对局、采集日志、GPM/XPM/死亡/行为、A/B 和队伍镜像 | 否；由测试平台自动执行 |
 | T3：人工游戏体验 | 正式发布或特别异常时 | 观察动作抖动、团战合理性、用户体验；可以只复核短场景/录像 | 偶尔需要，非逐 PR 门槛 |
 
@@ -176,7 +178,7 @@ git push -u origin port/canshuqwp-specific-fix
 ### 6.1 哪些情况允许不做人工测试
 
 - 文档、注释、独立构建工具修改：T0 / 链接检查；无需 T2/T3。
-- 纯算法函数或局部修复：T0 + T1 必须通过；优先用少量 T2 场景补充。T2 环境未就绪时可合入**实验/开发**分支，但必须标明“未游戏实测”，禁止直接宣称强度提升或作为正式稳定发布依据。
+- 纯算法函数或局部修复：T0 + T1 必须通过；优先用少量 T2 场景补充。T2 环境未就绪时保留在实验分支 / Draft；所有者审核后可将隔离、默认关闭的实验功能合入开发集成线，必须标明“未游戏实测”。没有隔离开关的核心行为实验继续留在 Draft，禁止作为正式稳定发布依据。
 - 英雄技能、团队策略或地图大改：T0 + T1 + T2 对照测试后再作为已验证改进；T3 由风险/数据异常决定。
 - 正式发布或大版本适配：至少完成 T0、T1、T2，并进行一次短时 T3 人工抽检；无需让用户亲自反复打数十局。
 
@@ -184,11 +186,13 @@ git push -u origin port/canshuqwp-specific-fix
 
 优先调研 [dragonghy/dota2bot](https://github.com/dragonghy/dota2bot) 的 `tests/` 和 `tools/batch_test/`。其代码包含 `lua5.1 tests/run_tests.lua`、`run_batch.sh`、日志解析、A/B 对照和按需云测试文档，适合作为**工程参考**。
 
-但该项目自己的 [批量测试说明](https://github.com/dragonghy/dota2bot/blob/main/tools/batch_test/README.md) 明确注明**首轮日志解析格式需要真实运行校准**。在完成 1 局真实验证、确认启动可靠、结果解析完整、脚本确实加载、费用/资源限制可控之前，不能宣称该方案已经实现可靠的无人值守批量测试。我们当前不直接整库移植其方案。
+该项目的 [批量测试说明](https://github.com/dragonghy/dota2bot/blob/main/tools/batch_test/README.md) 仍标注首跑待校准，但当前 [parse_log.py](https://github.com/dragonghy/dota2bot/blob/main/tools/batch_test/parse_log.py) 说明声称已用 2026-07-19 的真实完赛日志校准；两处状态不同步。其 [A/B 构建工具](https://github.com/dragonghy/dota2bot/blob/main/tools/batch_test/make_ab_build.py) 仍列有 VM / 缓存隔离的待验证假设。可参考已有实现与经验，**我方环境尚未验证**，也没有移植它的整套方案。
 
-T2 任务执行需提供：版本 SHA、游戏版本、双方阵容和阵营、作弊配置、随机种子、启动/结束状态、胜负、各英雄指标、CPU/耗时、错误日志和原始日志位置；错误或日志缺失必须使测试失败，不得当作成功对局。
+首场闭环需至少 1 局身份匹配的有效完赛，取得可信胜负、时长及必需数据，并由助手实际读回。超时诊断包不能替代成功路径验收。协议、状态模型、上传与读取详见 [MATCH_DATA_PIPELINE.md](MATCH_DATA_PIPELINE.md)。
 
-对比时使用相同条件交换阵营，避免把天辉/夜魇优势或英雄选取差异误判为 AI 强度提升。先小规模冒烟校准，再扩展批量测试。
+T2 任务需提供版本 / 构建身份、游戏构建、双方阵容与阵营、关键设置的请求值及生效证据、随机种子控制的支持状态、启动 / 结束状态、结果来源、资源消耗和原始日志位置。区分执行状态、数据有效性与评估结论；必要身份 / 结果缺失不能当成功对局，可选指标缺失标 unknown，不造数也不一概否定无关指标。
+
+对比前先验证双方版本隔离，再使用匹配条件并交换阵营。两个版本分别自博弈的天辉胜率不能证明候选更强；所有尝试与排除原因都须报告。先小规模校准，再扩展批量测试。
 
 ### 6.3 每个 PR 的填写内容
 
@@ -207,6 +211,7 @@ T2 任务执行需提供：版本 SHA、游戏版本、双方阵容和阵营、�
 | 2026-11-19 | 上游 OHA | 初始 `cb814c6c8dc51ed08045d6efd9f4a48147992711` | — | `main` / `oha-next` 基线 |
 | 2026-11-19 | OHA-Next 自研 | 目标锁定和 Roshan 队伍 DPS 修复 | [#1](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/1) | Draft，待游戏验证，**未合并** |
 | 2026-11-19 | 社区 Fork 候选 | 测试工具、行为修复、对线日志等，见第 5 节 | — | 调研中，**未移植** |
+| 2026-11-19 | OHA-Next 设计 | 目标架构、需求 ID、对局采集及助手读取协议 | [#2](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/2) | 设计文档；真实采集 / 回传**未实现** |
 
 每次引入一项外部功能，应在本表追加：日期、源仓库 + commit、对应 PR、测试数据位置、决策（`planned` / `rejected` / `in PR` / `merged` / `reverted`）。不得把“计划研究”记成“已经移植”。
 

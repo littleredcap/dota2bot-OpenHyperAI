@@ -8,6 +8,10 @@ This is the **dota2bot-OpenHyperAI** project -- Lua bot scripts for Dota 2 that 
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** -- Complete codebase architecture, file map, naming conventions, all systems explained
 - **[docs/PATCH_UPDATE_GUIDE.md](docs/PATCH_UPDATE_GUIDE.md)** -- Step-by-step runbook for updating when a new Dota 2 patch drops
+- **[docs/OHA_NEXT_ARCHITECTURE.md](docs/OHA_NEXT_ARCHITECTURE.md)** -- OHA-Next target architecture and incremental delivery plan; separate from the existing code map
+- **[docs/OHA_NEXT_REQUIREMENTS.md](docs/OHA_NEXT_REQUIREMENTS.md)** -- User requirements, engineering decisions, acceptance criteria and unresolved choices
+- **[docs/MATCH_DATA_PIPELINE.md](docs/MATCH_DATA_PIPELINE.md)** -- Planned telemetry, data validity, upload and assistant access
+- **[docs/UPSTREAM_AND_FORK_WORKFLOW.md](docs/UPSTREAM_AND_FORK_WORKFLOW.md)** -- Branch roles, provenance and risk-based T0–T3 verification
 
 **Read these docs FIRST before making any changes.** They contain everything needed to make targeted updates without scanning the entire repo.
 
@@ -57,4 +61,8 @@ When user says "update for patch X.XX" or provides patch notes:
 - **Use `sAbilityList[N]` references** when possible -- resilient to ability renames
 - **Always update BOTH neutral item files** (Buff/ AND FretBots/)
 - **Verify on Liquipedia** before trusting patch note summaries about ability names
-- **Test in-game** after changes -- some things can only be verified at runtime
+- **Verify according to change risk** using the OHA-Next T0–T3 policy. Documentation and isolated tool changes do not require a game. Engine-dependent behavior claims need real game evidence, preferably automated; do not require the owner to manually play every PR. Record missing real-game coverage explicitly, and never equate mock success with stronger gameplay.
+
+## OHA-Next Contribution Boundary
+
+Keep `main` as the upstream mirror and use small PRs targeting `oha-next`; merges remain owner-reviewed. `oha-next` is a development integration branch, not an automatic stable-release claim. Read the requirement IDs and architecture boundary relevant to the change, preserve TS/generated-Lua ownership, and update implementation status only with evidence. Match runners, telemetry and artifacts described as planned are not already configured.
