@@ -137,6 +137,8 @@ if bot.edictPushing == nil then bot.edictPushing = false end
 function X.SkillsComplement()
     if J.CanNotUseAbility(bot) then return end
 
+    -- 7.42: Scepter-granted Nihilism may appear after the hero script loads.
+    Nihilism = bot:GetAbilityByName('leshrac_greater_lightning_storm')
     botTarget = J.GetProperTarget(bot)
     if not bot:HasModifier('modifier_leshrac_diabolic_edict')
     then
@@ -941,30 +943,34 @@ function X.ConsiderPulseNova()
 end
 
 function X.ConsiderNihilism()
-    if not Nihilism:IsTrained()
+    -- Patch 7.42: Nihilism is an AoE DISARM + repeated basic dispel.
+    -- It no longer makes Leshrac ethereal, so the old "fatal projectile"
+    -- self-save trigger was incorrect. The ability is Scepter-granted.
+    if Nihilism == nil
+    or not Nihilism:IsTrained()
     or not Nihilism:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE
     end
 
     local nRadius = Nihilism:GetSpecialValueInt('radius')
+    if nRadius == nil or nRadius <= 0 then
+        return BOT_ACTION_DESIRE_NONE
+    end
 
-    if J.IsWithoutTarget(bot)
-    and J.GetAttackProjectileDamageByRange(bot, 1200) >= bot:GetHealth()
-	then
-		return BOT_ACTION_DESIRE_HIGH
-	end
-
-	if J.IsRetreating(bot)
-	then
-		local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), nRadius)
-
-		if bot:WasRecentlyDamagedByAnyHero(2)
-        and nInRangeEnemy ~= nil and #nInRangeEnemy >= 1
-		then
-			return BOT_ACTION_DESIRE_HIGH
-		end
-	end
+    if J.IsRetreating(bot) and bot:WasRecentlyDamagedByAnyHero(2) then
+        local nearbyEnemies = J.GetEnemiesNearLoc(bot:GetLocation(), nRadius)
+        for _, enemy in pairs(nearbyEnemies or {}) do
+            -- Repeated dispel on the enemy can also remove allied disables;
+            -- avoid wasting this defensive cast on disabled/immune targets.
+            if J.IsValidHero(enemy)
+            and J.CanCastOnNonMagicImmune(enemy)
+            and not J.IsDisabled(enemy)
+            then
+                return BOT_ACTION_DESIRE_HIGH
+            end
+        end
+    end
 
     return BOT_ACTION_DESIRE_NONE
 end
