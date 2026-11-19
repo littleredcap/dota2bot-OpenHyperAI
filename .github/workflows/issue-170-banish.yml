@@ -27,5 +27,9 @@ jobs:
           luac5.1 -p bots/BotLib/hero_shadow_demon.lua
           luac5.1 -p bots/ability_item_usage_generic.lua
           luac5.1 -p tests/test_issue170_banish_focus.lua
-      - name: Verify friendly damage banish guard
-        run: lua5.1 tests/test_issue170_banish_focus.lua
+          luac5.1 -p bots/FunLib/oha_decision_trace.lua
+          luac5.1 -p tests/test_decision_trace.lua
+      - name: Verify banish and cooldown diagnostic regression
+        run: |
+          lua5.1 tests/test_issue170_banish_focus.lua
+          lua5.1 tests/test_decision_trace.lua

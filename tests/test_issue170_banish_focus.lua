@@ -6,7 +6,10 @@ local function actor(id, team, opts)
     opts=opts or {}
     return {
         hero = opts.hero ~= false,
-        id=id, team=team,
+        id=id, team=team, x=opts.x or 50,
+        GetUnitName=function() return "npc_dota_hero_test" end,
+        GetAttackRange=function() return opts.attackRange or 200 end,
+        IsDisarmed=function() return opts.disarmed == true end,
         GetPlayerID=function(self) return self.id end,
         GetTeam=function(self) return self.team end,
         GetLocation=function() return {x=50,y=50} end,
@@ -23,7 +26,7 @@ local function scenario(o)
     local enemy=actor(9,3,{visible=o.visible,channeling=o.channeling})
     local mates={}
     for i, member in ipairs(o.mates or {}) do
-        mates[#mates+1]=actor(10+i,2,{attackTarget=member.focus and enemy or nil,illusion=member.illusion})
+        mates[#mates+1]=actor(10+i,2,{attackTarget=member.focus and enemy or nil,illusion=member.illusion,x=member.chasing and 850 or 80,disarmed=member.disarmed})
     end
     if o.addSelf then mates[#mates+1]=bot end
     local J={
@@ -34,14 +37,15 @@ local function scenario(o)
             return mates
         end,
         GetHP=function() return o.enemyHP or 1 end,
-        IsDisabled=function() return o.disabled == true end
+        IsDisabled=function() return o.disabled == true end,
+        IsInRange=function(a,b,r) return math.abs(a.x-b.x) <= r end
     }
     return bot,enemy,J
 end
 
-local function check(o)
+local function check(o, ctx)
     local bot,enemy,J=scenario(o)
-    return Banish.ShouldHoldEnemyBanish(bot,enemy,J)
+    return Banish.ShouldHoldEnemyBanish(bot,enemy,J,ctx)
 end
 
 local tests={}
@@ -90,6 +94,31 @@ test("ignore illusory attackers and caster itself", function()
     eq(check({addSelf=true,mates={{focus=true}},enemyHP=0.98}),false,"Caster not counted")
 end)
 
+test("chasing outside attack range must not count as actual DPS", function()
+    eq(check({mates={{focus=true,chasing=true},{focus=true,chasing=true}},enemyHP=0.2},
+        {intent="STOP_ESCAPE"}),false,"Do not abandon catch due to pursuers")
+end)
+
+test("one active attacker still prevents saving low HP fleeing enemy", function()
+    eq(check({mates={{focus=true}},enemyHP=0.2},{intent="STOP_ESCAPE"}),true,"Preserve real DPS")
+end)
+
+test("defensive peel can protect a fleeing ally despite friendly focus", function()
+    eq(check({mates={{focus=true},{focus=true}}},{intent="PEEL"}),false,"Emergency peel")
+end)
+
+test("Invoker combo remains protected from allied focus", function()
+    eq(check({mates={{focus=true},{focus=true}}},{intent="SETUP_COMBO"}),true,"Prevent cancelling kill")
+end)
+
+test("bogus INTERRUPT label is not a bypass", function()
+    eq(check({mates={{focus=true},{focus=true}}},{intent="INTERRUPT"}),true,"Require real channel")
+end)
+
+test("disarmed attackers do not suppress catch", function()
+    eq(check({mates={{focus=true,disarmed=true},{focus=true,disarmed=true}},enemyHP=0.2},{intent="STOP_ESCAPE"}),false,"Cannot damage")
+end)
+
 test("cast sites wire OD, SD and Eul chase to the common guard", function()
     local function read(path)
         local f=assert(io.open(path,"rb"),"Missing "..path)
@@ -105,8 +134,16 @@ test("cast sites wire OD, SD and Eul chase to the common guard", function()
         assert(code:find("Banish.ShouldHoldEnemyBanish(",1,true),"No cast guard: "..p)
     end
     local item=read("bots/ability_item_usage_generic.lua")
-    assert(item:find("and not Banish.ShouldHoldEnemyBanish(bot, botTarget, J)",1,true),
-        "Eul chase branch must account for allied focus")
+    assert(item:find('intent = "STOP_ESCAPE", action = "eul_escape"',1,true),
+        "Eul chase branch must provide explicit intent")
+    assert(item:find('intent = "SETUP_COMBO", action = "eul_combo"',1,true),
+        "Invoker combo must avoid accidental denial")
+    assert(item:find('Trace.Observe(bot)',1,true),
+        "Ability and item status must be observed when no cast was proposed")
+    local od = read("bots/BotLib/hero_obsidian_destroyer.lua")
+    local sd = read("bots/BotLib/hero_shadow_demon.lua")
+    assert(od:find('"STOP_ESCAPE"',1,true) and od:find('"PEEL"',1,true))
+    assert(sd:find('"PEEL"',1,true))
 end)
 
 local failed=0
