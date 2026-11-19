@@ -20,7 +20,7 @@ return function(state, hp, enemies)
         GetHP = function() return hp end,
         IsDefending = function() return state.defending == true end
     }
-    local function IsOurBaseUnderCreepAttack() return state.baseUnderCreepAttack == true end
+    local function IsCriticalBaseCreepAttack() return state.baseUnderCreepAttack == true end
     local nModeDesire = state.activeModeDesire or 0
     return ]] .. expr .. [[
 
@@ -67,7 +67,7 @@ end)
 test("before the push timer, do not force an endgame push",function()
     expect(predicate(state({currentTime=300}),0.9,{}),false)
 end)
-test("base creep attacks cancel the optimistic closing window",function()
+test("only a critical base creep attack cancels the closing window",function()
     expect(predicate(state({baseUnderCreepAttack=true}),0.85,{}),false)
 end)
 test("active high-priority defense is not overruled by numbers",function()
@@ -104,7 +104,7 @@ test("only selected lane gets closing-window priority",function()
     assert(lua:find("return safeClosingWindow and math.max(pushDesire, 0.88) or pushDesire",1,true))
     assert(ts:find("if (decisivePushWindow && !isCurrentLanePushLane)",1,true))
     assert(ts:find("(!safeClosingWindow && alliesHere.length < 3)",1,true))
-    assert(ts:find("!IsOurBaseUnderCreepAttack(gameState.ourAncient)",1,true))
+    assert(ts:find("!IsCriticalBaseCreepAttack(gameState.ourAncient)",1,true))
 end)
 local failed = 0
 for _, t in ipairs(tests) do

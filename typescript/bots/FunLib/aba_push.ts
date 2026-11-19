@@ -224,22 +224,27 @@ const BASE_ANC_RADIUS = 2200;
 type LaneState = { target?: Unit | null; lockUntil?: number };
 const ObjectiveState: Record<number, Partial<Record<Lane, LaneState>>> = {};
 
-// A purely observed Ancient/T4 creep attack takes precedence over an endgame
-// push window. Enemy buyback/cooldowns are hidden and NOT considered here.
-function IsOurBaseUnderCreepAttack(ancient: Unit | null): boolean {
+// Only CRITICAL Ancient/T4 creep pressure cancels the team-wide closing push.
+// A single creep is handled by #176's defender; other bots keep pushing.
+// Enemy buyback/cooldowns are hidden and never treated as known here.
+function IsCriticalBaseCreepAttack(ancient: Unit | null): boolean {
     if (ancient === null) return false;
     const base1 = GetTower(GetTeam(), Tower.Base1);
     const base2 = GetTower(GetTeam(), Tower.Base2);
+    let attackers = 0;
     for (const creep of updateUnitStateCache().enemyCreeps) {
         if (jmz.IsValid(creep)) {
             const target = creep.GetAttackTarget();
             if (target === ancient || (base1 !== null && target === base1)
                 || (base2 !== null && target === base2)) {
-                return true;
+                attackers++;
+                // One lane creep is handled by #176's assigned defender;
+                // only an actual wave should stop everyone else pushing.
+                if (attackers >= 4) return true;
             }
         }
     }
-    return false;
+    return attackers > 0 && ancient.GetHealth() / math.max(ancient.GetMaxHealth(), 1) <= 0.45;
 }
 
 /* -----------------------------------------------------------------------------
@@ -308,7 +313,7 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         jmz.GetHP(bot) >= 0.6 &&
         enemiesHere.length === 0 &&
         !(jmz.IsDefending(bot) && nModeDesire >= 0.8) &&
-        !IsOurBaseUnderCreepAttack(gameState.ourAncient);
+        !IsCriticalBaseCreepAttack(gameState.ourAncient);
 
     // --- Strong base-defense gate for push ---
     const team = gameState.team;

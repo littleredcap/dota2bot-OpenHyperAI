@@ -23,7 +23,7 @@ local function __TS__StringIncludes(self, searchString, position)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local updateGameStateCache, updateLocationStateCache, updateUnitStateCache, IsOurBaseUnderCreepAttack, presence_adjust, pingTimeDelta, StartToPushTime, BOT_MODE_DESIRE_EXTRA_LOW, hEnemyAncient, PUSH_CACHE_TTL, gameStateCache, locationStateCache, unitStateCache, BASE_ANC_RADIUS
+local updateGameStateCache, updateLocationStateCache, updateUnitStateCache, IsCriticalBaseCreepAttack, presence_adjust, pingTimeDelta, StartToPushTime, BOT_MODE_DESIRE_EXTRA_LOW, hEnemyAncient, PUSH_CACHE_TTL, gameStateCache, locationStateCache, unitStateCache, BASE_ANC_RADIUS
 local jmz = require(GetScriptDirectory().."/FunLib/jmz_func")
 local ____dota = require(GetScriptDirectory().."/ts_libs/dota/index")
 local Barracks = ____dota.Barracks
@@ -124,7 +124,7 @@ function updateUnitStateCache()
     }
     return unitStateCache
 end
-function IsOurBaseUnderCreepAttack(ancient)
+function IsCriticalBaseCreepAttack(ancient)
     if ancient == nil then
         return false
     end
@@ -136,15 +136,19 @@ function IsOurBaseUnderCreepAttack(ancient)
         GetTeam(),
         Tower.Base2
     )
+    local attackers = 0
     for ____, creep in ipairs(updateUnitStateCache().enemyCreeps) do
         if jmz.IsValid(creep) then
             local target = creep:GetAttackTarget()
             if target == ancient or base1 ~= nil and target == base1 or base2 ~= nil and target == base2 then
-                return true
+                attackers = attackers + 1
+                if attackers >= 4 then
+                    return true
+                end
             end
         end
     end
-    return false
+    return attackers > 0 and ancient:GetHealth() / math.max(ancient:GetMaxHealth(), 1) <= 0.45
 end
 function ____exports.GetPushDesireHelper(bot, lane)
     if bot.laneToPush == nil then
@@ -168,7 +172,7 @@ function ____exports.GetPushDesireHelper(bot, lane)
         bot:GetLocation(),
         1600
     )
-    local decisivePushWindow = gameState.currentTime >= StartToPushTime and gameState.aliveEnemyCount <= 2 and gameState.aliveAllyCount >= 3 and gameState.aliveAllyCoreCount >= 1 and gameState.aliveAllyCount >= gameState.aliveEnemyCount + 2 and jmz.GetHP(bot) >= 0.6 and #enemiesHere == 0 and not (jmz.IsDefending(bot) and nModeDesire >= 0.8) and not IsOurBaseUnderCreepAttack(gameState.ourAncient)
+    local decisivePushWindow = gameState.currentTime >= StartToPushTime and gameState.aliveEnemyCount <= 2 and gameState.aliveAllyCount >= 3 and gameState.aliveAllyCoreCount >= 1 and gameState.aliveAllyCount >= gameState.aliveEnemyCount + 2 and jmz.GetHP(bot) >= 0.6 and #enemiesHere == 0 and not (jmz.IsDefending(bot) and nModeDesire >= 0.8) and not IsCriticalBaseCreepAttack(gameState.ourAncient)
     local team = gameState.team
     local ourAncient = gameState.ourAncient
     local enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(
