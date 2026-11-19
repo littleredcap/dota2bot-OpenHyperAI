@@ -33,6 +33,7 @@ jobs:
       - name: Validate generated Lua and run issue regression
         run: |
           luac5.1 -p bots/FunLib/aba_defend.lua
+          luac5.1 -p bots/mode_defend_tower_mid_generic.lua
           luac5.1 -p tests/test_issue176_base_creeps.lua
           lua5.1 tests/test_issue176_base_creeps.lua
       - name: Verify generated Lua matches TypeScript source

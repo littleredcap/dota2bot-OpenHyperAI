@@ -319,7 +319,8 @@ function GetCreepBaseDefenseDesire(bot: Unit, lane: Lane, ancient: Unit | null):
     if (defender.GetPlayerID() === bot.GetPlayerID() && lane === Lane.Mid) {
         return 0.97 as BotModeDesire;
     }
-    return BotModeDesire.VeryLow;
+    // Other bots must still evaluate ordinary defense of other lanes.
+    return null;
 }
 
 function GetThreatenedLane(): Lane {
@@ -687,7 +688,9 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     const creepBaseDesire = GetCreepBaseDefenseDesire(bot, lane, ancient);
     if (creepBaseDesire !== null) {
         if (creepBaseDesire > 0.9 && ancient) {
-            baseThreatUntil = DotaTime() + BASE_THREAT_HOLD;
+            // Creep-only emergency is per defender, not a global base leash.
+            // Global baseThreatUntil is reserved for the ordinary hero-threat path.
+            (bot as any)._ohaCreepDefenseUntil = DotaTime() + BASE_THREAT_HOLD;
             ds.defendLoc = ancient.GetLocation();
             (bot as any).laneToDefend = Lane.Mid;
         }
@@ -986,7 +989,7 @@ export function DefendThink(bot: Unit, lane: Lane) {
     }
 
     // Base-defense leash: anchor near Ancient, don't drift out
-    if (IsBaseThreatActive()) {
+    if (IsBaseThreatActive() || ((bot as any)._ohaCreepDefenseUntil || -1) > now) {
         const ancient = GetAncient(nTeam);
         const anchor = jmz.AdjustLocationWithOffsetTowardsFountain(ancient.GetLocation(), 200);
 

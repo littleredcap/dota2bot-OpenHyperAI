@@ -452,7 +452,7 @@ function GetCreepBaseDefenseDesire(bot, lane, ancient)
     if defender:GetPlayerID() == bot:GetPlayerID() and lane == Lane.Mid then
         return 0.97
     end
-    return BotModeDesire.VeryLow
+    return nil
 end
 function GetThreatenedLane()
     local lanes = {Lane.Top, Lane.Mid, Lane.Bot}
@@ -965,7 +965,7 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     local creepBaseDesire = GetCreepBaseDefenseDesire(bot, lane, ancient)
     if creepBaseDesire ~= nil then
         if creepBaseDesire > 0.9 and ancient then
-            baseThreatUntil = DotaTime() + BASE_THREAT_HOLD
+            bot._ohaCreepDefenseUntil = DotaTime() + BASE_THREAT_HOLD
             ds.defendLoc = ancient:GetLocation()
             bot.laneToDefend = Lane.Mid
         end
@@ -1338,7 +1338,7 @@ function ____exports.DefendThink(bot, lane)
         ))
         return
     end
-    if IsBaseThreatActive() then
+    if IsBaseThreatActive() or (bot._ohaCreepDefenseUntil or -1) > now then
         local ancient = GetAncient(nTeam)
         local anchor = jmz.AdjustLocationWithOffsetTowardsFountain(
             ancient:GetLocation(),

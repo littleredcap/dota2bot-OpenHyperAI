@@ -133,8 +133,8 @@ test("visible creep attacking Ancient triggers one defender", function()
     unit.GetAttackTarget=function() return h.ancient end
     eq(h.attacker(),unit,"Actual Ancient attacker")
     eq(h.desire(a,h.mid),0.97,"Nearest bot must urgently defend")
-    eq(h.desire(a,h.top),h.veryLow,"Do not activate three lanes")
-    eq(h.desire(b,h.mid),h.veryLow,"Other hero should not abandon current plan")
+    eq(h.desire(a,h.top),nil,"Other lane must fall through to normal defense")
+    eq(h.desire(b,h.mid),nil,"Other hero keeps evaluating its normal mode")
 end)
 
 test("visible T4 attacker also triggers without enemy hero", function()
@@ -172,7 +172,7 @@ test("closest available bot is selected, not a dead or human hero", function()
     local g=create({members={dead,human,close,far},creeps={unit}})
     unit.GetAttackTarget=function() return g.ancient end
     eq(g.desire(close),0.97,"Nearest eligible bot")
-    eq(g.desire(far),g.veryLow,"Other bots not recalled")
+    eq(g.desire(far),nil,"Other bots retain ordinary defense options")
 end)
 
 test("enemy heroes at base use existing teamfight logic instead", function()
@@ -188,6 +188,30 @@ test("weighted threat includes real creep collection, not only heroes", function
     for i=1,6 do wave[#wave+1]=creep(i*80,nil) end
     local g=create({creeps=wave})
     eq(g.weighted(),1,"Six ordinary creeps contribute to base pressure")
+end)
+
+test("unselected defender does not suppress unrelated lane defense",function()
+    local near=bot(1,300)
+    local other=bot(2,900)
+    local c=creep(150,nil)
+    local g=create({members={near,other},creeps={c}})
+    c.GetAttackTarget=function() return g.ancient end
+    eq(g.desire(near,g.mid),0.97,"One urgent defender")
+    eq(g.desire(other,g.top),nil,"Other bot should use ordinary top-lane defense")
+    eq(g.desire(other,g.mid),nil,"Other bot should use ordinary mid-lane defense")
+end)
+
+test("creep emergency cannot set a GLOBAL leash for all defending bots",function()
+    local ts=read("typescript/bots/FunLib/aba_defend.ts")
+    local generated=read("bots/FunLib/aba_defend.lua")
+    assert(ts:find("(bot as any)._ohaCreepDefenseUntil = DotaTime() + BASE_THREAT_HOLD;",1,true))
+    assert(generated:find("bot._ohaCreepDefenseUntil = DotaTime() + BASE_THREAT_HOLD",1,true))
+    assert(ts:find("IsBaseThreatActive() || ((bot as any)._ohaCreepDefenseUntil || -1) > now",1,true))
+    assert(generated:find("IsBaseThreatActive() or (bot._ohaCreepDefenseUntil or -1) > now",1,true))
+    local begin=assert(ts:find("const creepBaseDesire = GetCreepBaseDefenseDesire",1,true))
+    local finish=assert(ts:find("return creepBaseDesire",begin,true))
+    local snippet=ts:sub(begin,finish)
+    assert(not snippet:find("baseThreatUntil = DotaTime()",1,true))
 end)
 
 test("generated mode checks emergency before team-pushing and hero-only early exits", function()
