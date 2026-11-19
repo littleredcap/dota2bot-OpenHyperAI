@@ -98,6 +98,7 @@ This project uses [Claude Code](https://claude.ai/claude-code) for AI-assisted d
 | [docs/OHA_NEXT_REQUIREMENTS.md](docs/OHA_NEXT_REQUIREMENTS.md) | OHA-Next requirements, acceptance criteria, implementation status and open decisions |
 | [docs/OHA_NEXT_STRENGTH_OBJECTIVE.md](docs/OHA_NEXT_STRENGTH_OBJECTIVE.md) | User-confirmed goal A: strongest fair-play AI, win-rate criteria, constraints and evidence standards |
 | [docs/GAMEPLAY_RESEARCH_AND_IDEAS.md](docs/GAMEPLAY_RESEARCH_AND_IDEAS.md) | Patch/community research, strategy ideas, Meepo Shard decision costs and Roshan contest candidates |
+| [docs/GAMEPLAY_STRATEGY_CATALOG.md](docs/GAMEPLAY_STRATEGY_CATALOG.md) | Whole-match tactics: draft, lane, pull/farm, smoke, teamfight, objectives, high ground; guide maturity and hero variations |
 | [docs/CLIENT_VALIDATION_BACKLOG.md](docs/CLIENT_VALIDATION_BACKLOG.md) | Client-only verification registry for open PRs and gameplay strategy hypotheses |
 | [docs/MATCH_DATA_PIPELINE.md](docs/MATCH_DATA_PIPELINE.md) | Planned match telemetry, validation, evidence bundles and assistant access |
 | [docs/PATCH_UPDATE_GUIDE.md](docs/PATCH_UPDATE_GUIDE.md) | Step-by-step runbook for updating when a new Dota 2 patch drops |
