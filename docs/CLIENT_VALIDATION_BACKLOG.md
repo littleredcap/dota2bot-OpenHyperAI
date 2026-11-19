@@ -27,6 +27,8 @@
 | VT-008 / research | [#3 7.42 中立装备审计](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/3) | 标准对局与 FretBots/Buff 增强对局分开：新版四阶选项、实际 `item_*` 名称、轮出物品是否能 `CreateItem`，普通公平模式不获得额外装备 | 静态审计；**blocked_no_client** |
 | VT-009 / research | [#3 7.42 地图/Tormentor](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/3) | 核对 15:00 首次刷新、Greater Horn of Battle 的内部名称/使用方式，以及 Twin Gates 移动后路径和旧坐标；不可用旧地图快照冒充新版本 | 官方 7.42 规则；**blocked_no_client** |
 
+| VT-014 / release_gate | [#4 默认 Meepo 出装](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/4) + [#5 实验魔晶](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/5) | **7.42** 各职责默认购买链是否不再在散失后优先买 Shard，并仍能继续购买后续合法物品；自定义角色出装是否不受阻；若通过游戏奖励被动获得 Shard，策略关闭时不会误发无效命令。未来只有经过 VT-001～004 的能力/收益验证后才重新评估主动购买时机 | 静态移除默认购买路径；Lua 5.1 回归在 #4/#5 分支执行；**blocked_no_client** |
+
 ## 3. 原有逻辑 PR 与未来策略场景
 
 | ID / 重要性 | PR / 需求 | 场景与通过条件 | 当前状态 |
