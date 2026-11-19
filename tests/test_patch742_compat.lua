@@ -39,7 +39,7 @@ end)
 
 test("Meepo default builds do not spend gold on the unvalidated 7.42 Shard", function()
     -- This checks active source references, not comments or user overrides.
-    local code = meepoSource:gsub("%-%-[^\\r\\n]*", "")
+    local code = meepoSource:gsub("%-%-[^\r\n]*", "")
     assert(not code:find('"item_aghanims_shard"', 1, true),
         "Meepo default buy lists still purchase unvalidated Shard")
 end)
