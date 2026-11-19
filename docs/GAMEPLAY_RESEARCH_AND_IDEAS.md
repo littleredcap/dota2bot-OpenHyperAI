@@ -64,7 +64,7 @@ on pickup: re-check target/vision/position; fling or choose verified safe fallba
 - **没有**验证 `meepo_divided_we_stand`（KV: PASSIVE）在 Bot API 下是否可施放；7 个 Mock 只是由模拟对象按照预期响应；
 - **不能**依据 13 个离线回归通过就宣布“好用、值得启用、提高胜率”。
 
-因此 #5 继续 Draft；在验证动作链并补足最低限度机会成本规则前，**不建议开启为公平强度的默认稳定行为**。先把 [VT-001～VT-004](CLIENT_VALIDATION_BACKLOG.md) 标为 release gate。完善策略后新增独立的局部负面场景用例。
+因此 #5 继续 Draft；已在 [PR #5 的实验代码](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/5) 加入 **默认关闭的 `ENABLE_EXPERIMENTAL_SHARD_AI = false`**，只有显式修改实验开关且通过后续验证才允许尝试。当前 Mock 可显式开启该开关验证候选分支，但不等于游戏已启用。动作链和机会成本规则未验证前，**不建议开启为公平强度的默认稳定行为**。[VT-001～VT-004](CLIENT_VALIDATION_BACKLOG.md) 仍为 release gate。完善策略后新增独立的局部负面场景用例。
 
 ## 3. 实例二：敌人打 Roshan，AI 要不要过去抢？
 
