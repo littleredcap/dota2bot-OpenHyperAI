@@ -2,7 +2,7 @@
 
 > 2026-11-19 建立。用户提出：AI 判断不能只看技能是否可用；希望我们主动从高手攻略、补丁、职业比赛思路、社区讨论中**发现用户未必主动提到的策略机会**。  
 > **属性：研究/需求候选，不是已证实 Bug、已实现算法、已实测收益或监控系统。**  
-> 关联：[强度目标 A](OHA_NEXT_STRENGTH_OBJECTIVE.md) · [需求与 F 类](OHA_NEXT_REQUIREMENTS.md) · [客户端待验证项](CLIENT_VALIDATION_BACKLOG.md)  
+> 关联：[强度目标 A](OHA_NEXT_STRENGTH_OBJECTIVE.md) · [需求与 F 类](OHA_NEXT_REQUIREMENTS.md) · [客户端待验证项](CLIENT_VALIDATION_BACKLOG.md) · [整局策略图谱与成熟度](GAMEPLAY_STRATEGY_CATALOG.md)  
 > 当前不自动后台抓取社区，不启动客户端对局/故障监控；研究在用户请求、新补丁或关联 PR 开发时主动执行。
 
 ## 1. 我们到底要研究什么
@@ -17,6 +17,14 @@
 4. **效果验证**：先局部复现、负例测试，再用公平对局比较是否真正更容易赢。没有实战验证不得宣称更强。
 
 禁止把职业观战中的全图信息、赛后录像真值直接输入游戏内 Bot；**侦察、视野和推断**必须受局内合法信息限制。
+
+### 1.1 从开局到结束的系统化策略发现
+
+用户已明确要求：不能等待他根据个人对局经验提出全部战术名称。除了本文件的 IDEA 候选，还应按**选人/阵容针对 → 分路与对线 → 拉野/堆野/刷野 → 支援开雾与抓人 → 团战 → Roshan/Tormentor → 带线/防守 → 推高地/破路/终结**，主动盘点通用、英雄角色专属和团队协作打法。完整矩阵与 R（攻略成熟度）/I（代码覆盖）/W（实战收益）三维状态见 [GAMEPLAY_STRATEGY_CATALOG.md](GAMEPLAY_STRATEGY_CATALOG.md)。
+
+先研究已有可靠攻略与同版本复盘中的**条件、机会成本和失败案例**，而不是给每个技能堆固定“有目标就施法”的判断。刚重做、社区经验不足或引擎 API 未验证的策略先记候选/保留 Draft；不为此提前购买主要依赖该主动技能的昂贵装备。此门槛只约束 OHA-Next 默认决策，不代表高水平玩家不该尝试新玩法。
+
+**触发时机**：新补丁、某类功能开发、用户询问或需要更新策略时检索新资料；不宣称已经配置后台自动监视比赛或论坛。
 
 ## 2. 实例一：Meepo 7.42 魔晶的判断不是“有兵有敌就扔”
 
@@ -65,6 +73,8 @@ on pickup: re-check target/vision/position; fling or choose verified safe fallba
 - **不能**依据 13 个离线回归通过就宣布“好用、值得启用、提高胜率”。
 
 因此 #5 继续 Draft；已在 [PR #5 的实验代码](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/5) 加入 **默认关闭的 `ENABLE_EXPERIMENTAL_SHARD_AI = false`**，只有显式修改实验开关且通过后续验证才允许尝试。当前 Mock 可显式开启该开关验证候选分支，但不等于游戏已启用。动作链和机会成本规则未验证前，**不建议开启为公平强度的默认稳定行为**。[VT-001～VT-004](CLIENT_VALIDATION_BACKLOG.md) 仍为 release gate。完善策略后新增独立的局部负面场景用例。
+
+**购买策略修订（2026-11-19）**：当前默认出装原本在散失之后、Blink 之前购买 `item_aghanims_shard`。由于新版本的主动拾取/Fling 仍未验证、AI 又默认关闭，默认早购缺乏可用的能力依据。已在待合并的 PR #4 和堆叠 PR #5 中移除 Meepo 各职责的默认魔晶购买项；不删减用户自定义出装。恢复自动购买需要先评估机制造成的被动/主动收益、当前对局状态、机会成本与 [VT-014](CLIENT_VALIDATION_BACKLOG.md)。这不是断言 7.42 的真人 Meepo 应当不买魔晶；只是当前 Bot 缺乏相应使用能力。
 
 ## 3. 实例二：敌人打 Roshan，AI 要不要过去抢？
 
