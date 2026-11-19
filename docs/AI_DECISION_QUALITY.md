@@ -72,3 +72,15 @@ Prefer tests invoking **production Lua** with Valve mocks and deterministic scen
 ## 7. Current validation limits
 
 The project runs under Valve's bot-script runtime with game-specific behavior. No isolated Lua mock or GitHub Actions run can prove actual TP pathing, ability animation timing, queued projectiles, channel interruption, fog-of-war edge cases, or match win rate. These remain client validation tasks.
+
+
+## 8. Offline diagnostic summary (no gameplay client required for analysis)
+
+After capturing **Local Host** console output into a local text file, run:
+
+```bash
+python3 scripts/analyze_decision_logs.py dota-console.log
+python3 scripts/analyze_decision_logs.py dota-console.log --json > decision-summary.json
+```
+
+The parser groups hero/pid, ability/item readiness, cast gates and instrumented BANISH decisions. It highlights `READINESS_WITHOUT_DECISION_TRACE`, `READY_WITH_NO_PROPOSAL`, and `POLICY_BLOCK_FREQUENT` as **review leads only**. All other hero Consider functions remain uninstrumented; a READY status with no decision record is **not** proof of an AI bug or an omitted cast. Inspect the relevant Consider function and original game context before changing logic. Engine action execution is not confirmed by an ALLOW log. The analyzer has no Dota client or external network requirement; the game VM only emits sampled lines through `print`.
