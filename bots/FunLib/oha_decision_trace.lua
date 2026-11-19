@@ -84,14 +84,49 @@ local function observe(bot, action, ability, category)
     Trace.Record(bot, category, action, "STATUS", status, details)
 end
 
+-- Cast-gate status explains why a READY spell still cannot be proposed.
+-- NONE means no obvious engine state blocker, NOT that the AI should cast.
+local function observeBotCastGate(bot)
+    local reason = "NO_OBVIOUS_BLOCK"
+    if bot.IsChanneling and bot:IsChanneling() then reason = "CHANNELING"
+    elseif bot.IsUsingAbility and bot:IsUsingAbility() then reason = "USING_ABILITY"
+    elseif bot.IsStunned and bot:IsStunned() then reason = "STUNNED"
+    elseif bot.IsHexed and bot:IsHexed() then reason = "HEXED"
+    elseif bot.IsSilenced and bot:IsSilenced() then reason = "SILENCED" end
+    Trace.Record(bot, "BOT", "cast_gate", "STATUS", reason)
+end
+
 function Trace.Observe(bot)
     if not Trace.Enabled(bot) then return end
     local now = DotaTime()
-    local sampleInterval = tonumber(config.SampleInterval) or 5
+    local sampleInterval = math.max(tonumber(config.SampleInterval) or 5, 1)
     if bot._ohaNextDecisionSample and now < bot._ohaNextDecisionSample then return end
     bot._ohaNextDecisionSample = now + sampleInterval
+    observeBotCastGate(bot)
+
+    -- Optional whole-hero scanning: include learned/unlearned active slots,
+    -- but exclude talents, passive skills and generic_hidden placeholders.
+    -- When both explicit and auto watched, emit only once per name.
+    local seen = {}
+    if config.WatchAllActiveAbilities == true and bot.GetAbilityInSlot then
+        for slot = 0, 10 do
+            local ability = bot:GetAbilityInSlot(slot)
+            if ability and ability.GetName
+                and not (ability.IsTalent and ability:IsTalent())
+                and not (ability.IsPassive and ability:IsPassive()) then
+                local name = ability:GetName()
+                if name and name ~= "generic_hidden" and not seen[name] then
+                    seen[name] = true
+                    observe(bot, name, ability, "ABILITY")
+                end
+            end
+        end
+    end
     for _, abilityName in ipairs(config.WatchAbilities or {}) do
-        observe(bot, abilityName, bot:GetAbilityByName(abilityName), "ABILITY")
+        if not seen[abilityName] then
+            seen[abilityName] = true
+            observe(bot, abilityName, bot:GetAbilityByName(abilityName), "ABILITY")
+        end
     end
     for _, itemName in ipairs(config.WatchItems or {}) do
         local found = nil

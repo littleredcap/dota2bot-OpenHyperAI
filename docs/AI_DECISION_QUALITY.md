@@ -27,7 +27,9 @@ For every new rule or suppression, document:
 
 ## 3. Observability / decision evidence
 
-Optional module: `bots/FunLib/oha_decision_trace.lua`. Configuration: `bots/Customize/decision_trace.lua` (override copy at `game/Customize/decision_trace.lua`). Default is **Enable=false**. Set `Enable=true`, use `WatchHeroes` and `WatchAbilities` / `WatchItems`, and start a **Local Host** lobby with developer console/log capture enabled. Keep time, bot ID, target, intent, verdict and reason in one `[OHA_DECISION]` line. Output is rate-limited and contains no chat text or remote calls.
+Optional module: `bots/FunLib/oha_decision_trace.lua`. Configuration: `bots/Customize/decision_trace.lua` (override copy at `game/Customize/decision_trace.lua`). Default is **Enable=false**. Set `Enable=true`, use `WatchHeroes` and `WatchAbilities` / `WatchItems` (or `WatchAllActiveAbilities=true` to sample all active spells of those heroes, including unlearned spells), and start a **Local Host** lobby with developer console/log capture enabled. Keep time, bot ID, target, intent, verdict and reason in one `[OHA_DECISION]` line. Output is rate-limited and contains no chat text or remote calls.
+
+**Cast-gate status:** `system=BOT action=cast_gate` reports `SILENCED`, `STUNNED`, `CHANNELING`, `HEXED`, `USING_ABILITY` or `NO_OBVIOUS_BLOCK` on a sampled tick. `NO_OBVIOUS_BLOCK` does not imply that a candidate target or tactical reason exists. The snapshot is rate-limited to the selected hero only.
 
 **Critical distinction:** `STATUS reason=READY` means the client reported the action castable; it does **not** mean the AI proposed the cast or had a tactical opportunity. `STATUS reason=COOLDOWN` explains why casting was unavailable, but not why a different action was chosen. Only a decision-site `verdict=BLOCK/ALLOW` establishes a specific rule outcome. Logging every spell or every frame is forbidden: sample at intervals and throttle identical reasons. Disable logging for performance-sensitive releases.
 
@@ -70,3 +72,15 @@ Prefer tests invoking **production Lua** with Valve mocks and deterministic scen
 ## 7. Current validation limits
 
 The project runs under Valve's bot-script runtime with game-specific behavior. No isolated Lua mock or GitHub Actions run can prove actual TP pathing, ability animation timing, queued projectiles, channel interruption, fog-of-war edge cases, or match win rate. These remain client validation tasks.
+
+
+## 8. Offline diagnostic summary (no gameplay client required for analysis)
+
+After capturing **Local Host** console output into a local text file, run:
+
+```bash
+python3 scripts/analyze_decision_logs.py dota-console.log
+python3 scripts/analyze_decision_logs.py dota-console.log --json > decision-summary.json
+```
+
+The parser groups hero/pid, ability/item readiness, cast gates and instrumented BANISH decisions. It highlights `READINESS_WITHOUT_DECISION_TRACE`, `READY_WITH_NO_PROPOSAL`, and `POLICY_BLOCK_FREQUENT` as **review leads only**. All other hero Consider functions remain uninstrumented; a READY status with no decision record is **not** proof of an AI bug or an omitted cast. Inspect the relevant Consider function and original game context before changing logic. Engine action execution is not confirmed by an ALLOW log. The analyzer has no Dota client or external network requirement; the game VM only emits sampled lines through `print`.
