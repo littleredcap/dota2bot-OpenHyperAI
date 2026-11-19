@@ -22,6 +22,10 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
+-- Patch 7.42: the new Shard only unlocks pickup/Fling. Our Shard AI is
+-- experimental and disabled pending engine/strategy validation, so do not
+-- buy Shard in the default builds ahead of established combat items.
+-- Custom builds may still opt into a Shard when the player wants it.
 local sRoleItemsBuyList = {}
 
 sRoleItemsBuyList['pos_1'] = {
@@ -34,7 +38,6 @@ sRoleItemsBuyList['pos_1'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_nullifier",--
@@ -57,7 +60,6 @@ sRoleItemsBuyList['pos_2'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_sheepstick",--
@@ -79,7 +81,6 @@ sRoleItemsBuyList['pos_3'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_ultimate_scepter",
