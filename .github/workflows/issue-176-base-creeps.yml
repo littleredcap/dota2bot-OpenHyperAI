@@ -1,0 +1,40 @@
+name: Issue 176 Ancient creep-only defense
+
+on:
+  push:
+    branches:
+      - fix/issue-176-base-creep-defense
+  workflow_dispatch:
+
+# Read-only; generated Lua is committed and checked for drift.
+permissions:
+  contents: read
+
+jobs:
+  build-test-and-sync-generated-lua:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install build dependencies
+        run: PUPPETEER_SKIP_DOWNLOAD=1 npm ci --legacy-peer-deps --ignore-scripts --no-audit
+      - name: Build TypeScript-owned Lua
+        run: npm run build
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+      - name: Validate generated Lua and run issue regression
+        run: |
+          luac5.1 -p bots/FunLib/aba_defend.lua
+          luac5.1 -p bots/mode_defend_tower_mid_generic.lua
+          luac5.1 -p tests/test_issue176_base_creeps.lua
+          lua5.1 tests/test_issue176_base_creeps.lua
+      - name: Verify generated Lua matches TypeScript source
+        run: git diff --exit-code -- bots/FunLib/aba_defend.lua
