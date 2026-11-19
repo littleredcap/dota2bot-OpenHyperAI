@@ -24,7 +24,7 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Install build dependencies
-        run: PUPPETEER_SKIP_DOWNLOAD=1 npm ci --ignore-scripts --no-audit
+        run: PUPPETEER_SKIP_DOWNLOAD=1 npm ci --legacy-peer-deps --ignore-scripts --no-audit
       - name: Build TypeScript-owned Lua
         run: npm run build
       - name: Install Lua 5.1
