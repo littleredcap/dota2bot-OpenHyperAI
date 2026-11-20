@@ -40,6 +40,9 @@ else
 end
 
 local sRoleItemsBuyList = {}
+-- 7.42: temporarily defer default Aghanim's Shard purchases.
+-- Reason: Shard changes jump landing behavior to the target position.
+-- Restore only after community build guidance and ability/targeting verification.
 
 sRoleItemsBuyList['pos_1'] = {
     "item_tango",
@@ -63,7 +66,6 @@ sRoleItemsBuyList['pos_1'] = {
     "item_travel_boots_2",--
     "item_ultimate_scepter_2",
     "item_moon_shard",
-    "item_aghanims_shard",
 }
 
 sRoleItemsBuyList['pos_2'] = {
@@ -87,7 +89,6 @@ sRoleItemsBuyList['pos_2'] = {
     "item_travel_boots_2",--
     "item_ultimate_scepter_2",
     "item_moon_shard",
-    "item_aghanims_shard",
 }
 
 sRoleItemsBuyList['pos_3'] = sRoleItemsBuyList['pos_1']
