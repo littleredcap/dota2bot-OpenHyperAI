@@ -25,6 +25,9 @@ local nTalentBuildList = J.Skill.GetTalentBuild(tTalentTreeList)
 local sUtility = {"item_pipe", "item_lotus_orb"}
 local nUtility = sUtility[RandomInt(1, #sUtility)]
 
+-- 7.42: Shard now grants Zombie Bite instead of upgrading Tombstone.
+-- Zombie Bite has no Consider/action here yet; defer DEFAULT Shard buys until
+-- a validated usage policy exists. User-customized builds remain supported.
 local sRoleItemsBuyList = {}
 
 sRoleItemsBuyList['pos_4'] = {
@@ -34,7 +37,6 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_essence_distiller",--
 	"item_crimson_guard",--
     "item_guardian_greaves",--
-	"item_aghanims_shard",
 	"item_heavens_halberd",--
 	"item_lotus_orb",--
 	"item_travel_boots",
@@ -66,7 +68,6 @@ sRoleItemsBuyList['pos_5'] = {
 sRoleItemsBuyList['pos_1'] = {
 
 	"item_bristleback_outfit",
-	"item_aghanims_shard",
 	"item_blade_mail",
 	"item_heavens_halberd",
 	"item_lotus_orb",
@@ -87,7 +88,6 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_tank_outfit",
     "item_hand_of_midas",
 	"item_crimson_guard",--
-	"item_aghanims_shard",
 	"item_ultimate_scepter",
 	"item_lotus_orb",--
 	"item_heavens_halberd",--
