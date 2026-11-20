@@ -45,6 +45,11 @@ local nItems = {"item_butterfly", "item_skadi", "item_mjollnir"}
 local sItems = nItems[RandomInt(1, #nItems)]
 
 local sRoleItemsBuyList = {}
+-- 7.42: temporarily defer default Aghanim's Scepter and Blessing purchases.
+-- Reason: Morph Scepter echo mechanics were reworked.
+-- Restore only after community build guidance and ability/targeting verification.
+-- Blessing uses Scepter as a component, so item_ultimate_scepter_2 is also deferred.
+-- 7.42: Khanda (item_angels_demise) removed from the shop; no speculative replacement.
 
 sRoleItemsBuyList['pos_1'] = {
     "item_tango",
@@ -57,28 +62,24 @@ sRoleItemsBuyList['pos_1'] = {
     "item_power_treads",
     "item_lifesteal",
     "item_manta",--
-    "item_angels_demise",--
     "item_black_king_bar",--
     "item_butterfly",--
     "item_aghanims_shard",
     "item_moon_shard",
     "item_satanic",--
     "item_disperser",--
-    "item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_2'] = {
 	"item_mid_outfit",
     "item_lifesteal",
     "item_manta",--
-    "item_angels_demise",--
     "item_black_king_bar",--
     sItems,--
     "item_aghanims_shard",
     "item_moon_shard",
     "item_satanic",--
     "item_disperser",--
-    "item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_3'] = sRoleItemsBuyList['pos_1']

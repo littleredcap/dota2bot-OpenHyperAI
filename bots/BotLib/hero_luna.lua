@@ -24,6 +24,7 @@ local nAbilityBuildList = J.Skill.GetRandomBuild(tAllAbilityBuildList)
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: Khanda (item_angels_demise) removed from the shop; no speculative replacement.
 
 sRoleItemsBuyList['pos_1'] = {
 	"item_tango",
@@ -39,7 +40,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_manta",--
 	"item_black_king_bar",--
 	"item_aghanims_shard",
-	"item_angels_demise",--
 	"item_satanic",--
 	"item_moon_shard",
 	"item_butterfly",--

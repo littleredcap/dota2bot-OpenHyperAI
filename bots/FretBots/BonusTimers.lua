@@ -45,29 +45,26 @@ local inits =
 	neutralItemDoleTimer  = false
 }
 
--- Internal flags for flagging if stuff has been done
--- set to true if any given tier has been awarded
-local tiersAwarded = {false,false,false,false,false}
 -- current award instance (irrespective of offset). used to index timings
 local award = 1
 -- default neutral timer find interval
 local neutralFindInterval = 1
 -- default neutral timer dole interval
 local neutralDolenterval = 10
--- max tier
-local maxTier = 5
+-- Keep timer state and stash traversal aligned with the configured tiers.
+local maxTier = #Settings.neutralItems.maxPerTier
 -- Per Minute Timer Interval
 local perMinuteTimerInterval = 60
 -- amount of neutrals found per tier
-local tierAwards = {
-	[2] = {0,0,0,0,0},
-	[3] = {0,0,0,0,0}
-}
+local tierAwards = {[2] = {}, [3] = {}}
 -- current neutral items available to dole
-NeutralStash = {
-	[2] = {{},{},{},{},{}},
-	[3] = {{},{},{},{},{}},
-}
+NeutralStash = {[2] = {}, [3] = {}}
+for team = 2, 3 do
+	for tier = 1, maxTier do
+		tierAwards[team][tier] = 0
+		NeutralStash[team][tier] = {}
+	end
+end
 -- all items ever found
 AwardedNeutrals = {}
 
@@ -205,7 +202,7 @@ function BonusTimers:NeutralItemFindTimer___()
 	local gameTime = Utilities:GetAbsoluteTime()
 	-- Don't do anything if time is negative
 	if gameTime < 0 then return math.ceil(gameTime * -1) end
-	-- Stop if we've given all bots tier 5 items
+	-- Stop after the configured tiers reach their award caps.
 	if BonusTimers:IsFindingDone() then
 		Timers:RemoveTimer(names.neutralItemFindTimer)
 		Utilities:Print('NeutralItemFindTimer done.  Unregistering.', MSG_CONSOLE_GOOD)

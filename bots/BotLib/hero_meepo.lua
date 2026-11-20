@@ -23,6 +23,10 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: temporarily defer default Aghanim's Scepter, Blessing and Shard purchases.
+-- Reason: Scepter now grants Dig; Shard grants pickup and Fling behavior.
+-- Restore only after community build guidance and ability/targeting verification.
+-- Blessing uses Scepter as a component, so item_ultimate_scepter_2 is also deferred.
 
 sRoleItemsBuyList['pos_1'] = {
     "item_tango",
@@ -34,14 +38,11 @@ sRoleItemsBuyList['pos_1'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_nullifier",--
-    "item_ultimate_scepter",
     "item_sheepstick",--
     "item_disperser",--
-    "item_ultimate_scepter_2",
     "item_swift_blink",--
     "item_moon_shard",
     "item_travel_boots_2",--
@@ -57,13 +58,10 @@ sRoleItemsBuyList['pos_2'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_sheepstick",--
-    "item_ultimate_scepter",
     "item_disperser",--
-    "item_ultimate_scepter_2",
     "item_swift_blink",--
     "item_moon_shard",
     "item_travel_boots_2",--
@@ -79,13 +77,10 @@ sRoleItemsBuyList['pos_3'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
-    "item_ultimate_scepter",
     "item_sheepstick",--
     "item_disperser",--
-    "item_ultimate_scepter_2",
     "item_swift_blink",--
     "item_moon_shard",
     "item_travel_boots_2",--
@@ -158,14 +153,10 @@ end
 local EarthBind         = bot:GetAbilityByName('meepo_earthbind')
 local Poof              = bot:GetAbilityByName('meepo_poof')
 local Dig               = bot:GetAbilityByName('meepo_petrify')
-local MegaMeepo         = bot:GetAbilityByName('meepo_megameepo')
-local MegaMeepoFling    = bot:GetAbilityByName('meepo_megameepo_fling')
 
 local EarthBindDesire, EarthBindLocation
 local PoofDesire, PoofTarget
 local DigDesire
-local MegaMeepoDesire
-local MegaMeepoFlingDesire, MegaMeepoFlingFlingTarget
 
 local Meepos = {}
 
@@ -183,8 +174,6 @@ function X.SkillsComplement()
     EarthBind      = bot:GetAbilityByName('meepo_earthbind')
     Poof           = bot:GetAbilityByName('meepo_poof')
     Dig            = bot:GetAbilityByName('meepo_petrify')
-    MegaMeepo      = bot:GetAbilityByName('meepo_megameepo')
-    MegaMeepoFling = bot:GetAbilityByName('meepo_megameepo_fling')
 
     -- Cache per-tick variables
     Meepos       = J.GetMeepos()
@@ -209,13 +198,6 @@ function X.SkillsComplement()
         return
     end
 
-    MegaMeepoDesire = X.ConsiderMegaMeepo()
-    if MegaMeepoDesire > 0
-    then
-        bot:ActionQueue_UseAbility(MegaMeepo)
-        return
-    end
-
     EarthBindDesire, EarthBindLocation = X.ConsiderEarthBind()
     if EarthBindDesire > 0
     then
@@ -225,12 +207,6 @@ function X.SkillsComplement()
         return
     end
 
-    MegaMeepoFlingDesire, MegaMeepoFlingFlingTarget = X.ConsiderMegaMeepoFling()
-    if MegaMeepoFlingDesire > 0
-    then
-        bot:ActionQueue_UseAbilityOnEntity(MegaMeepoFling, MegaMeepoFlingFlingTarget)
-        return
-    end
 end
 
 function X.ConsiderEarthBind()
@@ -667,7 +643,9 @@ function X.ConsiderPoof()
 end
 
 function X.ConsiderDig()
-    if not Dig:IsTrained()
+    -- 7.42: Dig is Scepter-granted rather than Shard-granted; the
+    -- ability handle may not exist before purchasing the Scepter.
+    if Dig == nil or not Dig:IsTrained()
     or not Dig:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE
@@ -700,79 +678,7 @@ function X.ConsiderDig()
     return BOT_ACTION_DESIRE_NONE
 end
 
-function X.ConsiderMegaMeepo()
-    if not MegaMeepo:IsTrained()
-    or not MegaMeepo:IsFullyCastable()
-    or bot:HasModifier('modifier_meepo_petrify')
-    then
-        return BOT_ACTION_DESIRE_NONE
-    end
-
-    local nRadius = 600
-
-    if J.IsGoingOnSomeone(bot)
-    then
-        local count = 0
-
-        for _, meepo in pairs(Meepos)
-        do
-
-            if meepo:WasRecentlyDamagedByAnyHero(1.2)
-            and J.IsMeepoClone(meepo)
-            and J.IsInRange(bot, meepo, nRadius)
-            and not meepo:HasModifier('modifier_meepo_petrify')
-            then
-                count = count + 1
-            end
-        end
-
-        if count >= 2
-        then
-            return BOT_ACTION_DESIRE_HIGH
-        end
-    end
-
-    return BOT_ACTION_DESIRE_NONE
-end
-
-function X.ConsiderMegaMeepoFling()
-    if MegaMeepoFling:IsHidden()
-    or not MegaMeepoFling:IsFullyCastable()
-    then
-        return BOT_ACTION_DESIRE_NONE
-    end
-
-    local nCastRange = MegaMeepoFling:GetCastRange()
-    local nInRangeAlly = J.GetNearbyHeroes(bot,1000, false, BOT_MODE_NONE)
-    local nInRangeEnemy = J.GetNearbyHeroes(bot,800, true, BOT_MODE_NONE)
-
-    if J.IsGoingOnSomeone(bot)
-    then
-        local weakestTarget = J.GetAttackableWeakestUnit(bot, nCastRange, true, true)
-
-        if weakestTarget ~= nil
-        and bot:WasRecentlyDamagedByAnyHero(3.1)
-        and not J.IsMeepoClone(bot)
-        and not weakestTarget:HasModifier('modifier_faceless_void_chronosphere_freeze')
-        and nInRangeAlly ~= nil and nInRangeEnemy
-        and #nInRangeAlly >= #nInRangeEnemy
-        then
-            return BOT_ACTION_DESIRE_HIGH, weakestTarget
-        end
-    end
-
-    local nCreeps = bot:GetNearbyCreeps(nCastRange, true)
-    if nCreeps ~= nil and #nCreeps >= 1
-    and nInRangeEnemy ~= nil and #nInRangeEnemy == 0
-    then
-        if J.IsValid(nCreeps[1])
-        and not J.IsMeepoClone(bot)
-        then
-            return BOT_ACTION_DESIRE_HIGH, nCreeps[1]
-        end
-    end
-
-    return BOT_ACTION_DESIRE_NONE
-end
+-- 7.42 removed MegaMeepo. Do not cast its obsolete ability handles.
+-- The new Shard-upgraded Divided We Stand requires separate, verified logic.
 
 return X

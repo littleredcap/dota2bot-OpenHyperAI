@@ -583,7 +583,8 @@ function X.ConsiderInkSwell()
 end
 
 function X.ConsiderInkExplosion()
-    if InkExplosion:IsHidden()
+    -- This optional recast ability is not listed in the 7.42 default hero slots.
+    if InkExplosion == nil or InkExplosion:IsHidden()
     or not InkExplosion:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE

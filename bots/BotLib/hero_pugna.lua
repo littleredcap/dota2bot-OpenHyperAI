@@ -32,6 +32,10 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: temporarily defer default Aghanim's Scepter and Blessing purchases.
+-- Reason: Oblivion Savant Scepter now grants recast charges.
+-- Restore only after community build guidance and ability/targeting verification.
+-- Blessing uses Scepter as a component, so item_ultimate_scepter_2 is also deferred.
 
 sRoleItemsBuyList['pos_4'] = {
 	"item_tango",
@@ -53,7 +57,6 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_moon_shard",
 	"item_sheepstick",
 	"item_wind_waker",--
-	"item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_5'] = {
@@ -76,7 +79,6 @@ sRoleItemsBuyList['pos_5'] = {
     -- "item_lotus_orb",--
 	"item_moon_shard",
 	"item_sheepstick",--
-	"item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_1'] = {
@@ -91,12 +93,10 @@ sRoleItemsBuyList['pos_1'] = {
     "item_travel_boots",
     "item_aghanims_shard",
     "item_cyclone",
-    "item_ultimate_scepter",
     "item_octarine_core",--
     "item_dagon_5",--
     "item_kaya_and_sange",--
     "item_crellas_crozier",--
-    "item_ultimate_scepter_2",
     "item_shivas_guard",
     "item_moon_shard",
     "item_travel_boots_2",--
@@ -116,12 +116,10 @@ sRoleItemsBuyList['pos_2'] = {
     "item_travel_boots",
     "item_aghanims_shard",
     "item_cyclone",
-    "item_ultimate_scepter",
     "item_octarine_core",--
     "item_dagon_5",--
     "item_crellas_crozier",--
     "item_kaya_and_sange",--
-    "item_ultimate_scepter_2",
     "item_shivas_guard",
     "item_moon_shard",
     "item_travel_boots_2",--
@@ -142,14 +140,12 @@ sRoleItemsBuyList['pos_3'] = {
     "item_crellas_crozier",--
 	"item_gungir",--
     "item_bloodstone",--
-    "item_ultimate_scepter",
     "item_shivas_guard",--
 	"item_sheepstick",
     "item_travel_boots",
     "item_moon_shard",
     "item_travel_boots_2",--
     "item_aghanims_shard",
-    "item_ultimate_scepter_2",
 }
 
 X['sBuyList'] = sRoleItemsBuyList[sRole]

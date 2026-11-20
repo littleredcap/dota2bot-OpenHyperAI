@@ -26,6 +26,8 @@ local sUtility = {"item_pipe", "item_lotus_orb"}
 local nUtility = sUtility[RandomInt(1, #sUtility)]
 
 local sRoleItemsBuyList = {}
+-- Zombie Bite is intentionally deferred: do not buy Aghanim's Shard by default
+-- until its bot usage and opportunity cost are supported by reliable guidance.
 
 sRoleItemsBuyList['pos_4'] = {
     "item_blood_grenade",
@@ -34,7 +36,6 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_essence_distiller",--
 	"item_crimson_guard",--
     "item_guardian_greaves",--
-	"item_aghanims_shard",
 	"item_heavens_halberd",--
 	"item_lotus_orb",--
 	"item_travel_boots",
@@ -66,7 +67,6 @@ sRoleItemsBuyList['pos_5'] = {
 sRoleItemsBuyList['pos_1'] = {
 
 	"item_bristleback_outfit",
-	"item_aghanims_shard",
 	"item_blade_mail",
 	"item_heavens_halberd",
 	"item_lotus_orb",
@@ -87,7 +87,6 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_tank_outfit",
     "item_hand_of_midas",
 	"item_crimson_guard",--
-	"item_aghanims_shard",
 	"item_ultimate_scepter",
 	"item_lotus_orb",--
 	"item_heavens_halberd",--
@@ -336,36 +335,38 @@ function X.ConsiderSoulRip()
     end
 
     local nCastRange = J.GetProperCastRange(false, bot, SoulRip:GetCastRange())
-	local nRadius = SoulRip:GetSpecialValueInt('radius')
-    local nDamage = SoulRip:GetSpecialValueInt('damage_per_unit')
+    local nRadius = SoulRip:GetSpecialValueInt('radius')
+    local nDamagePerUnit = SoulRip:GetSpecialValueInt('damage_per_unit')
+    local nMaxUnits = SoulRip:GetSpecialValueInt('max_units')
 
-    local nEnemyHeroes = J.GetNearbyHeroes(bot,nRadius, true, BOT_MODE_NONE)
+    -- Soul Rip's unit count is centered on Undying. Include allied and enemy
+    -- heroes/creeps, exclude the caster and spell target, and respect the cap.
+    -- This is a conservative estimate: some summoned units may not be returned
+    -- by GetNearbyCreeps, so the actual spell may deal more damage.
+    local nEnemyHeroes = J.GetNearbyHeroes(bot, nRadius, true, BOT_MODE_NONE)
+    local nAllyHeroes = J.GetNearbyHeroes(bot, nRadius, false, BOT_MODE_NONE)
+    local nEnemyCreeps = bot:GetNearbyCreeps(nRadius, true)
+    local nAllyCreeps = bot:GetNearbyCreeps(nRadius, false)
+    local nNearbyUnits = #nEnemyHeroes + #nAllyHeroes + #nEnemyCreeps + #nAllyCreeps
+
     for _, enemyHero in pairs(nEnemyHeroes)
     do
         if J.IsValidHero(enemyHero)
         and J.CanCastOnNonMagicImmune(enemyHero)
+        and J.IsInRange(bot, enemyHero, nCastRange)
         and not J.IsSuspiciousIllusion(enemyHero)
         and not enemyHero:HasModifier('modifier_abaddon_borrowed_time')
         and not enemyHero:HasModifier('modifier_dazzle_shallow_grave')
         and not enemyHero:HasModifier('modifier_necrolyte_reapers_scythe')
         and not enemyHero:HasModifier('modifier_oracle_false_promise_timer')
         then
-            local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), nRadius)
-            local nCreeps = bot:GetNearbyCreeps(nRadius, true)
-
-            if nInRangeEnemy ~= nil and #nInRangeEnemy >= 1
+            -- The enemy hero is in nEnemyHeroes, but a Soul Rip target cannot
+            -- be one of the units ripped from. Undying is not in these lists.
+            local nRipUnits = math.min(nMaxUnits, math.max(0, nNearbyUnits - 1))
+            local nEstimatedDamage = nDamagePerUnit * nRipUnits
+            if nRipUnits > 0 and J.CanKillTarget(enemyHero, nEstimatedDamage, DAMAGE_TYPE_MAGICAL)
             then
-                nDamage = nDamage * #nInRangeEnemy
-            end
-
-            if nCreeps ~= nil and #nCreeps >= 1
-            then
-                nDamage = nDamage * #nCreeps
-            end
-
-            if J.CanKillTarget(enemyHero, nDamage, DAMAGE_TYPE_MAGICAL)
-            then
-                return BOT_ACTION_DESIRE_HIGH, bot
+                return BOT_ACTION_DESIRE_HIGH, enemyHero
             end
         end
     end
@@ -373,7 +374,7 @@ function X.ConsiderSoulRip()
 	if J.IsGoingOnSomeone(bot, 1200)
 	then
 		local targetAlly = nil
-		local hp = 1000
+		local hp = math.huge
 
 		local nInRangeAlly = J.GetNearbyHeroes(bot,nCastRange, false, BOT_MODE_NONE)
 		for _, allyHero in pairs(nInRangeAlly)
@@ -465,7 +466,7 @@ function X.ConsiderSoulRip()
         and J.IsAttacking(bot)
         then
             local targetAlly = nil
-            local hp = 1000
+            local hp = math.huge
 
             local nInRangeAlly = J.GetNearbyHeroes(bot,nCastRange, false, BOT_MODE_NONE)
             for _, allyHero in pairs(nInRangeAlly)
@@ -492,7 +493,7 @@ function X.ConsiderSoulRip()
 	end
 
     local targetAlly = nil
-    local hp = 1000
+    local hp = math.huge
 
     local nInRangeAlly = J.GetNearbyHeroes(bot,nCastRange, false, BOT_MODE_NONE)
     for _, allyHero in pairs(nInRangeAlly)

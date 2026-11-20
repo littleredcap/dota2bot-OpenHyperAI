@@ -151,7 +151,7 @@ Item['sBasicItems'] = {
 	'item_holy_locket',
 	'item_hyperstone',
 	'item_infused_raindrop',
-	'item_javelin',
+    -- 'item_javelin', -- removed from the shop in 7.42
 	'item_lifesteal',
 	'item_magic_stick',
 	'item_mantle',
@@ -178,7 +178,7 @@ Item['sBasicItems'] = {
 	'item_talisman_of_evasion',
 	'item_tango',
 	'item_tango_single',
-	'item_tome_of_knowledge',
+    -- 'item_tome_of_knowledge', -- removed from the game in 7.33
 	'item_tpscroll',
 	'item_ultimate_orb',
 	'item_vitality_booster',
@@ -218,6 +218,7 @@ Item['sSeniorItems'] = {
 --	'item_necronomicon', -- removed from game
 --	'item_necronomicon_2', -- removed from game
 	'item_essence_distiller',
+	'item_bloodslinger', -- 7.42
 	'item_specialists_array',
 	'item_ring_of_basilius',
 	'item_sange',
@@ -310,7 +311,7 @@ Item['sTopItems'] = {
 	'item_wraith_band',
 	'item_yasha_and_kaya',
 	
-	'item_revenants_brooch',
+    -- 'item_revenants_brooch', -- 7.42: Tier 3 neutral artifact, not a shop item
 	'item_boots_of_bearing',
 --	'item_wraith_pact', -- removed from game
 
@@ -319,6 +320,13 @@ Item['sTopItems'] = {
 	'item_hydras_breath',
 	'item_consecrated_wraps',
 	'item_crellas_crozier',
+
+	-- 7.42 shop additions (not added to hero builds)
+	'item_caduceus',
+	'item_ristuls_devotion',
+	'item_berserkers_sabatons',
+	'item_skypiercer',
+	'item_starforge',
 }
 
 local tTopItemList = {}
@@ -782,7 +790,7 @@ Item['item_mage_slayer']	= GetItemComponents( 'item_mage_slayer' )[1]
 
 -- Item['item_eternal_shroud'] removed from game in 7.41
 
-Item['item_helm_of_the_overlord']	= GetItemComponents( 'item_helm_of_the_overlord' )[1]
+-- 7.42: Helm of the Overlord was removed from the game.
 
 Item['item_overwhelming_blink']	= GetItemComponents( 'item_overwhelming_blink' )[1]
 
@@ -793,7 +801,7 @@ Item['item_arcane_blink']	= GetItemComponents( 'item_arcane_blink' )[1]
 Item['item_wind_waker']	= GetItemComponents( 'item_wind_waker' )[1]
 
 --7.31
-Item['item_revenants_brooch']	= GetItemComponents( 'item_revenants_brooch' )[1]
+-- 7.42: Revenant's Brooch is now a Tier 3 neutral artifact, not a shop recipe.
 
 Item['item_boots_of_bearing']	= GetItemComponents( 'item_boots_of_bearing' )[1]
 
@@ -807,7 +815,7 @@ Item["item_disperser"] 							= GetItemComponents( 'item_disperser' )[1]
 Item["item_blood_grenade"] 						= GetItemComponents( 'item_blood_grenade' )[1]
 
 ---------- 7.35 NEW ITEMS ---------------
-Item["item_angels_demise"] 						= GetItemComponents( 'item_angels_demise' )[1] --绝刃
+-- 7.42: Khanda (internal item_angels_demise) was removed; do not register a recipe.
 Item["item_devastator"] 						= GetItemComponents( 'item_devastator' )[1] --圣斧
 
 ---------- 7.41 NEW ITEMS ---------------
@@ -816,6 +824,14 @@ Item["item_specialists_array"]				= GetItemComponents( 'item_specialists_array' 
 Item["item_hydras_breath"]					= GetItemComponents( 'item_hydras_breath' )[1]
 Item["item_consecrated_wraps"]				= GetItemComponents( 'item_consecrated_wraps' )[1]
 Item["item_crellas_crozier"]				= GetItemComponents( 'item_crellas_crozier' )[1]
+
+-- 7.42: register current shop recipes; default hero purchasing remains unchanged.
+Item["item_bloodslinger"] = GetItemComponents('item_bloodslinger')[1]
+Item["item_caduceus"] = GetItemComponents('item_caduceus')[1]
+Item["item_ristuls_devotion"] = GetItemComponents('item_ristuls_devotion')[1]
+Item["item_berserkers_sabatons"] = GetItemComponents('item_berserkers_sabatons')[1]
+Item["item_skypiercer"] = GetItemComponents('item_skypiercer')[1]
+Item["item_starforge"] = GetItemComponents('item_starforge')[1]
 
 --新自定义物品
 Item['item_new_1']	= GetItemComponents( 'item_new_1' )[1]

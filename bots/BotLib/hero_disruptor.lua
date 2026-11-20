@@ -23,6 +23,9 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: temporarily defer default Aghanim's Shard purchases.
+-- Reason: Shard upgrade moved to Kinetic Field knockback mechanic.
+-- Restore only after community build guidance and ability/targeting verification.
 
 sRoleItemsBuyList['pos_4'] = {
     "item_double_tango",
@@ -39,7 +42,6 @@ sRoleItemsBuyList['pos_4'] = {
     "item_sheepstick",--
 	"item_shivas_guard",
     "item_wind_waker",--
-    "item_aghanims_shard",
     "item_moon_shard",
     "item_ultimate_scepter_2",
 }
@@ -61,7 +63,6 @@ sRoleItemsBuyList['pos_5'] = {
     "item_hurricane_pike",--
     "item_sheepstick",--
     -- "item_wind_waker",--
-    "item_aghanims_shard",
     "item_moon_shard",
     "item_ultimate_scepter_2",
 }
@@ -81,7 +82,6 @@ sRoleItemsBuyList['pos_3'] = {
     "item_hurricane_pike",--
     "item_sheepstick",--
     "item_wind_waker",--
-    "item_aghanims_shard",
     "item_moon_shard",
     "item_ultimate_scepter_2",
 }

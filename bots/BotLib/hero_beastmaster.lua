@@ -15,8 +15,8 @@ local tTalentTreeList = {
 }
 
 local tAllAbilityBuildList = {
-						{1,2,2,1,1,6,1,2,2,4,6,4,4,4,6},--pos3 (Axes + Boar for lane pressure)
-						{2,4,2,4,2,6,2,4,4,1,6,1,1,1,6},--pos1/2 (Boar + Inner Beast for fighting)
+						{1,2,2,1,1,6,1,2,2,3,6,3,3,3,6},--pos3 (Axes + Boar for lane pressure)
+						{2,3,2,3,2,6,2,3,3,1,6,1,1,1,6},--pos1/2 (Boar + Inner Beast for fighting)
 }
 
 local nAbilityBuildList
@@ -29,10 +29,13 @@ end
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: Aghanim upgrades temporarily omitted from default item builds.
+-- Reason: Scepter now grants Ancient Thunderhide.
+-- Also omit item_ultimate_scepter_2: Blessing would re-purchase the Scepter.
+-- Restore only after community build guidance and ability/targeting verification.
 
 sRoleItemsBuyList['pos_1'] = {
 	"item_bristleback_outfit",
-    "item_ultimate_scepter",
     "item_echo_sabre",
 	"item_harpoon",--
 	"item_assault",--
@@ -43,7 +46,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_travel_boots",
 	"item_overwhelming_blink",--
 	"item_moon_shard",
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",--
 }
 
@@ -55,7 +57,6 @@ sRoleItemsBuyList['pos_2'] = {
     "item_bottle",
     "item_magic_wand",
     "item_power_treads",
-    "item_ultimate_scepter",
     "item_echo_sabre",
 	"item_harpoon",--
 	"item_black_king_bar",--
@@ -66,15 +67,13 @@ sRoleItemsBuyList['pos_2'] = {
 	"item_aghanims_shard",
 	"item_overwhelming_blink",--
 	"item_moon_shard",
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",--
 }
 
 sRoleItemsBuyList['pos_3'] = {
 	"item_tank_outfit",
     "item_helm_of_the_dominator",
-    "item_helm_of_the_overlord",--
-    "item_ultimate_scepter",
+    -- 7.42: Helm of the Overlord removed; keep Helm of the Dominator.
 	"item_blink",
 	"item_heavens_halberd",
 	"item_aghanims_shard",
@@ -84,14 +83,12 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_overwhelming_blink",--
 	"item_moon_shard",
     "item_refresher",--
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",--
 }
 
 sRoleItemsBuyList['pos_4'] = {
 	'item_priest_outfit',
 	"item_hand_of_midas",
-	"item_ultimate_scepter",
 	"item_mekansm",
     "item_blink",
 	"item_guardian_greaves",
@@ -100,7 +97,6 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_gungir",--
 	"item_sheepstick",
 	"item_mystic_staff",
-	"item_ultimate_scepter_2",
 	"item_shivas_guard",
     "item_moon_shard",
 	"item_overwhelming_blink",--
@@ -112,7 +108,6 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_glimmer_cape",
 
     "item_pavise",
-	"item_ultimate_scepter",
 	"item_pipe",--
     "item_blink",
     "item_solar_crest",--
@@ -120,7 +115,6 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_aghanims_shard",
 	"item_shivas_guard",--
 	"item_mystic_staff",
-	"item_ultimate_scepter_2",
     "item_moon_shard",
 	"item_sheepstick",--
 	"item_overwhelming_blink",--
@@ -156,10 +150,9 @@ end
 -- Ability handles initialized at load time; re-fetched each tick in SkillsComplement for Aghs safety
 local WildAxes          = bot:GetAbilityByName('beastmaster_wild_axes')
 -- 7.41: Boar→Razorback, Hawk→Raptor. Use sAbilityList for resilience to name changes.
-local CallOfTheWildBoar = bot:GetAbilityByName('beastmaster_call_of_the_wild_razorback')
-                          or bot:GetAbilityByName('beastmaster_summon_razorback')
+local CallOfTheWildBoar = bot:GetAbilityByName('beastmaster_summon_razorback')
                           or (sAbilityList[2] and bot:GetAbilityByName(sAbilityList[2]))
-local CallOfTheWildHawk = bot:GetAbilityByName('beastmaster_call_of_the_wild_raptor')
+local CallOfTheWildHawk = bot:GetAbilityByName('beastmaster_summon_raptor')
                           or bot:GetAbilityByName('beastmaster_summon_raptors')
                           or (sAbilityList[3] and bot:GetAbilityByName(sAbilityList[3]))
 -- local InnerBeast     -- 7.41: now innate, cannot be cast
@@ -194,10 +187,9 @@ function X.SkillsComplement()
 
     -- Re-fetch ability handles each tick for safety against Aghs upgrades
     WildAxes = bot:GetAbilityByName('beastmaster_wild_axes')
-    CallOfTheWildBoar = bot:GetAbilityByName('beastmaster_call_of_the_wild_razorback')
-                        or bot:GetAbilityByName('beastmaster_summon_razorback')
+    CallOfTheWildBoar = bot:GetAbilityByName('beastmaster_summon_razorback')
                         or (sAbilityList[2] and bot:GetAbilityByName(sAbilityList[2]))
-    CallOfTheWildHawk = bot:GetAbilityByName('beastmaster_call_of_the_wild_raptor')
+    CallOfTheWildHawk = bot:GetAbilityByName('beastmaster_summon_raptor')
                         or bot:GetAbilityByName('beastmaster_summon_raptors')
                         or (sAbilityList[3] and bot:GetAbilityByName(sAbilityList[3]))
     PrimalRoar = bot:GetAbilityByName('beastmaster_primal_roar')

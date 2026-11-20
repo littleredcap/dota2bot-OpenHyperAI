@@ -37,13 +37,15 @@ if sRole == 'pos_1' then nTalentBuildList = J.Skill.GetTalentBuild(tTalentTreeLi
 if sRole == 'pos_2' then nTalentBuildList = J.Skill.GetTalentBuild(tTalentTreeList[1]) end
 
 local sRoleItemsBuyList = {}
+-- 7.42: temporarily defer default Aghanim's Shard purchases.
+-- Reason: Shard now grants the Through the Realm sub-ability.
+-- Restore only after community build guidance and ability/targeting verification.
 
 sRoleItemsBuyList['pos_1'] = {
 	"item_crystal_maiden_outfit",
 	"item_force_staff",
 	"item_hand_of_midas",
 	"item_ultimate_scepter",
-	"item_aghanims_shard",
 	"item_orchid",
 	"item_black_king_bar",
 	"item_hurricane_pike",
@@ -65,7 +67,6 @@ sRoleItemsBuyList['pos_2'] = {
 	"item_arcane_boots",
 	"item_orchid",
 	"item_ultimate_scepter",
-	"item_aghanims_shard",
 	"item_black_king_bar",--
 	"item_octarine_core",--
 	"item_force_staff",
@@ -83,7 +84,6 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_mekansm",
 	"item_essence_distiller",--
 	"item_glimmer_cape",
-	"item_aghanims_shard",
 	"item_guardian_greaves",
 	"item_spirit_vessel",
 	--"item_holy_locket",
@@ -99,7 +99,6 @@ sRoleItemsBuyList['pos_4'] = {
 sRoleItemsBuyList['pos_5'] = {
 	'item_mage_outfit',
 	"item_glimmer_cape",
-	"item_aghanims_shard",
 	"item_pipe",
 	"item_spirit_vessel",
 	--"item_holy_locket",

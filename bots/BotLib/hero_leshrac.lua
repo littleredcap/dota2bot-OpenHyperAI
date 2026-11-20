@@ -43,6 +43,8 @@ local sUtility = {"item_pipe", "item_lotus_orb", "item_crimson_guard"}
 local nUtility = sUtility[RandomInt(1, #sUtility)]
 
 local sRoleItemsBuyList = {}
+-- 7.42: Scepter/Blessing is deferred until reworked Nihilism has
+-- validated bot-use conditions and stable community purchasing guidance.
 
 sRoleItemsBuyList['pos_2'] = {
     "item_tango",
@@ -66,7 +68,6 @@ sRoleItemsBuyList['pos_2'] = {
     "item_wind_waker",--
     "item_moon_shard",
     "item_travel_boots_2",--
-    "item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_3'] = {
@@ -87,7 +88,6 @@ sRoleItemsBuyList['pos_3'] = {
     "item_shivas_guard",--
     "item_moon_shard",
     "item_travel_boots_2",--
-    "item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_1'] = sRoleItemsBuyList['pos_3']
@@ -941,30 +941,31 @@ function X.ConsiderPulseNova()
 end
 
 function X.ConsiderNihilism()
-    if not Nihilism:IsTrained()
+    -- 7.42: nearby disarm and basic dispel no longer make Leshrac
+    -- ethereal. Do not treat an already airborne attack as a cast trigger.
+    if Nihilism == nil or Nihilism:IsHidden() or not Nihilism:IsTrained()
     or not Nihilism:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE
     end
 
     local nRadius = Nihilism:GetSpecialValueInt('radius')
+    if nRadius == nil or nRadius <= 0 then
+        return BOT_ACTION_DESIRE_NONE
+    end
 
-    if J.IsWithoutTarget(bot)
-    and J.GetAttackProjectileDamageByRange(bot, 1200) >= bot:GetHealth()
-	then
-		return BOT_ACTION_DESIRE_HIGH
-	end
-
-	if J.IsRetreating(bot)
-	then
-		local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), nRadius)
-
-		if bot:WasRecentlyDamagedByAnyHero(2)
-        and nInRangeEnemy ~= nil and #nInRangeEnemy >= 1
-		then
-			return BOT_ACTION_DESIRE_HIGH
-		end
-	end
+    -- Retain the existing retreat path, without adding new cast cases.
+    if J.IsRetreating(bot) and bot:WasRecentlyDamagedByAnyHero(2) then
+        local nearbyEnemies = J.GetEnemiesNearLoc(bot:GetLocation(), nRadius)
+        for _, enemy in pairs(nearbyEnemies or {}) do
+            if J.IsValidHero(enemy)
+            and J.CanCastOnNonMagicImmune(enemy)
+            and not J.IsDisabled(enemy)
+            then
+                return BOT_ACTION_DESIRE_HIGH
+            end
+        end
+    end
 
     return BOT_ACTION_DESIRE_NONE
 end

@@ -2879,7 +2879,8 @@ end
 --天堂
 X.ConsiderItemDesire["item_heavens_halberd"] = function( hItem )
 
-	local nCastRange = 700 + aetherRange
+	-- 7.42 changed Halberd cast range; read the item's current value.
+	local nCastRange = hItem:GetCastRange() + aetherRange
 	local sCastType = 'unit'
 	local hEffectTarget = nil
 	local sCastMotive = nil
@@ -2961,7 +2962,7 @@ X.ConsiderItemDesire["item_helm_of_the_dominator"] = function( hItem )
 				local nCreepHP = creep:GetHealth()
 				if nCreepHP > maxHP
 					and ( creep:GetHealth() / creep:GetMaxHealth() ) > 0.75
-					and ( not creep:IsAncientCreep() or hItem:GetName() == "item_helm_of_the_overlord" )
+					and not creep:IsAncientCreep()
 					and not J.IsKeyWordUnit( "siege", creep )
 				then
 					hCreep = creep
@@ -2982,13 +2983,7 @@ X.ConsiderItemDesire["item_helm_of_the_dominator"] = function( hItem )
 end
 
 
---大支配
-X.ConsiderItemDesire["item_helm_of_the_overlord"] = function( hItem )
-
-	return X.ConsiderItemDesire["item_helm_of_the_dominator"]( hItem )
-
-end
-
+-- 7.42: Helm of the Overlord was removed; Dominator remains supported.
 
 --挑战
 X.ConsiderItemDesire["item_hood_of_defiance"] = function( hItem )
@@ -6545,31 +6540,8 @@ X.ConsiderItemDesire["item_heavy_blade"] = function( hItem )
 
 end
 
---亡魂胸针
-X.ConsiderItemDesire["item_revenants_brooch"] = function( hItem )
-
-	local nCastRange = bot:GetAttackRange() + 100
-	local sCastType = 'none'
-	local hEffectTarget = nil
-	local sCastMotive = nil
-	local nInRangeEnmyList = J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE )
-
-
-	if J.IsGoingOnSomeone( bot )
-	then
-		if J.IsValidHero( botTarget )
-			and J.IsInRange( bot, botTarget, nCastRange )
-		then
-			hEffectTarget = bot
-			sCastMotive = "亡魂胸针进攻:"..J.Chat.GetNormName( botTarget )
-			return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
-		end
-	end
-
-	return BOT_ACTION_DESIRE_NONE
-
-end
-
+-- 7.42: Revenant's Brooch is now a passive Tier 3 neutral artifact.
+-- No active-item handler: the old attack-toggle cast must not be attempted.
 
 --怨灵之契
 X.ConsiderItemDesire["item_wraith_pact"] = function( hItem )

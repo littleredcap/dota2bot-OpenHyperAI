@@ -31,6 +31,7 @@ if sRole == 'pos_4' then nTalentBuildList = J.Skill.GetTalentBuild(tTalentTreeLi
 if sRole == 'pos_5' then nTalentBuildList = J.Skill.GetTalentBuild(tTalentTreeList) end
 
 local sRoleItemsBuyList = {}
+-- 7.42: Khanda (item_angels_demise) removed from the shop; no speculative replacement.
 
 sRoleItemsBuyList['pos_2'] = {
 	"item_tango",
@@ -46,7 +47,6 @@ sRoleItemsBuyList['pos_2'] = {
 	"item_travel_boots",
 	"item_black_king_bar",--
 	"item_ultimate_scepter",
-	"item_angels_demise",--
 	"item_octarine_core",--
 	"item_moon_shard",
 	"item_ultimate_scepter_2",
@@ -82,7 +82,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_travel_boots",
 	"item_black_king_bar",--
 	"item_ultimate_scepter",
-	"item_angels_demise",--
 	"item_octarine_core",--
 	"item_moon_shard",
 	"item_ultimate_scepter_2",

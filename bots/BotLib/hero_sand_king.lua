@@ -34,6 +34,10 @@ local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 local sCrimsonPipe = RandomInt( 1, 2 ) == 1 and "item_crimson_guard" or "item_pipe"
 
 local sRoleItemsBuyList = {}
+-- 7.42: temporarily defer default Aghanim's Scepter and Blessing purchases.
+-- Reason: Scepter moved from Epicenter to Burrowstrike trail.
+-- Restore only after community build guidance and ability/targeting verification.
+-- Blessing uses Scepter as a component, so item_ultimate_scepter_2 is also deferred.
 
 sRoleItemsBuyList['pos_3'] = {
 	"item_tango",
@@ -51,11 +55,9 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_shivas_guard",--
 	"item_travel_boots",
 	"item_aghanims_shard",
-	"item_ultimate_scepter",
 	"item_black_king_bar",--
 	sCrimsonPipe,--
 	"item_overwhelming_blink",--
-	"item_ultimate_scepter_2",
 	"item_wind_waker",--
 	"item_travel_boots_2",--
 	"item_moon_shard",
@@ -73,10 +75,8 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_guardian_greaves",
 	"item_spirit_vessel",
 --	"item_wraith_pact",
-	"item_ultimate_scepter",
 	"item_shivas_guard",
 	"item_moon_shard",
-	"item_ultimate_scepter_2",
 	"item_sheepstick",
 }
 
@@ -87,7 +87,6 @@ sRoleItemsBuyList['pos_5'] = {
 	-- "item_glimmer_cape",
 	"item_boots_of_bearing",--
 	"item_pipe",--
-    "item_ultimate_scepter",
 	"item_cyclone",
 --	"item_wraith_pact",
     -- "item_lotus_orb",
@@ -96,7 +95,6 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_sheepstick",--
 	"item_moon_shard",
     "item_wind_waker",--
-	"item_ultimate_scepter_2",
 }
 
 X['sBuyList'] = sRoleItemsBuyList[sRole]
