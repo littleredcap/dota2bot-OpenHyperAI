@@ -1,0 +1,27 @@
+name: Patch 7.42 static hero audit
+
+on:
+  push:
+    branches: [audit/patch742-hero-matrix]
+  pull_request:
+    branches: [oha-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check hero inventory and source fingerprints
+        run: python3 scripts/patch742_audit.py --check --json
+      - name: Test static scanner and log triage (no Dota client)
+        run: |
+          python3 -m py_compile scripts/patch742_audit.py scripts/patch742_log_triage.py
+          python3 -m unittest discover -s tests -p 'test_patch742_audit.py' -v
