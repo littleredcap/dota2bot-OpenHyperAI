@@ -103,7 +103,9 @@ return function(s)
     end
     function J.HasAghanimsShard() return s.shard == true end
     function J.IsGoingOnSomeone() return false end
-    function J.IsRetreating() return false end
+    -- Reach the final kill-assessment path without triggering unrelated
+    -- mid-fight target checks that are outside this isolated mock.
+    function J.IsRetreating() return true end
     function J.IsDoingRoshan() return false end
     function J.IsDoingTormentor() return false end
     function J.IsValidHero() return true end
