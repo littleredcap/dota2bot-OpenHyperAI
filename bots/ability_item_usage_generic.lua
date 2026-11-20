@@ -2879,7 +2879,8 @@ end
 --天堂
 X.ConsiderItemDesire["item_heavens_halberd"] = function( hItem )
 
-	local nCastRange = 700 + aetherRange
+	-- 7.42 changed Halberd cast range; read the item's current value.
+	local nCastRange = hItem:GetCastRange() + aetherRange
 	local sCastType = 'unit'
 	local hEffectTarget = nil
 	local sCastMotive = nil
@@ -6545,31 +6546,8 @@ X.ConsiderItemDesire["item_heavy_blade"] = function( hItem )
 
 end
 
---亡魂胸针
-X.ConsiderItemDesire["item_revenants_brooch"] = function( hItem )
-
-	local nCastRange = bot:GetAttackRange() + 100
-	local sCastType = 'none'
-	local hEffectTarget = nil
-	local sCastMotive = nil
-	local nInRangeEnmyList = J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE )
-
-
-	if J.IsGoingOnSomeone( bot )
-	then
-		if J.IsValidHero( botTarget )
-			and J.IsInRange( bot, botTarget, nCastRange )
-		then
-			hEffectTarget = bot
-			sCastMotive = "亡魂胸针进攻:"..J.Chat.GetNormName( botTarget )
-			return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
-		end
-	end
-
-	return BOT_ACTION_DESIRE_NONE
-
-end
-
+-- 7.42: Revenant's Brooch is now a passive Tier 3 neutral artifact.
+-- No active-item handler: the old attack-toggle cast must not be attempted.
 
 --怨灵之契
 X.ConsiderItemDesire["item_wraith_pact"] = function( hItem )
