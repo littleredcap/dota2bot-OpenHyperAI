@@ -32,6 +32,10 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: Aghanim upgrades temporarily omitted from default item builds.
+-- Reason: Scepter Swiftslash removed; Blade Fury upgraded instead.
+-- Also omit item_ultimate_scepter_2: Blessing would re-purchase the Scepter.
+-- Restore only after community build guidance and ability/targeting verification.
 
 sRoleItemsBuyList['pos_1'] = {
 	"item_tango",
@@ -53,7 +57,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_moon_shard",
 	"item_abyssal_blade",--
 	"item_travel_boots_2",--
-	"item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_2'] = sRoleItemsBuyList['pos_1']
