@@ -51,6 +51,7 @@ end
 local sUtilityItem = RandomInt( 1, 2 ) == 1 and "item_crimson_guard" or "item_heavens_halberd"
 
 local sRoleItemsBuyList = {}
+-- 7.42: Khanda (item_angels_demise) removed from the shop; no speculative replacement.
 
 sRoleItemsBuyList['pos_1'] = {
 	"item_double_branches",
@@ -64,7 +65,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_ultimate_scepter",
 	"item_octarine_core",--
 	"item_black_king_bar",--
-	"item_angels_demise",--
 	"item_assault",--
 	"item_travel_boots",
 	"item_monkey_king_bar",--
@@ -87,7 +87,6 @@ sRoleItemsBuyList['pos_2'] = {
 	"item_ultimate_scepter",
 	"item_octarine_core",--
 	"item_black_king_bar",--
-	"item_angels_demise",--
 	"item_assault",--
 	"item_travel_boots",
 	"item_moon_shard",
@@ -110,7 +109,6 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_pipe",
 	"item_black_king_bar",--
 	sUtilityItem,--
-	"item_angels_demise",--
 	"item_assault",--
 	"item_travel_boots",
 	"item_monkey_king_bar",--
