@@ -1,6 +1,20 @@
 ## 变更目标 / Decision intent
 <!-- 原始 Issue、可复现问题，以及为什么要改变 Bot 决策（不是只描述修改了哪些 if）。 -->
 
+## 问题与策略成熟度状态（必须分别填写）
+<!-- 统一台账：docs/ISSUE_AND_REQUIREMENT_STATUS.md （在 PR #2 中维护）
+     最小兼容修复 ≠ 技能施放时机完善 ≠ 实机通过 ≠ AI 胜率提升。
+     未来没有技能策略收益证据时不得勾选“策略已完成”。 -->
+- **稳定 Issue / 需求 ID、来源链接：**
+- **实现状态：** REPORTED / SCOPED / MIN_FIX_DRAFT / EXP_DRAFT / INFRA_DRAFT / DOC_DRAFT / DEFERRED / MERGED
+- **验证状态：** NO_RUN / STATIC_ONLY / OFFLINE_PASS / CLIENT_PASS / MATCH_PASS
+- **AI 策略成熟度：** OLD（沿用旧时机）/ PARTIAL（局部保护）/ TODO（新能力未实现）/ RESEARCH / N_A / STRATEGY_VALIDATED
+- **实际最小修复范围：**
+- **未改动、继续沿用的原 Consider / SkillsComplement / 装备决策：**
+- **未来仍未解决的施法时机、技能协同、收益与机会成本：**
+- **下一阶段验收场景或客户端 VT 编号：**
+- [ ] 已将该项的实现、验证和策略状态分别更新到问题台账，未把最小修复写成 AI 策略完成
+
 ## 决策契约（DQ-1）
 <!-- 参见 docs/AI_DECISION_QUALITY.md -->
 - **原行为和负面后果：**
