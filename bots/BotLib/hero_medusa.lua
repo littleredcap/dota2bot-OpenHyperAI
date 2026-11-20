@@ -245,7 +245,7 @@ function X.ConsiderGorgonGrasp()
 				return BOT_ACTION_DESIRE_HIGH, enemyHero:GetLocation()
 			end
 
-			if J.CanKillTarget(enemyHero, nDamage + nDPS * nDuration, DAMAGE_TYPE_PHYSICAL)
+			if J.CanKillTarget(enemyHero, nDamage + nDPS * nDuration, DAMAGE_TYPE_MAGICAL)
 			and not enemyHero:HasModifier('modifier_abaddon_borrowed_time')
 			and not enemyHero:HasModifier('modifier_dazzle_shallow_grave')
 			and not enemyHero:HasModifier('modifier_enigma_black_hole_pull')
