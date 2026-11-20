@@ -2,6 +2,7 @@ local X             = {}
 local bot           = GetBot()
 
 local J             = require( GetScriptDirectory()..'/FunLib/jmz_func' )
+local Banish        = require( GetScriptDirectory()..'/FunLib/oha_banish' )
 local Minion        = dofile( GetScriptDirectory()..'/FunLib/aba_minion' )
 local sTalentList   = J.Skill.GetTalentList( bot )
 local sAbilityList  = J.Skill.GetAbilityList( bot )
@@ -121,7 +122,7 @@ local ShadowPoisonRelease   = bot:GetAbilityByName('shadow_demon_shadow_poison_r
 local DemonicCleanse        = bot:GetAbilityByName('shadow_demon_demonic_cleanse')
 local DemonicPurge          = bot:GetAbilityByName('shadow_demon_demonic_purge')
 
-local DisruptionDesire, DisruptionTarget
+local DisruptionDesire, DisruptionTarget, DisruptionIntent
 local DisseminateDesire, DisseminateTarget
 local ShadowPoisonDesire, ShadowPoisonLocation
 local ShadowPoisonReleaseDesire
@@ -131,8 +132,10 @@ local DemonicPurgeDesire, DemonicPurgeTarget
 function X.SkillsComplement()
 	if J.CanNotUseAbility(bot) then return end
 
-    DisruptionDesire, DisruptionTarget = X.ConsiderDisruption()
+    DisruptionDesire, DisruptionTarget, DisruptionIntent = X.ConsiderDisruption()
     if DisruptionDesire > 0
+    and not Banish.ShouldHoldEnemyBanish(bot, DisruptionTarget, J,
+        DisruptionIntent)
     then
         bot:Action_UseAbilityOnEntity(Disruption, DisruptionTarget)
         return
@@ -235,7 +238,7 @@ function X.ConsiderDisruption()
             and not nAllyInRangeEnemy[1]:HasModifier('modifier_faceless_void_chronosphere_freeze')
             and not nAllyInRangeEnemy[1]:HasModifier('modifier_necrolyte_reapers_scythe')
             then
-                return BOT_ACTION_DESIRE_HIGH, nAllyInRangeEnemy[1]
+                return BOT_ACTION_DESIRE_HIGH, nAllyInRangeEnemy[1], "PEEL"
             end
         end
     end
@@ -262,7 +265,7 @@ function X.ConsiderDisruption()
             and ((#nTargetInRangeAlly > #nInRangeAlly)
                 or (J.GetHP(bot) < 0.75 and bot:WasRecentlyDamagedByAnyHero(2)))
             then
-                return BOT_ACTION_DESIRE_HIGH, nInRangeEnemy[1]
+                return BOT_ACTION_DESIRE_HIGH, nInRangeEnemy[1], "PEEL"
             end
         end
     end

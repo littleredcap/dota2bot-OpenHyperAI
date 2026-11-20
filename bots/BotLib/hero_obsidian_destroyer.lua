@@ -2,6 +2,7 @@ local X = {}
 local bot = GetBot()
 
 local J = require( GetScriptDirectory()..'/FunLib/jmz_func' )
+local Banish = require( GetScriptDirectory()..'/FunLib/oha_banish' )
 local Minion = dofile( GetScriptDirectory()..'/FunLib/aba_minion' )
 local sTalentList = J.Skill.GetTalentList( bot )
 local sAbilityList = J.Skill.GetAbilityList( bot )
@@ -87,7 +88,7 @@ local SanitysEclipse        = bot:GetAbilityByName('obsidian_destroyer_sanity_ec
 local Objurgation           = bot:GetAbilityByName('obsidian_destroyer_objurgation')
 
 local ArcaneOrbDesire, ArcaneOrbTarget
-local AstralImprisonmentDesire, AstralImprisonmentTarget
+local AstralImprisonmentDesire, AstralImprisonmentTarget, AstralImprisonmentIntent
 local SanitysEclipseDesire, SanitysEclipseLocation
 local ObjurgationDesire
 
@@ -115,8 +116,10 @@ function X.SkillsComplement()
         return
     end
 
-    AstralImprisonmentDesire, AstralImprisonmentTarget = X.ConsiderAstralImprisonment()
+    AstralImprisonmentDesire, AstralImprisonmentTarget, AstralImprisonmentIntent = X.ConsiderAstralImprisonment()
     if AstralImprisonmentDesire > 0
+    and not Banish.ShouldHoldEnemyBanish(bot, AstralImprisonmentTarget, J,
+        AstralImprisonmentIntent)
     then
         bot:Action_UseAbilityOnEntity(AstralImprisonment, AstralImprisonmentTarget)
         return
@@ -318,13 +321,13 @@ function X.ConsiderAstralImprisonment()
             if #nInRangeAlly > 2 and #nInRangeAlly > #nTargetInRangeAlly and not isChasing then return BOT_ACTION_DESIRE_NONE, nil end
 
             -- more ally v less enemy and target running
-            if #nInRangeAlly >= #nTargetInRangeAlly and isChasing then return BOT_ACTION_DESIRE_HIGH, botTarget end
+            if #nInRangeAlly >= #nTargetInRangeAlly and isChasing then return BOT_ACTION_DESIRE_HIGH, botTarget, "STOP_ESCAPE" end
             local nInLongRangeAlly = J.GetNearbyHeroes(bot, 1600, false, BOT_MODE_NONE)
             if #nInLongRangeAlly > #nInRangeAlly
             and #nInLongRangeAlly > #nTargetInRangeAlly
             and J.IsRunning(botTarget)
             then
-                return BOT_ACTION_DESIRE_HIGH, botTarget
+                return BOT_ACTION_DESIRE_HIGH, botTarget, "STOP_ESCAPE"
             end
 		end
 	end
@@ -352,7 +355,7 @@ function X.ConsiderAstralImprisonment()
             and ((#nTargetInRangeAlly > #nInRangeAlly)
                 or (J.GetHP(bot) < 0.72 and bot:WasRecentlyDamagedByAnyHero(1.9)))
             then
-                return BOT_ACTION_DESIRE_HIGH, nInRangeEnemy[1]
+                return BOT_ACTION_DESIRE_HIGH, nInRangeEnemy[1], "PEEL"
             end
         end
     end
@@ -431,7 +434,7 @@ function X.ConsiderAstralImprisonment()
             and not nAllyInRangeEnemy[1]:HasModifier('modifier_faceless_void_chronosphere_freeze')
             and not nAllyInRangeEnemy[1]:HasModifier('modifier_necrolyte_reapers_scythe')
             then
-                return BOT_ACTION_DESIRE_HIGH, nAllyInRangeEnemy[1]
+                return BOT_ACTION_DESIRE_HIGH, nAllyInRangeEnemy[1], "PEEL"
             end
         end
     end
