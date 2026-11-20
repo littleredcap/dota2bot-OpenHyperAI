@@ -103,3 +103,7 @@ Policy adopted 2026-11-20: do **not** automatically purchase Scepter or Shard up
 - Medusa `hero_medusa.lua`: Gorgon's Grasp was changed from **physical to magical** damage in 7.42. Updated `CanKillTarget` in `ConsiderGorgonGrasp()` from `DAMAGE_TYPE_PHYSICAL` to `DAMAGE_TYPE_MAGICAL`, preserving the rest of the cast logic. Commit: https://github.com/littleredcap/dota2bot-OpenHyperAI/commit/037d35111bfbe9ba9a9adf0e8443304e5ec1f391
 
 All stated checks are **static readback and JavaScript syntax validation**, not a completed Dota 2 match test or a full local `npm run build`. Remaining structural compatibility work excludes speculative automatic use of newly granted Scepter/Shard abilities.
+
+## 逐项施法条件复核
+
+见 [7.42 技能接入检查](CAST_CONDITIONS_7_42.md)。该表区分补丁和 KV 证据、离线回归以及尚未执行的客户端测试。
