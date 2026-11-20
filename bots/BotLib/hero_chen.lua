@@ -489,7 +489,8 @@ function X.ConsiderDivineFavor()
 end
 
 function X.ConsiderSummonConvert()
-    if not SummonConvert:IsFullyCastable()
+    -- This optional summon spell is absent from the 7.42 default hero slots.
+    if SummonConvert == nil or not SummonConvert:IsFullyCastable()
     or X.IsThereChenCreepAlive()
     then
         return BOT_ACTION_DESIRE_NONE
