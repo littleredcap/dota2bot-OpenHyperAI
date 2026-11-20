@@ -1,7 +1,7 @@
 # OHA-Next：Dota 2 客户端待验证清单
 
 > 建立：2026-11-19。**这是未来的测试债务登记，不代表现在要安装客户端或搭建监控系统。**  
-> 关联：[需求](OHA_NEXT_REQUIREMENTS.md) · [公平强度目标](OHA_NEXT_STRENGTH_OBJECTIVE.md) · [社区研究与策略假设](GAMEPLAY_RESEARCH_AND_IDEAS.md)  
+> 关联：[需求](OHA_NEXT_REQUIREMENTS.md) · [问题与未来策略状态台账](ISSUE_AND_REQUIREMENT_STATUS.md) · [公平强度目标](OHA_NEXT_STRENGTH_OBJECTIVE.md) · [社区研究与策略假设](GAMEPLAY_RESEARCH_AND_IDEAS.md)  
 > 对局监控、批跑和回传设施继续 **deferred**；已有 GitHub Lua Mock 通过只证明对应离线断言，不能自动把本表标为通过。
 
 ## 1. 登记和关闭规则
@@ -44,7 +44,19 @@
 
 | VT-018 / release_gate | [Issue #170 Draft PR #10](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/10)：放逐与队友伤害冲突 | 实际对局演示 OD Astral、SD Disruption、Eul 追击吹风：敌方低 HP 正被队友普攻、2+ 队友集火、敌人已受控时不应普通进攻放逐；敌人引导关键技能时仍可打断；我方英雄面临危险时仍可救援。进一步覆盖 **Sniper/Lion/Lina 未命中大招、WD 持续伤害、凤凰蛋和多次 Eul** 等当前规则未能识别的场景，记录误拦截与漏保护。 | [Lua Mock 10/10](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44544655042)；跨英雄技能时序/真实强度 **blocked_no_client** |
 
-| VT-019 / research | [上游 Issue #159](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159)：敌人多数死亡后 Bot 仍打野、不推塔 | 在固定游戏构建、无 FretBots 额外资源时，分别检查敌方 0/1/2/3 名英雄存活、我方附近 1/2/3 名队友、近远 T2/高地与兵线是否到位的场景：实际 `GetFarmDesire` / `GetPushDesire` / 其它模式的候选值、最终选择及后续动作。既要避免优势时长期刷野，也不应因修改而让单个核心无兵线强行冲高。优先验证 `aba_push.ts` 深入敌方基地时少于 3 名附近友军限制，以及 `mode_farm_generic.lua` 对敌方少量存活英雄的提前退出；**目前未提交修复** | 仅 [Issue #159](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159) + 静态 E2 假设；**planned / blocked_no_client** |
+| VT-019 / research | [上游 Issue #159](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159)：敌人多数死亡后 Bot 仍打野、不推塔 | 在固定游戏构建、无 FretBots 额外资源时，分别检查敌方 0/1/2/3 名英雄存活、我方附近 1/2/3 名队友、近远 T2/高地与兵线是否到位的场景：实际 `GetFarmDesire` / `GetPushDesire` / 其它模式的候选值、最终选择及后续动作。既要避免优势时长期刷野，也不应因修改而让单个核心无兵线强行冲高。优先验证 `aba_push.ts` 深入敌方基地时少于 3 名附近友军限制，以及 `mode_farm_generic.lua` 对敌方少量存活英雄的提前退出；**现已有 Draft PR #11 局部修复，仍待实机验证** | 仅 [Issue #159](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159) + 静态 E2 假设；**planned / blocked_no_client** |
+
+## 3.5 最新 7.42 最小修复的客户端验收债务（新增）
+
+> **注意：所有条目均尚未运行客户端。** 本表不是要求用户盯着对局，而是为了未来一次性/自动化复现时不忘记验证实际技能行为；若无法实际获取某个 API 状态，就标记 unknown / inconclusive。
+
+| VT / 等级 | 问题与 PR | 实机必须观察的正反场景 / 策略未完成部分 | 状态 |
+| --- | --- | --- | --- |
+| VT-020 / release_gate | [先知 Oldgrowth 被动化 PR #16](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/16) · C742-07 | 技能已经成为被动时不能提交旧主动指令；Sprout、Nature's Call、Teleportation、Wrath 的合法施法不会受误删影响；被动触发协同仍需另立优化任务。 | `mock_passed`；**blocked_no_client** |
+| VT-021 / release_gate | [Chen Summon Convert / Zealot PR #17](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/17) · C742-10 | 不存在旧 Summon Convert 时技能流程不得 nil 调用；旧 Hand/Penitence/Persuasion/Favor 保持可施法；Zealot 新复活与 Holy Persuasion 自我召回需先确认单位/可施法条件、技能冷却与合法动作回执，**尚未实现**。 | `mock_passed`（仅旧逻辑）；**blocked_no_client** |
+| VT-022 / release_gate | [Abaddon Coil PR #17](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/17) · C742-08 | 有/无 Shard 时 Mist Coil 的真实伤害、生命消耗、低 HP 安全阈值与神杖 AoE；不得凭旧纯粹伤害估算错误抢人头；原护盾救援需要保留。 | `mock_passed`（伤害类型）；**blocked_no_client** |
+| VT-023 / research | [CK 新 Armageddon 槽位 Mock PR #17](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/17) · C742-09 | 确认 Ability4/6、幻象就绪、地面目标、冲锋引导及 Q/W/R 对冲锋的打断；**现无 Armageddon 策略代码**，不能因槽位测试通过即宣称可用。 | `mock_passed`（仅槽位） + 新策略 `planned`；**blocked_no_client** |
+| VT-024 / release_gate | [7.42 Javelin 清理 PR #17](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/17) · C742-13 | `sBasicItems` 不含 Javelin；版本实际商店及组合装备购买链有效；与 PR #4 Overlord 清理同时合并后不会初始化异常、购买队列卡死。 | `mock_passed`（物品分类）；**blocked_no_client** |
 
 ## 4. 执行顺序和所需最小证据
 

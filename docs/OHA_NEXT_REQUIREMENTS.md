@@ -15,6 +15,14 @@
 > **整局策略与攻略成熟度**：[GAMEPLAY_STRATEGY_CATALOG.md](GAMEPLAY_STRATEGY_CATALOG.md)
 >
 > **资料研究与策略候选**：[GAMEPLAY_RESEARCH_AND_IDEAS.md](GAMEPLAY_RESEARCH_AND_IDEAS.md) · **客户端待验证台账**：[CLIENT_VALIDATION_BACKLOG.md](CLIENT_VALIDATION_BACKLOG.md)
+>
+> **具体 Issue / 小 PR 最新状态：[ISSUE_AND_REQUIREMENT_STATUS.md](ISSUE_AND_REQUIREMENT_STATUS.md)**。独立标记「最小修复 / 离线验证 / AI 策略成熟度」。该台账比本需求总表中 2026-11-19 的历史 PR 进度文字更新。
+
+## 2026-11-20：问题修复与未来策略分开验收
+
+用户已明确要求：**一个英雄完成版本兼容的最小修复，不等于它已经获得完善的技能施法时机、装备选择或强度提升**。为避免历史需求状态误读，新增 [具体 Issue / 需求状态台账](ISSUE_AND_REQUIREMENT_STATUS.md)，分别维护实现状态（例如 MIN_FIX_DRAFT）、验证（例如 OFFLINE_PASS）和策略成熟度（例如 OLD/TODO/PARTIAL）。即使将来 PR 合并，也不删除剩余策略需求，必须有独立验证才可标为完整。
+
+当前 [#159 PR #11](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/11)、[#170 PR #10](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/10)、[#176 PR #9](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/9) 已做**部分场景最小修复**；[#16](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/16) 修正先知过时主动施法，[#17](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/17) 处理 Chen/Abaddon/Javelin 结构错误，但 Chen 新 Zealot 主动、CK Armageddon 等仍未完成策略实现。各 PR 仍 Draft，**只有离线测试没有游戏客户端证明**。多场分析器 [#14](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/14) 也是离线工具，不等于已有真实胜率数据。
 
 ## 1. 文档用途与需求来源
 
@@ -47,12 +55,12 @@
 | U-05 | 解释运行对局后助手如何获得数据；此前明确要求 | 文档说明来源、采集、上传、权限和读取；实际建设与真实包验收另归 D-06 | 已记录设计；后续工程仍未实现 |
 | U-07 | **暂不搭建故障监控系统，先做需求**；本轮明确调整的实施次序 | 需求文档给出玩法功能条目、建议优先级和验收标准；故障监控与批跑维持 deferred，不阻塞当前功能开发 | 已采纳为当前实施顺序 |
 | U-06 | **重点是 Bug 导致的非预期停滞**：Bot 因脚本异常、模式逻辑卡住、命令反复失效等原因停在玩家看不到的迷雾里，既没有正常行动也无法从局末战绩察觉；需要自动发现、定位并提供诊断证据，**不是检测是否“故意挂机”** | 不依赖玩家视野或手动巡图，覆盖 Bot 心跳正常但行为停滞、Bot 脚本停止上报两类故障；提供坐标/最后已知坐标、原因相关事件、异常时段和覆盖率；无法观察时明确未知 | 已明确故障含义；当前标记 deferred，暂不开发 |
-| U-08 | **用户明确选择 A：尽可能强的 AI，以公平条件下的实战获胜能力为核心**；不要求刻意模仿真人 | [强度目标文档](OHA_NEXT_STRENGTH_OBJECTIVE.md)明确公平边界、最终获胜目标、非目标和后续验收；开发决策与结论遵循此定义 | **产品目标已确认**；胜率评测体系尚未建立，不能声称已提升 |
+| U-08 | **用户明确选择 A：尽可能强的 AI，以公平条件下的实战获胜能力为核心**；不要求刻意模仿真人 | [强度目标文档](OHA_NEXT_STRENGTH_OBJECTIVE.md)明确公平边界、最终获胜目标、非目标和后续验收；开发决策与结论遵循此定义 | **产品目标已确认**；离线表现评估器已在 Draft PR #14，尚无真实对局样本，不能声称已提升 |
 | U-09 | 希望项目能主动参考社区攻略、职业比赛思路、补丁与其他 Bot 实现，**发现用户未主动提出的获胜策略机会**，而不只等待用户指出问题 | 对每条策略保留来源/版本、触发条件、反例、估计获胜链路、源码审查状态；按可证伪假设向用户提出 IDEA-xxx 候选 | 已建立[社区研究与策略清单](GAMEPLAY_RESEARCH_AND_IDEAS.md)，候选待审查，非已验证收益 |
 | U-10 | **任何依赖客户端实测的功能先登记**，以后取得测试环境再逐项验证，避免遗漏 | 每项关联 VT-xxx、具体 PR、游戏 build/版本、场景、可观察通过条件、是否执行、证据链接；Mock 通过不能替代真实验证 | 已建立[VT 清单](CLIENT_VALIDATION_BACKLOG.md)；没有客户端，均不标通过 |
 | U-11 | **按照完整比赛生命周期设计 Bot 战术**：从选人/克制/分路/配合到对线、拉野、刷野、开雾抓人、Roshan/魔方、守塔/带线和推高地；兼顾通用规则、英雄/角色专属打法与团队策略。**现阶段优先依据成熟攻略实现可靠行为，未成熟或新改版机制先保留候选/实验，不抢先硬编码。** | [整局策略图谱](GAMEPLAY_STRATEGY_CATALOG.md)覆盖上述阶段，区分 R 攻略成熟度、I 代码状态和 W 实战收益；每项附适用条件、反例、替代行动；未审查的模块不能声称没有该能力 | 研发原则已确认并记录；覆盖审查与具体实现未完成 |
 | U-12 | **出装优先服务 Bot 实际能可靠使用的能力**：例如新 Meepo 魔晶的使用收益未清楚前，不需要在默认装备链中优先购买 | 当装备价值主要依赖未验证主动技能时，默认购买顺序需暂缓；Meepo 各职责默认出装移除 Shard 早购；允许用户自定义出装；有新证据时重新审查，客户端登记 VT-014 | 已在 Draft PR #4/#5 修改默认出装并添加 Lua 断言；未合并/未实机验证 |
-| U-13 | **暂不继续建立整局策略/攻略体系，优先处理重要 Issue 与 7.42 新版适配**（本轮用户最新明确要求） | 有链接/来源和当前源码证据的 Issue 清单；对明确代码缺陷提交独立小 PR 与 Lua 5.1 回归；记录尚未确认/未实机验证范围，不把未来战术体系作为当前依赖 | 已切换优先级；#155 对应 Draft PR #7；7.42 Leshrac 对应 Draft PR #8；[#176 Draft PR #9](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/9)、[#170 Draft PR #10](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/10) 已开始局部修复；#159 尚待核查 |
+| U-13 | **暂不继续建立整局策略/攻略体系，优先处理重要 Issue 与 7.42 新版适配**（本轮用户最新明确要求） | 有链接/来源和当前源码证据的 Issue 清单；对明确代码缺陷提交独立小 PR 与 Lua 5.1 回归；记录尚未确认/未实机验证范围，不把未来战术体系作为当前依赖 | 已切换优先级；#155 对应 Draft PR #7；7.42 Leshrac 对应 Draft PR #8；[#176 Draft PR #9](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/9)、[#170 Draft PR #10](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/10) 已开始局部修复；#159 已有 [Draft PR #11](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/11) 的局部修复，但未实机验证，策略完善继续见台账 |
 
 ## 2.1 已确认的产品目标与需求验收边界
 
@@ -93,7 +101,7 @@
 | F-03 / P1（待验证） | **基础行为风险调查**：核对是否存在模式反复切换、TP 往返、防守折返或无效等待，**确认具体触发条件后再修复** | 对具体已知触发条件加入回归，显示退出条件/冷却/目标失效逻辑；没有实测不宣称消灭全部隐蔽停滞 | `bots/mode_*_generic.lua`、公共辅助函数 | [Issue #155](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/155) 有源码冲突证据，已提交 [Draft PR #7](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/7)（9 项 Lua 离线测试通过，未实机）；其他基础行为候选仍待验证 | #155：E1+E2（外部报告 + 本分支主动丢弃和自动回收冲突）；TP：E1+E2（外部修复报告 + 本分支静态风险），**未在本项目实机复现**；其他模式问题仍待各自核验 |
 | F-04 / P1 | **对线与资源分配**：补刀、反补、换血；辅助让核心资源、打野不互抢 | 对线优先级与队友角色冲突有场景断言，支持/核心的分配规则一致，不会阻止安全的正常收钱/支援 | `bots/mode_laning_generic.lua`、`bots/mode_farm_generic.lua`、角色相关模块 | 候选 | E1：部分资源争抢有 Fork 报告；当前 OHA-Next 未就具体场景确认 |
 | F-05 / P1 | **团战、集火、追击和撤退**：更稳定的目标选择与时机、保护核心、不盲追 | 相同观察输入下目标切换和撤退决策符合明确规则；技能/移动队列不会互相破坏；记录后续需实机确认的交互风险 | 游走/攻击/撤退模式、英雄与物品逻辑 | [Issue #170](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/170) 报告放逐技能可能救敌；已定位 OD/SD/Eul 的潜在误放逐条件，并提交 [Draft PR #10](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/10)（[Lua 10/10](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44544655042)），仅保护明显攻击集火、未覆盖所有预期技能伤害/实机；[PR #1](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/1) 为相关 Draft 局部修复 | E2（局部）：#170 有外部报告 E1 + 当前代码潜在集火冲突 E2；PR #10 的 Lua Mock 通过不代表实战消除所有误救敌人；PR #1 有目标锁定的源码分析及修复后 mock 测试通过，但未提供同一测试在修复前失败的证据；不覆盖整项团战目标 |
-| F-06 / P1 | **团队运营与防守**：推进、拆塔、反推、防守时合理分配队员 | 对“需要几人防守”“是否继续推进/刷钱”形成明确条件与受测案例，不因为局部变化造成全队盲目集合 | `aba_push` / `aba_defend`、`mode_push_tower_*`、`mode_defend_tower_*` | [Issue #176](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/176)（小兵偷家未回防）与 [#159](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159)（敌人死后仍不推进）优先调查；[#176 Draft PR #9](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/9) 已修“仅小兵攻击基地”路径（[TS 构建 + Lua 10/10](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44544007208)）；#159 仍未修复 | #176：E1+E2（报告 + `typescript/bots/FunLib/aba_defend.ts` 的 baseThreat 主要由敌方英雄触发，原权重扫描只遍历敌方英雄且基地紧急状态依赖英雄；TS 真源/生成 Lua 已更新、客户端动作链待确认）；#159：E1+E2（外部报告 + 本分支静态竞争风险）：`mode_farm_generic.lua` 在敌方只剩 0～1 人时会退出刷野，但 `typescript/bots/FunLib/aba_push.ts` 在深入敌方基地且本地友军少于 3 人时把最大推进欲望压到 0.08，**是否真的导致 #159 仍需固定局面/客户端核验，不能直接解除集结保护** |
+| F-06 / P1 | **团队运营与防守**：推进、拆塔、反推、防守时合理分配队员 | 对“需要几人防守”“是否继续推进/刷钱”形成明确条件与受测案例，不因为局部变化造成全队盲目集合 | `aba_push` / `aba_defend`、`mode_push_tower_*`、`mode_defend_tower_*` | [Issue #176](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/176)（小兵偷家未回防）与 [#159](https://github.com/forest0xia/dota2bot-OpenHyperAI/issues/159)（敌人死后仍不推进）优先调查；[#176 Draft PR #9](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/9) 已修“仅小兵攻击基地”路径（[TS 构建 + Lua 10/10](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/runs/44544007208)）；#159 已提交 [Draft PR #11](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/11)，仅局部推进窗口修复、离线 CI，仍待真实策略验证 | #176：E1+E2（报告 + `typescript/bots/FunLib/aba_defend.ts` 的 baseThreat 主要由敌方英雄触发，原权重扫描只遍历敌方英雄且基地紧急状态依赖英雄；TS 真源/生成 Lua 已更新、客户端动作链待确认）；#159：E1+E2（外部报告 + 本分支静态竞争风险）：`mode_farm_generic.lua` 在敌方只剩 0～1 人时会退出刷野，但 `typescript/bots/FunLib/aba_push.ts` 在深入敌方基地且本地友军少于 3 人时把最大推进欲望压到 0.08，**是否真的导致 #159 仍需固定局面/客户端核验，不能直接解除集结保护** |
 | F-07 / P1 | **Roshan / Tormentor 与其他目标**：参战者估算、目标风险、适时撤退 | 目标评估只计入预期可到场的英雄；时间/位置/风险依据可检查；结合版本数据校准，不把全队存活等同于全队能到场 | `bots/mode_roshan_generic.lua`、`bots/FunLib/jmz_func.lua` | 候选；PR #1 有未实机验证的 DPS 修复 | E2（局部）：PR #1 修正 DPS 计算并有修复后 mock 用例通过，但尚无修复前失败/游戏内复现证据；参战人数估算仍是风险假设 |
 | F-10 / P2（deferred：暂缓新战术） | **敌方 Roshan 争夺决策**：判断敌方是否真的打盾，以及集结打团、单人抢、侦察拖延、换塔/推线或守家何者更可能帮助赢比赛 | 从合法视野而非全图真值判断确证/怀疑；对到场时间、团战资源、兵线/高地、撤退条件做场景矩阵；先确认现有代码是否已实现该能力；客户端案例见 VT-012 | [社区与策略候选](GAMEPLAY_RESEARCH_AND_IDEAS.md#3-实例二敌人打-roshanai-要不要过去抢)；尚未分析完源码，不是确认 Bug | E0/E1：策略建议和历史社区讨论，实际表现未知 |
 | F-08 / P2 | **针对性出装、英雄定位与选角**：随队伍及敌方阵容调整 | 道具/技能推荐合法，角色资源策略一致；超出当前可观测信息的假设不进入实战策略 | 物品购买、角色分配、英雄选角 | 候选 | E0：计划优化能力，非已确认 Bug |

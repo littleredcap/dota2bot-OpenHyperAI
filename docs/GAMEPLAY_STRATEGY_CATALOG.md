@@ -2,7 +2,7 @@
 
 > 状态：**需求与研究目录，不是已开发功能清单或强度排行榜**。创建日期：2026-11-19。  
 > 已确认产品目标：在无额外金币、经验、属性或非法战争迷雾信息的条件下，尽可能提高实战获胜概率（[强度目标](OHA_NEXT_STRENGTH_OBJECTIVE.md)）。  
-> 策略发现方法与社区候选：[GAMEPLAY_RESEARCH_AND_IDEAS.md](GAMEPLAY_RESEARCH_AND_IDEAS.md)；待客户端验证：[CLIENT_VALIDATION_BACKLOG.md](CLIENT_VALIDATION_BACKLOG.md)；需求与优先级：[OHA_NEXT_REQUIREMENTS.md](OHA_NEXT_REQUIREMENTS.md)。  
+> 策略发现方法与社区候选：[GAMEPLAY_RESEARCH_AND_IDEAS.md](GAMEPLAY_RESEARCH_AND_IDEAS.md)；**最小修复与未实现策略状态：[ISSUE_AND_REQUIREMENT_STATUS.md](ISSUE_AND_REQUIREMENT_STATUS.md)**；待客户端验证：[CLIENT_VALIDATION_BACKLOG.md](CLIENT_VALIDATION_BACKLOG.md)；需求与优先级：[OHA_NEXT_REQUIREMENTS.md](OHA_NEXT_REQUIREMENTS.md)。  
 > **现阶段不搭建客户端、故障监控或自动对局平台。** 可以先核查既有源码、研究成熟打法、开发有明确条件的局部功能和离线回归。
 
 ## 1. 核心设计：从选人到拆基地，不是逐技能堆功能
