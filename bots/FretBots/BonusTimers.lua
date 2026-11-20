@@ -71,15 +71,49 @@ AwardedNeutrals = {}
 -- master table (items don't get removed from this one)
 local masterNeutralTable = dofile('bots.FretBots.SettingsNeutralItemTable')
 
--- returns true if we've found every item we can
-function BonusTimers:IsFindingDone()
+-- Return nil for completed/disabled bots and false for uninitialized stats.
+local function GetNextNeutralTier(bot)
+	local stats = bot.stats
+	if stats == nil or type(stats.neutralsFound) ~= 'number'
+	or type(stats.neutralTiming) ~= 'number' then
+		return false
+	end
+	local tier = stats.neutralsFound + 1
+	if stats.neutralTiming >= 0 and Settings.neutralItems.maxPerTier[tier] ~= nil then
+		return tier
+	end
+	return nil
+end
+
+local function GetLowestPendingTier()
+	local lowest
 	for team = 2, 3 do
-	for i, count in ipairs(tierAwards[team]) do
-		if count < Settings.neutralItems.maxPerTier[i] then
-			return false
+		if AllBots == nil or AllBots[team] == nil then
+			return nil, false
+		end
+		for _, bot in pairs(AllBots[team]) do
+			local tier = GetNextNeutralTier(bot)
+			if tier == false then
+				return nil, false
+			end
+			if tier and (lowest == nil or tier < lowest) then
+				lowest = tier
+			end
 		end
 	end
+	return lowest, true
 end
+
+-- Stop at the original quota limit or when the initialized roster is exhausted.
+function BonusTimers:IsFindingDone()
+	for team = 2, 3 do
+		for tier, count in ipairs(tierAwards[team]) do
+			if count < Settings.neutralItems.maxPerTier[tier] then
+				local lowest, ready = GetLowestPendingTier()
+				return ready and lowest == nil
+			end
+		end
+	end
 	return true
 end
 
@@ -158,20 +192,7 @@ function BonusTimers:NeutralItemFindTimer()
 
 	-- Find the lowest tier that any bot still needs across both teams.
 	-- This blocks tier N+1 until everyone has tier N.
-	local lowestPendingTier = nil
-	for team = 2, 3 do
-		for _, bot in pairs(AllBots[team]) do
-			if bot.stats then
-				local botTier = bot.stats.neutralsFound + 1
-				if Settings.neutralItems.maxPerTier[botTier] ~= nil then
-					if lowestPendingTier == nil or botTier < lowestPendingTier then
-						lowestPendingTier = botTier
-					end
-				end
-			end
-		end
-	end
-
+	local lowestPendingTier = GetLowestPendingTier()
 	if lowestPendingTier == nil then
 		return neutralFindInterval
 	end
@@ -180,11 +201,9 @@ function BonusTimers:NeutralItemFindTimer()
 	for team = 2, 3 do
 		local awarded = false
 		for _, bot in pairs(AllBots[team]) do
-			if not awarded and bot.stats then
-				local botTier = bot.stats.neutralsFound + 1
+			if not awarded then
+				local botTier = GetNextNeutralTier(bot)
 				if botTier == lowestPendingTier
-				and bot.stats.neutralTiming ~= nil
-				and bot.stats.neutralTiming >= 0
 				and gameTime >= bot.stats.neutralTiming
 				and tierAwards[team][botTier] < Settings.neutralItems.maxPerTier[botTier] then
 					AwardNeutralToBot(bot, botTier, team)

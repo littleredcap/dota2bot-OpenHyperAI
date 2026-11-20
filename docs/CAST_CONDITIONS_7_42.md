@@ -32,3 +32,7 @@
 - 恢复默认出装是独立决定：社区攻略成熟、对应英雄／位置有明确购买时机和替代品比较、Bot 的技能产生真实收益，再逐个解除 [暂缓购买](AGHANIMS_DEFERRED_7_42.md)，而不是有了句柄就恢复。
 
 参考：[Valve 7.42 补丁说明](https://www.dota2.com/patches/7.42?l=tchinese) · [客户端提取的英雄 KV](https://github.com/SteamTracking/GameTracking-Dota2/tree/master/game/dota/pak01_dir/scripts/npc/heroes) · [前序兼容性审计](ABILITY_COMPATIBILITY_7_42.md)。
+
+### 戴泽：现有结束投影的缓存保护
+
+从旧基线 Draft PR #21 移植本体校验，并一并保护同一缓存的写入：只有带物理本体标记的单位才登记自己，缓存表或玩家条目缺失时恢复；灵魂不得以自己填补本体缓存。无有效本体且附近有敌人时，不执行依赖本体状态的 End 分支。原撤退与 60% 血量门槛、无敌人时的 End 路径均不变。此处只影响现有 End，不新增 Through the Realm 行为，不恢复默认魔晶。
