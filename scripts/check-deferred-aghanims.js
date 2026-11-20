@@ -10,7 +10,7 @@ const path = require('node:path');
 
 const deferredScepters = [
     'abaddon', 'abyssal_underlord', 'beastmaster', 'death_prophet', 'juggernaut',
-    'life_stealer', 'lone_druid', 'meepo', 'morphling',
+    'life_stealer', 'lone_druid', 'leshrac', 'meepo', 'morphling',
     'pugna', 'sand_king', 'weaver',
 ];
 
