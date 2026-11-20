@@ -23,6 +23,10 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: temporarily defer default Aghanim's Scepter, Blessing and Shard purchases.
+-- Reason: Scepter now grants Dig; Shard grants pickup and Fling behavior.
+-- Restore only after community build guidance and ability/targeting verification.
+-- Blessing uses Scepter as a component, so item_ultimate_scepter_2 is also deferred.
 
 sRoleItemsBuyList['pos_1'] = {
     "item_tango",
@@ -34,14 +38,11 @@ sRoleItemsBuyList['pos_1'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_nullifier",--
-    "item_ultimate_scepter",
     "item_sheepstick",--
     "item_disperser",--
-    "item_ultimate_scepter_2",
     "item_swift_blink",--
     "item_moon_shard",
     "item_travel_boots_2",--
@@ -57,13 +58,10 @@ sRoleItemsBuyList['pos_2'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_sheepstick",--
-    "item_ultimate_scepter",
     "item_disperser",--
-    "item_ultimate_scepter_2",
     "item_swift_blink",--
     "item_moon_shard",
     "item_travel_boots_2",--
@@ -79,13 +77,10 @@ sRoleItemsBuyList['pos_3'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
-    "item_ultimate_scepter",
     "item_sheepstick",--
     "item_disperser",--
-    "item_ultimate_scepter_2",
     "item_swift_blink",--
     "item_moon_shard",
     "item_travel_boots_2",--
