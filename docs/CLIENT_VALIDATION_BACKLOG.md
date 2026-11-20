@@ -69,13 +69,20 @@
 | 验证编号 | 对应问题与当前代码 | 必须满足的实机观测与反例 | 状态 |
 | --- | --- | --- | --- |
 | VT-026 / release_gate | C742-16 Weaver Time Lapse (Ally) · [#19](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/19) | 没有神杖时自身无目标回溯正常；获得神杖后 bot:GetAbilityByName('weaver_time_lapse_ally') 有效、500 距离救援友军成功、两个回溯共享冷却；句柄缺失/友军不合法时不失去正常 Shukuchi 或其它行动。 | 生产函数 Lua 12/12 Mock，**blocked_no_client** |
-| VT-027 / research | C742-17 Dazzle Through the Realm · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 核对 Shard 新句柄、施法类型、Nothl Projection 本体/灵魂坐标、受控/被缠绕时禁用、结束投影的真实条件。尚无新 Consider。 | **blocked_no_client** |
-| VT-028 / research | C742-18 Lone Druid Spirit Bear 新英雄复活 · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 神杖后英雄濒死时熊是否持有英雄灵魂，熊复活技能 ID、可见状态、冷却、合法施法及熊被击杀时的负面结果；未确认前不编造动作。 | **blocked_no_client** |
-| VT-029 / research | C742-19 Undying Zombie Bite · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 确认 Shard `undying_bite` 技能存在时的目标类型、是否能使用、目标失效/抗性等边界；分析其与其他技能使用时机是否冲突。 | **blocked_no_client** |
-| VT-030 / research | C742-20 Pugna Oblivion Savant Scepter · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 在原 Q/W/E/R 冷却期、有/无 Scepter 情形实际读取 IsFullyCastable 与额外施法充能，确认重新施法与旧决策是否互相抢指令；不尝试主动施放被动。 | **blocked_no_client** |
+| VT-027 / research | C742-17 Dazzle Through the Realm · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 在 Nothl 投影中检查 Shard 新无目标句柄，身体被 Root/Leash 不允许、本体受 Stun 时仍可按官方规则触发；身体穿越到灵魂的路径和风险、与原 End 动作竞争需观测。不能单因 0 CD 就发送命令。 | **blocked_no_client** |
+| VT-028 / research | C742-18 Lone Druid Spirit Bear 新英雄复活 · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | Bear Ability4 真实 ID 为 lone_druid_spirit_bear_summon_druid；验熊真正持有 Scepter、英雄灵魂被暂存后各自 IsAlive 与 SkillsComplement 状态，确认 0.5s 后无目标动作、100 Mana、120s、熊死亡风险，缺项不得假报成功。 | **blocked_no_client** |
+| VT-029 / research | C742-19 Undying Zombie Bite · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | Shard 授予 undying_bite 的单位目标/伤害和实际控制效果；分别测试咬英雄、咬非远古小兵、Debuff Immune、无 Mana/超范围/抢核心补刀/突进送死；现无 Bite AI，不能因为已有 Shard 就认为技能受测。 | **blocked_no_client** |
+| VT-030 / research | C742-20 Pugna Oblivion Savant Scepter · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 被动新两层 20s 充能、0.25s 缓冲时旧 Q/W/E/R 的 IsFullyCastable 行为；正在 CHANNELLED 的 Life Drain 是否能合法对不同目标追加以及旧通道是否保留；同目标重复吸取反例。 | **blocked_no_client** |
 | VT-031 / research | C742-11 Beastmaster Ancient Thunderhide · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 神杖后新 `beastmaster_summon_thunderhide` 能力可用性、已召唤雷霆蜥蜴状态、冷却/目标与团队任务协调；缺失时安全跳过。 | **blocked_no_client** |
 | VT-032 / research | C742-22/23 Nyx Scarab Metabolism 和 Lycan Pack Hunter 新被动 · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 核对旧 Innate 不再可用、新被动生效和英雄/受控单位标记对可见信息的影响；没有旧名字符串不能当作实机正常。 | **blocked_no_client** |
-| VT-033 / research | C742-21 Death Prophet Shard/Scepter 效果交换 · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 实测 Crypt Swarm 充能、Spirit Siphon 神杖效果、旧技能升级/购买与高价值施法窗口；记录正反例和装备收益。 | **blocked_no_client** |
+| VT-033 / research | C742-21 Death Prophet Shard/Scepter 效果交换 · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | Shard Crypt Swarm 两层充能、Scepter Spirit Siphon 的额外生命值伤害/攻速偷取；核对当前 J.CanCastOnNonMagicImmune 过滤的合法性和 Q 技能节省/爆发场景。 | **blocked_no_client** |
+
+## 3.8 五英雄分析新增独立场景（2026-11-20）
+
+| ID / 性质 | 关联需求 | 离线及真实验收重点 | 状态 |
+| --- | --- | --- | --- |
+| VT-034 / research | C742-19-BUY Undying 默认 Shard 与 Zombie Bite 缺失 | 离线先验证 pos1/2/3/4 默认购买链确实仍有 Shard 且没有 Bite 思考；未来确认定制出装仍可购买、通过 Tormentor 获得 Shard 时不报错；确定停买默认 Shard 与新策略恢复条件，不以局末购买数量当作强度收益。 | 当前静态证据；**blocked_no_client** |
+| VT-035 / release_gate | C742-17-GUARD Dazzle 投影 body 句柄合法性 | 首先用生产函数 Mock 注入 body=nil/无效句柄，检查是否可能调用 J.IsRetreating(nil)；若后续变更有效性校验，验证正常可结束投影与紧急撤退的旧行为不被阻断；Dota 客户端只复核真实投影切身状态。 | **blocked_no_client** |
 
 ## 4. 执行顺序和所需最小证据
 

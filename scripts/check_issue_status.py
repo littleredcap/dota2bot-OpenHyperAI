@@ -29,6 +29,7 @@ REQUIRED_IDS = {
     "ENG-REGISTER", "ENG-CLIENT", "U-14", "D-23",
     "ENG-PATCH742-IMPACT", "C742-16", "C742-17", "C742-18", "C742-19",
     "C742-20", "C742-21", "C742-22", "C742-23",
+    "C742-17-GUARD", "C742-19-BUY",
 }
 REQUIRED_IDS |= {f"F-{i:02d}" for i in (*range(1, 10), 10, 11)}
 # PR coverage check is intentionally a snapshot: bump only after reviewing new

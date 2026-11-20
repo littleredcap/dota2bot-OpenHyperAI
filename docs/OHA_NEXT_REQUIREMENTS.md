@@ -28,6 +28,10 @@
 
 新增 [Weaver Time Lapse 句柄最小修复 PR #19](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/19) 和 [精选结构补丁反查 PR #20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20)。后者依据 Valve 正式补丁及固定 Hero KV，记录 21 个已检查的结构影响点，已分类 E2 / E1 / 未发现旧 ID；**仍有 115 个英雄 Lua 文件未完成逐项语义审查**。新增 VT-026～033 的未来实机门槛；不声称 AI 强度已提升或新技能时机已实现。具体状态见 [统一台账](ISSUE_AND_REQUIREMENT_STATUS.md)。
 
+## 2026-11-20：五英雄新版技能审查（不直接写新策略）
+
+根据 [五英雄机制深入审查](https://github.com/littleredcap/dota2bot-OpenHyperAI/blob/audit/patch742-impact-review/docs/PATCH742_HERO_MECHANICS_DEEP_DIVE.md)（叠加 [Draft PR #20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20)），确认 Dazzle 的穿越本体、Undying Bite、Bear 复活属于新增主动能力，不等于旧主动必然失效；Pugna Savant 神杖是充能**被动**、DP 新 Shard/Scepter 需评价机会成本。独立登记 **C742-19-BUY**（Undying 默认魔晶购买但无 Bite AI）及 **C742-17-GUARD**（Dazzle 投影本体缓存检查对象不一致）两个可优先写 Mock 的局部问题，客户端债务 **VT-034～035**。目前仍未运行客户端、未新写这些主动技能的 Consider 条件。
+
 ## 1. 文档用途与需求来源
 
 这份文档持续记录我们要解决的问题、验收方式、当前状态和未定项。新增需求先更新这里，再关联实现 PR；不把研究候选、架构建议或尚未执行的测试写成已完成成果。
