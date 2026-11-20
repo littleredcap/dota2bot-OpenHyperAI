@@ -648,7 +648,9 @@ function X.ConsiderPoof()
 end
 
 function X.ConsiderDig()
-    if not Dig:IsTrained()
+    -- 7.42: Dig is Scepter-granted rather than Shard-granted; the
+    -- ability handle may not exist before purchasing the Scepter.
+    if Dig == nil or not Dig:IsTrained()
     or not Dig:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE
