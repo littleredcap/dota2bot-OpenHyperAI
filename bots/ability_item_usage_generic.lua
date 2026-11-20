@@ -8,6 +8,7 @@ local team = GetTeam()
 local bDebugMode = ( 10 == 10 )
 
 local J = require( GetScriptDirectory()..'/FunLib/jmz_func' )
+local Banish = require( GetScriptDirectory()..'/FunLib/oha_banish' )
 local Utils = require( GetScriptDirectory()..'/FunLib/utils' )
 local BotBuild = dofile( GetScriptDirectory().."/BotLib/"..string.gsub( botName, "npc_dota_", "" ) )
 local Localization = require( GetScriptDirectory()..'/FunLib/localization' )
@@ -1933,7 +1934,8 @@ X.ConsiderItemDesire["item_cyclone"] = function( hItem )
 		if botName == "npc_dota_hero_invoker" and J.IsGoingOnSomeone(bot) then
 			if J.IsValidHero(botTarget)
 			and not J.IsSuspiciousIllusion(botTarget)
-			and J.GetMP(bot) > 0.5 then
+			and J.GetMP(bot) > 0.5
+			and not Banish.ShouldHoldEnemyBanish(bot, botTarget, J, "SETUP_COMBO") then
 				-- Should check if the target is already stuned etc.
 				hEffectTarget = botTarget
 				sCastMotive = '预设连招:'..J.Chat.GetNormName( hEffectTarget )
@@ -1970,6 +1972,7 @@ X.ConsiderItemDesire["item_cyclone"] = function( hItem )
 		end
 
 		if J.IsRunning( botTarget ) and botTarget:GetCurrentMovementSpeed() > 440
+		and not Banish.ShouldHoldEnemyBanish(bot, botTarget, J, "STOP_ESCAPE")
 		then
 			hEffectTarget = botTarget
 			sCastMotive = '阻止逃跑:'..J.Chat.GetNormName( hEffectTarget )
