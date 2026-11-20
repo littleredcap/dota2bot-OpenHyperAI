@@ -84,6 +84,9 @@ local TheSwarm          = bot:GetAbilityByName('weaver_the_swarm')
 local Shukuchi          = bot:GetAbilityByName('weaver_shukuchi')
 -- local GeminateAttack    = bot:GetAbilityByName('weaver_geminate_attack')
 local TimeLapse         = bot:GetAbilityByName('weaver_time_lapse')
+-- 7.42: Scepter grants an independent ally-targeted sub-ability.
+-- Refresh after Scepter acquisition; the original Time Lapse is self-only.
+local TimeLapseAlly
 
 local TheSwarmDesire, TheSwarmLocation
 local ShukuchiDesire
@@ -96,6 +99,8 @@ if bot.ShukuchiKillTarget == nil then bot.ShukuchiKillTarget = nil end
 function X.SkillsComplement()
     if J.CanNotUseAbility(bot) then return end
 
+    -- The ally ability can appear after this script has already initialized.
+    TimeLapseAlly = bot:GetAbilityByName('weaver_time_lapse_ally')
     botTarget = J.GetProperTarget(bot)
     if not bot:HasModifier("modifier_weaver_shukuchi")
     then
@@ -108,14 +113,16 @@ function X.SkillsComplement()
         if Target == 'self'
         then
             bot:Action_UseAbility(TimeLapse)
-        else
-            if bot:HasScepter()
-            then
-                bot:Action_UseAbilityOnEntity(TimeLapse, Target)
-            end
+            return
+        elseif Target ~= nil
+            and bot:HasScepter()
+            and TimeLapseAlly ~= nil
+            and TimeLapseAlly:IsFullyCastable()
+        then
+            -- Same original rescue decision; only the 7.42 action handle changed.
+            bot:Action_UseAbilityOnEntity(TimeLapseAlly, Target)
+            return
         end
-
-        return
     end
 
     ShukuchiDesire = X.ConsiderShukuchi()
@@ -497,8 +504,10 @@ function X.ConsiderTimeLapse()
 	end
 
 	if bot:HasScepter()
+        and TimeLapseAlly ~= nil
+        and TimeLapseAlly:IsFullyCastable()
 	then
-        local nCastRange = TimeLapse:GetCastRange()
+        local nCastRange = TimeLapseAlly:GetCastRange()
 		local nInRangeAlly = J.GetNearbyHeroes(bot,nCastRange, false, BOT_MODE_NONE)
 
 		for _, allyHero in pairs(nInRangeAlly)
