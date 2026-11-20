@@ -4974,20 +4974,48 @@ function J.GetArmorReducers(hero)
 	return reducedArmor
 end
 
-local killTime = 0.0
+-- Number of Roshan kills observed by this Lua instance. 7.42 reduces the
+-- normal-mode *base* respawn time from 8m by 1m per defeat down to 5m.
+-- Keep the documented pre-7.42 0-3m offset as a conservative working
+-- assumption (10/9/8m for 1/2/3+ observed kills). This is a planning
+-- estimate, not a current sighting or a way to see through fog.
+-- If this Lua instance starts late and misses kills, the bound remains
+-- conservative rather than claiming an early respawn without evidence.
+local lastObservedRoshanKillTime = 0
+local observedRoshanKills = 0
 function J.IsRoshanAlive()
-	if GetRoshanKillTime() > killTime
-    then
-        killTime = GetRoshanKillTime()
+    local latestKill = GetRoshanKillTime()
+    if type(latestKill) ~= "number" or latestKill < 0 then
+        return false
     end
-
-    if GetRoshanKillTime() == 0
-	or DotaTime() - killTime > (J.IsModeTurbo() and (6 * 60) or (11 * 60))
-    then
+    if latestKill == 0 then
+        lastObservedRoshanKillTime = 0
+        observedRoshanKills = 0
         return true
     end
 
-    return false
+    local now = DotaTime()
+    if latestKill > now then
+        return false
+    end
+
+    -- Keep the prior Turbo threshold and its strict boundary unchanged
+    -- until the new normal-mode rule has been verified in Turbo itself.
+    if J.IsModeTurbo() then
+        return now - latestKill > 6 * 60
+    end
+
+    if latestKill ~= lastObservedRoshanKillTime then
+        if latestKill < lastObservedRoshanKillTime then
+            -- A new game / time reset must not inherit the prior game's count.
+            observedRoshanKills = 0
+        end
+        observedRoshanKills = observedRoshanKills + 1
+        lastObservedRoshanKillTime = latestKill
+    end
+
+    local base = math.max(5, 8 - observedRoshanKills)
+    return now - latestKill >= (base + 3) * 60
 end
 
 function J.HasEnoughDPSForRoshan(heroes)
