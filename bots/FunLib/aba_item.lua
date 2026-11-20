@@ -218,6 +218,7 @@ Item['sSeniorItems'] = {
 --	'item_necronomicon', -- removed from game
 --	'item_necronomicon_2', -- removed from game
 	'item_essence_distiller',
+	'item_bloodslinger', -- 7.42
 	'item_specialists_array',
 	'item_ring_of_basilius',
 	'item_sange',
@@ -319,6 +320,13 @@ Item['sTopItems'] = {
 	'item_hydras_breath',
 	'item_consecrated_wraps',
 	'item_crellas_crozier',
+
+	-- 7.42 shop additions (not added to hero builds)
+	'item_caduceus',
+	'item_ristuls_devotion',
+	'item_berserkers_sabatons',
+	'item_skypiercer',
+	'item_starforge',
 }
 
 local tTopItemList = {}
@@ -816,6 +824,14 @@ Item["item_specialists_array"]				= GetItemComponents( 'item_specialists_array' 
 Item["item_hydras_breath"]					= GetItemComponents( 'item_hydras_breath' )[1]
 Item["item_consecrated_wraps"]				= GetItemComponents( 'item_consecrated_wraps' )[1]
 Item["item_crellas_crozier"]				= GetItemComponents( 'item_crellas_crozier' )[1]
+
+-- 7.42: register current shop recipes; default hero purchasing remains unchanged.
+Item["item_bloodslinger"] = GetItemComponents('item_bloodslinger')[1]
+Item["item_caduceus"] = GetItemComponents('item_caduceus')[1]
+Item["item_ristuls_devotion"] = GetItemComponents('item_ristuls_devotion')[1]
+Item["item_berserkers_sabatons"] = GetItemComponents('item_berserkers_sabatons')[1]
+Item["item_skypiercer"] = GetItemComponents('item_skypiercer')[1]
+Item["item_starforge"] = GetItemComponents('item_starforge')[1]
 
 --新自定义物品
 Item['item_new_1']	= GetItemComponents( 'item_new_1' )[1]
