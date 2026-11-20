@@ -66,3 +66,7 @@ dist
 
 # user's personal customized settings
 game/Customize
+
+# Local performance datasets and reports (potentially identifying match data)
+local/bot_performance/
+data/bot_performance/

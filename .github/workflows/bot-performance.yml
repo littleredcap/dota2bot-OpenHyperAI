@@ -1,0 +1,30 @@
+name: OHA Bot match performance metrics
+
+on:
+  push:
+    branches: [infra/bot-performance-metrics]
+  pull_request:
+    branches: [oha-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python and run offline metric regressions
+        run: |
+          python3 -m py_compile scripts/bot_performance.py tests/test_bot_performance.py
+          python3 -m unittest discover -s tests -p 'test_bot_performance.py' -v
+      - name: Synthetic fixture smoke test (never collected match data)
+        run: |
+          python3 scripts/bot_performance.py ingest --format manual --input docs/examples/oha_match.example.json --out /tmp/oha-example.jsonl
+          python3 scripts/bot_performance.py report --data /tmp/oha-example.jsonl --json-out /tmp/oha-example-summary.json --md-out /tmp/oha-example-summary.md
+          python3 -c 'import json; a=json.load(open("/tmp/oha-example-summary.json")); assert a["bot_observations"] == 1'
