@@ -885,6 +885,27 @@
       "check": "present",
       "needle": "11 * 60",
       "finding": "Roshan 固定复活窗口与 7.42 递减复活机制可能冲突；已有 PR #6"
+    },
+    {
+      "id": "C742-13",
+      "path": "bots/FunLib/aba_item.lua",
+      "check": "present",
+      "needle": "item_javelin",
+      "finding": "Javelin 在 7.42 已移除，但仍在公共基础物品名单中"
+    },
+    {
+      "id": "C742-14",
+      "path": "bots/ability_item_usage_generic.lua",
+      "check": "present",
+      "needle": "X.ConsiderItemDesire[\"item_helm_of_the_overlord\"]",
+      "finding": "装备已移除，但通用主动使用逻辑仍保留旧分支；可能不可达，需清理/核验"
+    },
+    {
+      "id": "C742-15",
+      "path": "bots/FunLib/aba_item.lua",
+      "check": "present",
+      "needle": "Item['item_helm_of_the_overlord']",
+      "finding": "公共装备初始化仍对已移除 Overlord 查询合成；已有 PR #4"
     }
   ]
 }

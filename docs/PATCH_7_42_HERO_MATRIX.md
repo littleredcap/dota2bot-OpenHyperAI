@@ -146,6 +146,10 @@
 | C742-04 | `bots/Buff/NeutralItems.lua` | Buff 增强模式存在第五阶自定义发放，不代表普通模式也存在 |
 | C742-05 | `bots/FunLib/jmz_func.lua` | Roshan 固定复活窗口与 7.42 递减复活机制可能冲突；已有 PR #6 |
 
+| C742-13 | `bots/FunLib/aba_item.lua` | Javelin 已被 7.42 移除，但仍处于公共基础物品名单 |
+| C742-14 | `bots/ability_item_usage_generic.lua` | 已移除 Overlord 仍保留旧主动逻辑，可能已不可达 |
+| C742-15 | `bots/FunLib/aba_item.lua` | 公共物品表仍查询 Overlord 旧配方；PR #4 已处理 |
+
 ## 分类含义
 
 - **E2**：游戏补丁与活动源码存在明确冲突（仍要在真实客户端中验证执行路径）。
