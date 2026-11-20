@@ -23,6 +23,8 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.39+ Shard upgrades Aphotic Shield, not the old Mist Coil on-hit effect.
+-- Defer Shard purchase until its bot-use value has been reassessed.
 -- 7.42: Aghanim upgrades temporarily omitted from default item builds.
 -- Reason: Scepter moved from Borrowed Time to Mist Coil AoE.
 -- Also omit item_ultimate_scepter_2: Blessing would re-purchase the Scepter.
@@ -46,7 +48,6 @@ sRoleItemsBuyList['pos_1'] = {
     "item_harpoon",--
     "item_black_king_bar",--
     "item_skadi",--
-    "item_aghanims_shard",
     "item_bloodthorn",--
     "item_travel_boots_2",--
     "item_moon_shard",
@@ -67,7 +68,6 @@ sRoleItemsBuyList['pos_2'] = {
     "item_manta",--
     "item_assault",--
     "item_harpoon",--
-    "item_aghanims_shard",
     "item_basher",
     "item_heart",--
     "item_travel_boots",
@@ -92,14 +92,12 @@ sRoleItemsBuyList['pos_3'] = {
     "item_travel_boots",
     "item_heart",--
     "item_travel_boots_2",--
-    "item_aghanims_shard",
     "item_moon_shard",
 }
 
 sRoleItemsBuyList['pos_4'] = {
 	"item_tank_outfit",
 	"item_echo_sabre",
-	"item_aghanims_shard",
 	"item_consecrated_wraps",--
 	"item_crimson_guard",
 	"item_heavens_halberd",
@@ -117,7 +115,6 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_glimmer_cape",--
 	"item_boots_of_bearing",--
 	"item_pipe",--
-	"item_aghanims_shard",
 	"item_cyclone",
     "item_shivas_guard",--
 	"item_sheepstick",--
@@ -206,11 +203,8 @@ function X.ConsiderMistCoil()
     local botTarget = J.GetProperTarget(bot)
     local nEnemyHeroes = J.GetNearbyHeroes(bot,nCastRange, true, BOT_MODE_NONE)
 
-    if J.HasAghanimsShard(bot)
-    then
-        nDamage = bot:GetAttackDamage()
-        nDamageType = DAMAGE_TYPE_PURE
-    end
+    -- Shard upgrades Aphotic Shield, not Mist Coil (since 7.39).
+    -- Preserve Mist Coil's normal magical damage estimate.
 
     if J.IsGoingOnSomeone(bot) then
         if J.IsValidHero(botTarget)
