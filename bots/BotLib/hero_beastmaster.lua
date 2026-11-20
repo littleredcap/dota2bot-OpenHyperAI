@@ -15,8 +15,8 @@ local tTalentTreeList = {
 }
 
 local tAllAbilityBuildList = {
-						{1,2,2,1,1,6,1,2,2,4,6,4,4,4,6},--pos3 (Axes + Boar for lane pressure)
-						{2,4,2,4,2,6,2,4,4,1,6,1,1,1,6},--pos1/2 (Boar + Inner Beast for fighting)
+						{1,2,2,1,1,6,1,2,2,3,6,3,3,3,6},--pos3 (Axes + Boar for lane pressure)
+						{2,3,2,3,2,6,2,3,3,1,6,1,1,1,6},--pos1/2 (Boar + Inner Beast for fighting)
 }
 
 local nAbilityBuildList
