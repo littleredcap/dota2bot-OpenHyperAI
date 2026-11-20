@@ -90,3 +90,14 @@ Commits:
 ### Verification limits
 
 GitHub file readback and static comparisons were used. **No `luac` compile, TS build, bot match, or actual Dota 2 runtime execution occurred**. The four targeted fixes address known incompatibilities, but this is not a blanket guarantee that all 7.42 hero abilities are compatible.
+
+## Deferred Aghanim purchases and base-skill follow-up
+
+Policy adopted 2026-11-20: do **not** automatically purchase Scepter or Shard upgrades whose new/reworked behavior has not yet been evaluated. See [AGHANIMS_DEFERRED_7_42.md](AGHANIMS_DEFERRED_7_42.md) for the full by-hero list, restoration criteria, default-build limits, and check command.
+
+- 12 heroes temporarily defer Scepter/Blessing; 6 heroes (including Undying, which was already deferred earlier) temporarily defer Shard. The latest purchase-edit pass removed 22 Scepters, 39 Blessings, and 16 Shards from 15 hero files; Undying's earlier removal is not included in that count.
+- `npm run check:deferred-aghanims` ensures none of those forbidden upgrades re-enter the specified **default** buy lists. `npm run build` now executes the check before the TypeScript-to-Lua compilation step.
+- Existing code for Weaver ally Time Lapse and Meepo Dig remains available for later validation but their new Scepter purchases are deferred; no unverified new upgrade spells have been enabled as a consequence of this policy.
+- Medusa `hero_medusa.lua`: Gorgon's Grasp was changed from **physical to magical** damage in 7.42. Updated `CanKillTarget` in `ConsiderGorgonGrasp()` from `DAMAGE_TYPE_PHYSICAL` to `DAMAGE_TYPE_MAGICAL`, preserving the rest of the cast logic. Commit: https://github.com/littleredcap/dota2bot-OpenHyperAI/commit/037d35111bfbe9ba9a9adf0e8443304e5ec1f391
+
+All stated checks are **static readback and JavaScript syntax validation**, not a completed Dota 2 match test or a full local `npm run build`. Remaining structural compatibility work excludes speculative automatic use of newly granted Scepter/Shard abilities.
