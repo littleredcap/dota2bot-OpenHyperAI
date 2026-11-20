@@ -34,6 +34,7 @@ local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 local sLotusHalberd = RandomInt( 1, 2 ) == 1 and "item_lotus_orb" or "item_heavens_halberd"
 
 local sRoleItemsBuyList = {}
+-- 7.42 audit: item_great_scepter is not a valid shop or custom item; Aghanim's Scepter is listed separately.
 
 sRoleItemsBuyList['pos_3'] = {
 	"item_tango",
@@ -74,7 +75,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_harpoon",--
 	"item_aghanims_shard",
 	"item_assault",--
-	"item_great_scepter",--
 	"item_ultimate_scepter",
 	"item_overwhelming_blink",--
 	"item_ultimate_scepter_2",
