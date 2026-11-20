@@ -252,8 +252,12 @@ function NeutralItems:SelectRandomItem(tier, unit)
 	else
 		items,count = NeutralItems:GetTableForTierAndRole(tier,unit)
 	end
-	-- A valid tier may have no remaining options for a role after other bots
-	-- claim their artifacts. Avoid math.random(0) and let the caller retry/fallback.
+	-- If earlier picks exhausted this role's matching artifacts, fall back to
+	-- any still-available artifact in this tier rather than leaving a bot empty.
+	if unit ~= nil and (items == nil or count == nil or count <= 0) then
+		items, count = NeutralItems:GetTableForTier(tier)
+	end
+	-- Never pass zero to math.random when a tier is depleted.
 	if items == nil or count == nil or count <= 0 then return nil end
 	-- pick one at random
 	local item = items[math.random(count)]
@@ -422,25 +426,12 @@ function NeutralItems:SetBotFindTier(bot, tier)
 	Debug:Print(msg)
 end
 
--- Computes the neutral item timing offset using the difficulty scale
--- The value is a linear interpolation of target value at baseline difficulty of 1.0 vs. game default value
---[[ At baseline of 0 seconds for tier 1 and...
-	(7.41: Tier 1 neutrals now available from 0:00, timingsDefault[1] = 0)
--            difficulty 0, we'd have (0-0)*(1-0) resulting in a shift of 0 seconds (neutral matching game default)
-			difficulty 1.0, we'd have (0-0)*(1-1) resulting in a shift of 0 seconds
-		At baseline of 3600 for tier 3 and ...
--            difficulty 0, we'd have (1620-1020)*(1-0) resulting in a shift of 600 seconds (600+1020=1620=game default)
-			difficulty 0.7, we'd have (1620-1020)*(1-0.7) resulting in a shift of 180 seconds (180+1020=1200)
-
-	Rough reference using timings = {0, 420, 1020, 2020, 3600}:
-	| Tier          | 1    | 2    | 3    | 4    | 5    |
-	|---------------|------|------|------|------|------|
-	| 0 (base game) | 0    | 1020 | 1620 | 2020 | 3600 |
-	| 0.5           | 0    | 720  | 1320 | 2020 | 3600 |
-	| 0.7           | 0    | 600  | 1200 | 2020 | 3600 |
-	| 1             | 0    | 420  | 1020 | 2020 | 3600 |
-	| 1.5           | 0    | 120  | 720  | 2020 | 3600 |
---]]
+-- Computes the neutral-item timing offset using the difficulty scale.
+-- Dota 7.42 has four tiers, available at 0/15/30/50 minutes.
+-- FretBots defaults to 0/5/20/50 minutes, preserving the original
+-- ten-minute early advantage for tiers 2 and 3 at difficulty scale 1.
+-- At difficulty scale 0, this offset delays rewards to game unlock times.
+-- At scale 1, FretBots uses the accelerated default; scale >1 is earlier.
 function NeutralItems:GetTimingDifficultyScaleShift(tier)
 	local timingDifficultyShift = (Settings.neutralItems.timingsDefault[tier] - Settings.neutralItems.timings[tier]) * (1 - math.min(Settings.difficultyScale, 2))
 	return timingDifficultyShift
