@@ -84,6 +84,7 @@ local TheSwarm          = bot:GetAbilityByName('weaver_the_swarm')
 local Shukuchi          = bot:GetAbilityByName('weaver_shukuchi')
 -- local GeminateAttack    = bot:GetAbilityByName('weaver_geminate_attack')
 local TimeLapse         = bot:GetAbilityByName('weaver_time_lapse')
+local TimeLapseAlly     = bot:GetAbilityByName('weaver_time_lapse_ally')
 
 local TheSwarmDesire, TheSwarmLocation
 local ShukuchiDesire
@@ -102,6 +103,9 @@ function X.SkillsComplement()
         bot.tryShukuchiKill = false
     end
 
+    -- 7.42: the Scepter ally cast is a separate ability, which may
+    -- appear only after the item is acquired during the match.
+    TimeLapseAlly = bot:GetAbilityByName('weaver_time_lapse_ally')
     TimeLapseDesire, Target = X.ConsiderTimeLapse()
     if TimeLapseDesire > 0
     then
@@ -109,9 +113,10 @@ function X.SkillsComplement()
         then
             bot:Action_UseAbility(TimeLapse)
         else
-            if bot:HasScepter()
+            if bot:HasScepter() and TimeLapseAlly ~= nil
+            and not TimeLapseAlly:IsHidden() and TimeLapseAlly:IsFullyCastable()
             then
-                bot:Action_UseAbilityOnEntity(TimeLapse, Target)
+                bot:Action_UseAbilityOnEntity(TimeLapseAlly, Target)
             end
         end
 
@@ -459,7 +464,7 @@ function X.ConsiderShukuchi()
 end
 
 function X.ConsiderTimeLapse()
-    if not TimeLapse:IsFullyCastable()
+    if TimeLapse == nil or not TimeLapse:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE, nil
     end
@@ -496,9 +501,10 @@ function X.ConsiderTimeLapse()
         end
 	end
 
-	if bot:HasScepter()
+	if bot:HasScepter() and TimeLapseAlly ~= nil
+    and not TimeLapseAlly:IsHidden() and TimeLapseAlly:IsFullyCastable()
 	then
-        local nCastRange = TimeLapse:GetCastRange()
+        local nCastRange = J.GetProperCastRange(false, bot, TimeLapseAlly:GetCastRange())
 		local nInRangeAlly = J.GetNearbyHeroes(bot,nCastRange, false, BOT_MODE_NONE)
 
 		for _, allyHero in pairs(nInRangeAlly)
