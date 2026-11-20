@@ -26,6 +26,10 @@ local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 local sRandom = RandomInt(1, 2) == 1 and "item_radiance" or "item_desolator"
 
 local sRoleItemsBuyList = {}
+-- 7.42: Aghanim upgrades temporarily omitted from default item builds.
+-- Reason: Scepter Infest targeting and spell-reflection restrictions changed.
+-- Also omit item_ultimate_scepter_2: Blessing would re-purchase the Scepter.
+-- Restore only after community build guidance and ability/targeting verification.
 
 sRoleItemsBuyList['pos_1'] = {
     "item_tango",
@@ -48,7 +52,6 @@ sRoleItemsBuyList['pos_1'] = {
     "item_abyssal_blade",--
     "item_moon_shard",
     "item_travel_boots_2",--
-    "item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_2'] = sRoleItemsBuyList['pos_1']
@@ -67,9 +70,7 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_heavens_halberd",--
 	"item_aghanims_shard",
     "item_abyssal_blade",--
-	"item_ultimate_scepter",
 	"item_moon_shard",
-	"item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_5'] = {
@@ -84,9 +85,7 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_heavens_halberd",--
 	"item_aghanims_shard",
     "item_abyssal_blade",--
-	"item_ultimate_scepter",
 	"item_moon_shard",
-	"item_ultimate_scepter_2",
 }
 
 X['sBuyList'] = sRoleItemsBuyList[sRole]
