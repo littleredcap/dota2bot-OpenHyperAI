@@ -1,0 +1,28 @@
+name: Leshrac 7.42 Nihilism regression
+
+on:
+  pull_request:
+    branches: [oha-next]
+  push:
+    branches: [fix/7.42-leshrac-nihilism]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lua51:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+      - name: Validate production and test syntax
+        run: |
+          luac5.1 -p bots/BotLib/hero_leshrac.lua
+          luac5.1 -p tests/test_patch742_leshrac_nihilism.lua
+      - name: Run Leshrac 7.42 regressions
+        run: lua5.1 tests/test_patch742_leshrac_nihilism.lua

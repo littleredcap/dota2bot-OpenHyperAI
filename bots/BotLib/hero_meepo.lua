@@ -22,6 +22,10 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
+-- Patch 7.42: the new Shard only unlocks pickup/Fling. Our Shard AI is
+-- experimental and disabled pending engine/strategy validation, so do not
+-- buy Shard in the default builds ahead of established combat items.
+-- Custom builds may still opt into a Shard when the player wants it.
 local sRoleItemsBuyList = {}
 
 sRoleItemsBuyList['pos_1'] = {
@@ -34,7 +38,6 @@ sRoleItemsBuyList['pos_1'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_nullifier",--
@@ -57,7 +60,6 @@ sRoleItemsBuyList['pos_2'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_sheepstick",--
@@ -79,7 +81,6 @@ sRoleItemsBuyList['pos_3'] = {
     "item_magic_wand",
     "item_power_treads",
     "item_diffusal_blade",
-    "item_aghanims_shard",
     "item_blink",
     "item_skadi",--
     "item_ultimate_scepter",
@@ -157,15 +158,14 @@ end
 ----------------------------------------------
 local EarthBind         = bot:GetAbilityByName('meepo_earthbind')
 local Poof              = bot:GetAbilityByName('meepo_poof')
+-- Patch 7.42: Dig is now granted by Aghanim's Scepter, not Shard.
+-- MegaMeepo was removed; the new Divided We Stand Shard pickup/Fling
+-- combo has different semantics and needs a separately verified implementation.
 local Dig               = bot:GetAbilityByName('meepo_petrify')
-local MegaMeepo         = bot:GetAbilityByName('meepo_megameepo')
-local MegaMeepoFling    = bot:GetAbilityByName('meepo_megameepo_fling')
 
 local EarthBindDesire, EarthBindLocation
 local PoofDesire, PoofTarget
 local DigDesire
-local MegaMeepoDesire
-local MegaMeepoFlingDesire, MegaMeepoFlingFlingTarget
 
 local Meepos = {}
 
@@ -183,8 +183,6 @@ function X.SkillsComplement()
     EarthBind      = bot:GetAbilityByName('meepo_earthbind')
     Poof           = bot:GetAbilityByName('meepo_poof')
     Dig            = bot:GetAbilityByName('meepo_petrify')
-    MegaMeepo      = bot:GetAbilityByName('meepo_megameepo')
-    MegaMeepoFling = bot:GetAbilityByName('meepo_megameepo_fling')
 
     -- Cache per-tick variables
     Meepos       = J.GetMeepos()
@@ -209,13 +207,6 @@ function X.SkillsComplement()
         return
     end
 
-    MegaMeepoDesire = X.ConsiderMegaMeepo()
-    if MegaMeepoDesire > 0
-    then
-        bot:ActionQueue_UseAbility(MegaMeepo)
-        return
-    end
-
     EarthBindDesire, EarthBindLocation = X.ConsiderEarthBind()
     if EarthBindDesire > 0
     then
@@ -225,12 +216,6 @@ function X.SkillsComplement()
         return
     end
 
-    MegaMeepoFlingDesire, MegaMeepoFlingFlingTarget = X.ConsiderMegaMeepoFling()
-    if MegaMeepoFlingDesire > 0
-    then
-        bot:ActionQueue_UseAbilityOnEntity(MegaMeepoFling, MegaMeepoFlingFlingTarget)
-        return
-    end
 end
 
 function X.ConsiderEarthBind()
@@ -667,7 +652,9 @@ function X.ConsiderPoof()
 end
 
 function X.ConsiderDig()
-    if not Dig:IsTrained()
+    -- Dig may not exist before acquiring the 7.42 Aghanim's Scepter.
+    if Dig == nil
+    or not Dig:IsTrained()
     or not Dig:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE
@@ -700,79 +687,5 @@ function X.ConsiderDig()
     return BOT_ACTION_DESIRE_NONE
 end
 
-function X.ConsiderMegaMeepo()
-    if not MegaMeepo:IsTrained()
-    or not MegaMeepo:IsFullyCastable()
-    or bot:HasModifier('modifier_meepo_petrify')
-    then
-        return BOT_ACTION_DESIRE_NONE
-    end
-
-    local nRadius = 600
-
-    if J.IsGoingOnSomeone(bot)
-    then
-        local count = 0
-
-        for _, meepo in pairs(Meepos)
-        do
-
-            if meepo:WasRecentlyDamagedByAnyHero(1.2)
-            and J.IsMeepoClone(meepo)
-            and J.IsInRange(bot, meepo, nRadius)
-            and not meepo:HasModifier('modifier_meepo_petrify')
-            then
-                count = count + 1
-            end
-        end
-
-        if count >= 2
-        then
-            return BOT_ACTION_DESIRE_HIGH
-        end
-    end
-
-    return BOT_ACTION_DESIRE_NONE
-end
-
-function X.ConsiderMegaMeepoFling()
-    if MegaMeepoFling:IsHidden()
-    or not MegaMeepoFling:IsFullyCastable()
-    then
-        return BOT_ACTION_DESIRE_NONE
-    end
-
-    local nCastRange = MegaMeepoFling:GetCastRange()
-    local nInRangeAlly = J.GetNearbyHeroes(bot,1000, false, BOT_MODE_NONE)
-    local nInRangeEnemy = J.GetNearbyHeroes(bot,800, true, BOT_MODE_NONE)
-
-    if J.IsGoingOnSomeone(bot)
-    then
-        local weakestTarget = J.GetAttackableWeakestUnit(bot, nCastRange, true, true)
-
-        if weakestTarget ~= nil
-        and bot:WasRecentlyDamagedByAnyHero(3.1)
-        and not J.IsMeepoClone(bot)
-        and not weakestTarget:HasModifier('modifier_faceless_void_chronosphere_freeze')
-        and nInRangeAlly ~= nil and nInRangeEnemy
-        and #nInRangeAlly >= #nInRangeEnemy
-        then
-            return BOT_ACTION_DESIRE_HIGH, weakestTarget
-        end
-    end
-
-    local nCreeps = bot:GetNearbyCreeps(nCastRange, true)
-    if nCreeps ~= nil and #nCreeps >= 1
-    and nInRangeEnemy ~= nil and #nInRangeEnemy == 0
-    then
-        if J.IsValid(nCreeps[1])
-        and not J.IsMeepoClone(bot)
-        then
-            return BOT_ACTION_DESIRE_HIGH, nCreeps[1]
-        end
-    end
-
-    return BOT_ACTION_DESIRE_NONE
-end
 
 return X

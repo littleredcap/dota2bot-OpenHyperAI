@@ -205,17 +205,13 @@ function X.ConsiderMistCoil()
 
 	local nCastRange = MistCoil:GetCastRange()
 	local nDamage = MistCoil:GetSpecialValueInt('target_damage')
-	local nSelfDamage = MistCoil:GetSpecialValueInt('self_damage')
     local nDamageType = DAMAGE_TYPE_MAGICAL
     local botTarget = J.GetProperTarget(bot)
     local nEnemyHeroes = J.GetNearbyHeroes(bot,nCastRange, true, BOT_MODE_NONE)
 
-    if J.HasAghanimsShard(bot)
-    then
-        nDamage = bot:GetAttackDamage()
-        nDamageType = DAMAGE_TYPE_PURE
-    end
-
+    -- 7.42: Shard enhances Aphotic Shield, not Mist Coil damage.
+    -- Mist Coil's new Scepter AoE is separate; this single-target
+    -- kill estimate remains based on the spell's magical damage.
     if J.IsGoingOnSomeone(bot) then
         if J.IsValidHero(botTarget)
         and J.CanCastOnMagicImmune(botTarget) then
