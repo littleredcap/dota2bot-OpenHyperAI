@@ -6,11 +6,12 @@
   "hero_files": [
     {
       "path": "bots/BotLib/hero_abaddon.lua",
-      "status": "E1",
+      "status": "E2",
       "rules": [
-        "C742-08"
+        "C742-08",
+        "C742-08-SHARD"
       ],
-      "note": "Mist Coil 自伤改生命消耗，旧特殊值与行为要核查"
+      "note": "Mist Coil 自伤改生命消耗，旧特殊值与行为要核查；7.42 Shard 已改强化 Aphotic Shield，旧 Mist Coil 仍把 Shard 伤害估算为纯粹伤害；PR #17"
     },
     {
       "path": "bots/BotLib/hero_abyssal_underlord.lua",
@@ -67,7 +68,7 @@
         "C742-02",
         "C742-11"
       ],
-      "note": "包含已删除的 Overlord 默认装备；已有 PR #4；神杖 Ancient Thunderhide 新召唤策略未见实现"
+      "note": "包含已删除的 Overlord 默认装备；已有 PR #4；新神杖能力 Ancient Thunderhide 尚未处理；内部名已核对 7.42 Hero KV"
     },
     {
       "path": "bots/BotLib/hero_bloodseeker.lua",
@@ -111,15 +112,16 @@
       "rules": [
         "C742-09"
       ],
-      "note": "Ahead, Armageddon 新主动技能尚未接入（内部 ID 待核对）"
+      "note": "新主动 Armageddon 尚未接入；已核对 7.42 Hero KV，仍需考虑冲锋中断"
     },
     {
       "path": "bots/BotLib/hero_chen.lua",
-      "status": "E1",
+      "status": "E2",
       "rules": [
-        "C742-10"
+        "C742-10",
+        "C742-10-OLD"
       ],
-      "note": "Zealot 新主动与 Holy Persuasion 自身召回未接入"
+      "note": "新 Zealot 主动与 Holy Persuasion 召回尚未实现；旧 Summon Convert 见 C742-10-OLD；7.42 Chen 的 Ability4 改为 chen_zealot；旧 Summon Convert 句柄仍被调用；PR #17"
     },
     {
       "path": "bots/BotLib/hero_clinkz.lua",
@@ -153,9 +155,11 @@
     },
     {
       "path": "bots/BotLib/hero_dazzle.lua",
-      "status": "UNREVIEWED",
-      "rules": [],
-      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+      "status": "E1",
+      "rules": [
+        "C742-17"
+      ],
+      "note": "Shard 新增 Through the Realm 主动，当前 Dazzle 未考虑；新增技能时机尚待研究"
     },
     {
       "path": "bots/BotLib/hero_death_prophet.lua",
@@ -349,9 +353,11 @@
     },
     {
       "path": "bots/BotLib/hero_lone_druid_bear.lua",
-      "status": "UNREVIEWED",
-      "rules": [],
-      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+      "status": "E1",
+      "rules": [
+        "C742-18"
+      ],
+      "note": "神杖赋予熊的复活内部 ID 已从 npc_units.txt 确认：lone_druid_spirit_bear_summon_druid；单位独立技能脚本未处理；引擎可用性尚未验证"
     },
     {
       "path": "bots/BotLib/hero_luna.lua",
@@ -521,9 +527,11 @@
     },
     {
       "path": "bots/BotLib/hero_pugna.lua",
-      "status": "UNREVIEWED",
-      "rules": [],
-      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+      "status": "E1",
+      "rules": [
+        "C742-20"
+      ],
+      "note": "Oblivion Savant 的 Scepter 冷却再施法重做；现有脚本未显式感知其充能，待语义核验（不等于必须主动施放被动）"
     },
     {
       "path": "bots/BotLib/hero_queenofpain.lua",
@@ -707,9 +715,11 @@
     },
     {
       "path": "bots/BotLib/hero_undying.lua",
-      "status": "UNREVIEWED",
-      "rules": [],
-      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+      "status": "E1",
+      "rules": [
+        "C742-19"
+      ],
+      "note": "7.42 Shard 新增 Zombie Bite 主动，7.42 Hero KV 中技能内部名为 undying_bite；当前未接入"
     },
     {
       "path": "bots/BotLib/hero_ursa.lua",
@@ -755,9 +765,11 @@
     },
     {
       "path": "bots/BotLib/hero_weaver.lua",
-      "status": "UNREVIEWED",
-      "rules": [],
-      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+      "status": "E2",
+      "rules": [
+        "C742-16"
+      ],
+      "note": "7.42 Scepter Time Lapse (Ally) 是独立技能；原逻辑仍以无目标自身回溯句柄对友军下令；PR #19"
     },
     {
       "path": "bots/BotLib/hero_windrunner.lua",
@@ -844,24 +856,80 @@
       "id": "C742-09",
       "status": "E1",
       "check": "absent",
-      "needle": "armageddon",
-      "finding": "Ahead, Armageddon 新主动技能尚未接入（内部 ID 待核对）"
+      "needle": "chaos_knight_armageddon",
+      "finding": "新主动 Armageddon 尚未接入；已核对 7.42 Hero KV，仍需考虑冲锋中断"
     },
     {
       "hero": "hero_chen.lua",
       "id": "C742-10",
       "status": "E1",
       "check": "absent",
-      "needle": "zealot",
-      "finding": "Zealot 新主动与 Holy Persuasion 自身召回未接入"
+      "needle": "chen_zealot",
+      "finding": "新 Zealot 主动与 Holy Persuasion 召回尚未实现；旧 Summon Convert 见 C742-10-OLD"
     },
     {
       "hero": "hero_beastmaster.lua",
       "id": "C742-11",
       "status": "E1",
       "check": "absent",
-      "needle": "thunderhide",
-      "finding": "神杖 Ancient Thunderhide 新召唤策略未见实现"
+      "needle": "beastmaster_summon_thunderhide",
+      "finding": "新神杖能力 Ancient Thunderhide 尚未处理；内部名已核对 7.42 Hero KV"
+    },
+    {
+      "hero": "hero_abaddon.lua",
+      "id": "C742-08-SHARD",
+      "status": "E2",
+      "check": "present",
+      "needle": "nDamageType = DAMAGE_TYPE_PURE",
+      "finding": "7.42 Shard 已改强化 Aphotic Shield，旧 Mist Coil 仍把 Shard 伤害估算为纯粹伤害；PR #17"
+    },
+    {
+      "hero": "hero_chen.lua",
+      "id": "C742-10-OLD",
+      "status": "E2",
+      "check": "present",
+      "needle": "GetAbilityByName('chen_summon_convert')",
+      "finding": "7.42 Chen 的 Ability4 改为 chen_zealot；旧 Summon Convert 句柄仍被调用；PR #17"
+    },
+    {
+      "hero": "hero_weaver.lua",
+      "id": "C742-16",
+      "status": "E2",
+      "check": "present",
+      "needle": "Action_UseAbilityOnEntity(TimeLapse, Target)",
+      "finding": "7.42 Scepter Time Lapse (Ally) 是独立技能；原逻辑仍以无目标自身回溯句柄对友军下令；PR #19"
+    },
+    {
+      "hero": "hero_dazzle.lua",
+      "id": "C742-17",
+      "status": "E1",
+      "check": "absent",
+      "needle": "dazzle_through_the_realm",
+      "finding": "Shard 新增 Through the Realm 主动，当前 Dazzle 未考虑；新增技能时机尚待研究"
+    },
+    {
+      "hero": "hero_lone_druid_bear.lua",
+      "id": "C742-18",
+      "status": "E1",
+      "check": "absent",
+      "needle": "lone_druid_spirit_bear_summon_druid",
+      "finding": "神杖赋予熊的复活内部 ID 已从 npc_units.txt 确认：lone_druid_spirit_bear_summon_druid；单位独立技能脚本未处理；引擎可用性尚未验证"
+    },
+    {
+      "hero": "hero_undying.lua",
+      "id": "C742-19",
+      "status": "E1",
+      "check": "absent",
+      "needle": "undying_bite",
+      "finding": "7.42 Shard 新增 Zombie Bite 主动，7.42 Hero KV 中技能内部名为 undying_bite；当前未接入"
+    },
+    {
+      "hero": "hero_pugna.lua",
+      "id": "C742-20",
+      "status": "E1",
+      "check": "absent",
+      "needle": "pugna_oblivion_savant",
+      "finding": "Oblivion Savant 的 Scepter 冷却再施法重做；现有脚本未显式感知其充能，待语义核验（不等于必须主动施放被动）"
     }
   ],
   "common": [
