@@ -252,7 +252,9 @@ function NeutralItems:SelectRandomItem(tier, unit)
 	else
 		items,count = NeutralItems:GetTableForTierAndRole(tier,unit)
 	end
-	if items == nil then return nil end
+	-- A valid tier may have no remaining options for a role after other bots
+	-- claim their artifacts. Avoid math.random(0) and let the caller retry/fallback.
+	if items == nil or count == nil or count <= 0 then return nil end
 	-- pick one at random
 	local item = items[math.random(count)]
 	-- if there was a valid item, remove it from the table (if settings tell us to)
