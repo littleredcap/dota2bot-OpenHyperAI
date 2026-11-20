@@ -43,6 +43,8 @@ local sUtility = {"item_pipe", "item_lotus_orb", "item_crimson_guard"}
 local nUtility = sUtility[RandomInt(1, #sUtility)]
 
 local sRoleItemsBuyList = {}
+-- 7.42: Scepter/Blessing is deferred until reworked Nihilism has
+-- validated bot-use conditions and stable community purchasing guidance.
 
 sRoleItemsBuyList['pos_2'] = {
     "item_tango",
@@ -66,7 +68,6 @@ sRoleItemsBuyList['pos_2'] = {
     "item_wind_waker",--
     "item_moon_shard",
     "item_travel_boots_2",--
-    "item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_3'] = {
@@ -87,7 +88,6 @@ sRoleItemsBuyList['pos_3'] = {
     "item_shivas_guard",--
     "item_moon_shard",
     "item_travel_boots_2",--
-    "item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_1'] = sRoleItemsBuyList['pos_3']
@@ -941,7 +941,7 @@ function X.ConsiderPulseNova()
 end
 
 function X.ConsiderNihilism()
-    if not Nihilism:IsTrained()
+    if Nihilism == nil or not Nihilism:IsTrained()
     or not Nihilism:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE
