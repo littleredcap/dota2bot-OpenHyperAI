@@ -1,0 +1,30 @@
+name: Decision diagnostics and policy
+
+on:
+  push:
+    branches: [infra/decision-quality]
+  pull_request:
+    branches: [oha-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lua51:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+      - name: Syntax and deterministic diagnostics regression
+        run: |
+          luac5.1 -p bots/FunLib/oha_decision_trace.lua
+          luac5.1 -p bots/Customize/decision_trace.lua
+          luac5.1 -p tests/test_decision_trace.lua
+          lua5.1 tests/test_decision_trace.lua
+      - name: Offline decision log analyzer regression
+        run: python3 -m unittest discover -s tests -p 'test_analyze_decision_logs.py'
