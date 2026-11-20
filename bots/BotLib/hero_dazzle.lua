@@ -348,15 +348,19 @@ function X.ConsiderNothlProjectionEnd()
 	if #hEnemyList <= 0 then
 		return BOT_ACTION_DESIRE_HIGH
 	end
-	local _bot = J.Utils.GameStates.dazzleNothl[bot:GetPlayerID()].body
-	if J.IsValid(bot) then
-		if J.IsRetreating( _bot )
-		and J.GetHP(_bot) < 0.6
-		and #hEnemyList >= 1
-		then
-			return BOT_ACTION_DESIRE_HIGH
-		end
-	end
+    -- Validate the cached physical body, not the current spirit.
+    -- The per-player cache or its body can be absent after a state reset.
+    local tNothlState = J.Utils.GameStates.dazzleNothl
+    local tPlayerState = tNothlState and tNothlState[bot:GetPlayerID()]
+    local hBody = tPlayerState and tPlayerState.body
+    if J.IsValid(hBody) then
+        if J.IsRetreating(hBody)
+        and J.GetHP(hBody) < 0.6
+        and #hEnemyList >= 1
+        then
+            return BOT_ACTION_DESIRE_HIGH
+        end
+    end
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 
