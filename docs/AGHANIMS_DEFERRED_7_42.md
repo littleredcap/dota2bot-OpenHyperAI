@@ -1,6 +1,6 @@
 # Dota 2 7.42 — Deferred Aghanim's Scepter / Shard Purchases
 
-Decision: **2026-11-20**. This project intentionally stops **default** purchases of Aghanim upgrades whose new/reworked 7.42 benefit requires further hero-specific review or missing cast/target logic. Restore them only after mature community build guidance, verified ability behavior, and a separate consideration of economic opportunity cost.
+Decision: **2026-11-20**. This project intentionally stops **default** purchases of Aghanim upgrades whose new/reworked benefit from 7.41f–7.42 requires further hero-specific review or missing cast/target logic. Restore them only after mature community build guidance, verified ability behavior, and a separate consideration of economic opportunity cost.
 
 This is a **buy-list policy**, not a blanket denial of in-game buffs, Roshan drops, custom hero overrides, or special PvN/AllShadow item presets. Do not replace missing upgrades with speculative items; keep the rest of each position's existing item order.
 
@@ -11,6 +11,7 @@ For every hero below, remove both `item_ultimate_scepter` and `item_ultimate_sce
 | Hero script | 7.42 structural reason |
 |---|---|
 | `abaddon` | Borrowed Time no longer upgraded; Mist Coil now receives AoE/attacks from Scepter |
+| `abyssal_underlord` | 7.41f reworked Scepter bonuses; 7.42 Fiend's Gate generates Pit of Malice only at the destination |
 | `beastmaster` | New Summon Ancient Thunderhide ability; summon and creep-AI usage pending |
 | `death_prophet` | Scepter moved from Exorcism to Spirit Siphon |
 | `juggernaut` | Swiftslash removed; Scepter now upgrades Blade Fury |
@@ -39,7 +40,7 @@ The first five entries were changed during this policy pass. Undying was already
 
 ## Implemented changes and safeguards
 
-- Removed **22 direct Scepter**, **35 Blessing** and **16 Shard** entries across **14 hero files** (73 active entries in the latest pass). The separate prior Undying Shard removal is not counted here.
+- Removed **22 direct Scepter**, **39 Blessing** and **16 Shard** entries across **15 hero files** (77 active entries in the latest pass). The separate prior Undying Shard removal is not counted here.
 - Role aliases, such as Juggernaut's shared build, inherit the updated purchase list. Lone Druid's separate `pos_1_w_bear` list was also updated.
 - `bots/item_purchase_generic.lua` builds its purchase queue from the hero's `sBuyList`, so removing the upgrades from those default lists prevents the normal queue from buying them.
 - Added `scripts/check-deferred-aghanims.js`, exposed as `npm run check:deferred-aghanims`. `npm run build` runs this check before TypeScript-to-Lua generation. The check covers the specified default role build sections and will fail if a deferred purchase is reintroduced.
