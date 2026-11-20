@@ -64,6 +64,19 @@
 | --- | --- | --- | --- |
 | VT-025 / release_gate | [7.42 五项最小修复整合 Draft PR #18](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/18) · ENG-PATCH742-JOINT | 通过 Local Host + Local Dev Script 加载 **PR #18 实际 commit SHA** 而不是 Workshop 旧脚本；验证 OHA 后缀、核心模块启动、Meepo/Leshrac/Furion/Chen/Abaddon/Beastmaster/Lycan 的主要初始化/购买/施法，无 Lua 错误；对已移除 Javelin/Overlord 不再请求配方。每项功能独立 VT-005～007、VT-016、VT-020～024 仍需逐条验收。**单纯看到 .OHA 不能确认文件 SHA**，本地实际文件/启动标记需另证据。 | 联合 CI 44 + 5 项通过；尚无实际 Dota 客户端，**blocked_no_client** |
 
+## 3.7 7.42 补丁驱动结构检查的后续客户端门槛（已登记、未测试）
+
+| 验证编号 | 对应问题与当前代码 | 必须满足的实机观测与反例 | 状态 |
+| --- | --- | --- | --- |
+| VT-026 / release_gate | C742-16 Weaver Time Lapse (Ally) · [#19](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/19) | 没有神杖时自身无目标回溯正常；获得神杖后 bot:GetAbilityByName('weaver_time_lapse_ally') 有效、500 距离救援友军成功、两个回溯共享冷却；句柄缺失/友军不合法时不失去正常 Shukuchi 或其它行动。 | 生产函数 Lua 12/12 Mock，**blocked_no_client** |
+| VT-027 / research | C742-17 Dazzle Through the Realm · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 核对 Shard 新句柄、施法类型、Nothl Projection 本体/灵魂坐标、受控/被缠绕时禁用、结束投影的真实条件。尚无新 Consider。 | **blocked_no_client** |
+| VT-028 / research | C742-18 Lone Druid Spirit Bear 新英雄复活 · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 神杖后英雄濒死时熊是否持有英雄灵魂，熊复活技能 ID、可见状态、冷却、合法施法及熊被击杀时的负面结果；未确认前不编造动作。 | **blocked_no_client** |
+| VT-029 / research | C742-19 Undying Zombie Bite · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 确认 Shard `undying_bite` 技能存在时的目标类型、是否能使用、目标失效/抗性等边界；分析其与其他技能使用时机是否冲突。 | **blocked_no_client** |
+| VT-030 / research | C742-20 Pugna Oblivion Savant Scepter · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 在原 Q/W/E/R 冷却期、有/无 Scepter 情形实际读取 IsFullyCastable 与额外施法充能，确认重新施法与旧决策是否互相抢指令；不尝试主动施放被动。 | **blocked_no_client** |
+| VT-031 / research | C742-11 Beastmaster Ancient Thunderhide · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 神杖后新 `beastmaster_summon_thunderhide` 能力可用性、已召唤雷霆蜥蜴状态、冷却/目标与团队任务协调；缺失时安全跳过。 | **blocked_no_client** |
+| VT-032 / research | C742-22/23 Nyx Scarab Metabolism 和 Lycan Pack Hunter 新被动 · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 核对旧 Innate 不再可用、新被动生效和英雄/受控单位标记对可见信息的影响；没有旧名字符串不能当作实机正常。 | **blocked_no_client** |
+| VT-033 / research | C742-21 Death Prophet Shard/Scepter 效果交换 · [#20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20) | 实测 Crypt Swarm 充能、Spirit Siphon 神杖效果、旧技能升级/购买与高价值施法窗口；记录正反例和装备收益。 | **blocked_no_client** |
+
 ## 4. 执行顺序和所需最小证据
 
 未来首次可用客户端时，不应让所有测试混在一起跑数十局：先验证 *脚本加载版本* → VT-001/002/005 的 Meepo API → VT-007 Roshan 计时 → VT-006 购物 → 后续策略场景；只在相应行为能正确触发并观察时才进入完整对局与对照。

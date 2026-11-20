@@ -24,6 +24,10 @@
 
 当前 [#159 PR #11](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/11)、[#170 PR #10](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/10)、[#176 PR #9](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/9) 已做**部分场景最小修复**；[#16](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/16) 修正先知过时主动施法，[#17](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/17) 处理 Chen/Abaddon/Javelin 结构错误，但 Chen 新 Zealot 主动、CK Armageddon 等仍未完成策略实现。各 PR 仍 Draft，**只有离线测试没有游戏客户端证明**。多场分析器 [#14](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/14) 也是离线工具，不等于已有真实胜率数据。
 
+## 2026-11-20：7.42 补丁驱动兼容审查追加
+
+新增 [Weaver Time Lapse 句柄最小修复 PR #19](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/19) 和 [精选结构补丁反查 PR #20](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/20)。后者依据 Valve 正式补丁及固定 Hero KV，记录 21 个已检查的结构影响点，已分类 E2 / E1 / 未发现旧 ID；**仍有 115 个英雄 Lua 文件未完成逐项语义审查**。新增 VT-026～033 的未来实机门槛；不声称 AI 强度已提升或新技能时机已实现。具体状态见 [统一台账](ISSUE_AND_REQUIREMENT_STATUS.md)。
+
 ## 1. 文档用途与需求来源
 
 这份文档持续记录我们要解决的问题、验收方式、当前状态和未定项。新增需求先更新这里，再关联实现 PR；不把研究候选、架构建议或尚未执行的测试写成已完成成果。

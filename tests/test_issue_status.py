@@ -12,16 +12,19 @@ ROW = ("| GH-155 | 物品循环 | MIN_FIX_DRAFT | OFFLINE_PASS | OLD | "
 
 
 class IssueRegisterTests(unittest.TestCase):
-    def test_current_54_plus_entries_pass(self):
+    def test_current_64_plus_entries_pass(self):
         root = Path(__file__).resolve().parents[1]
         rows, errors = parse_register(
             (root / "docs/ISSUE_AND_REQUIREMENT_STATUS.md").read_text(encoding="utf-8")
         )
         self.assertEqual(errors, [])
-        self.assertGreaterEqual(len(rows), 54)
+        self.assertGreaterEqual(len(rows), 64)
         self.assertTrue(any(r["id"] == "U-14" for r in rows))
         self.assertTrue(any(r["id"] == "D-23" for r in rows))
         self.assertTrue(any(r["id"] == "C742-10" and r["strategy"] == "TODO" for r in rows))
+        self.assertTrue(any(r["id"] == "C742-16" and r["strategy"] == "OLD"
+                            and r["verification"] == "OFFLINE_PASS" for r in rows))
+        self.assertTrue(any(r["id"] == "C742-17" and r["strategy"] == "TODO" for r in rows))
         self.assertTrue(any(r["id"] == "ENG-PATCH742-JOINT" and r["verification"] == "OFFLINE_PASS" for r in rows))
         self.assertTrue(any(r["id"] == "GH-170" and r["strategy"] == "PARTIAL" for r in rows))
         self.assertTrue(any(r["id"] == "C742-07" and r["strategy"] == "OLD" for r in rows))
@@ -57,6 +60,8 @@ class IssueRegisterTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertTrue(pr_is_indexed(rows, 17))
         self.assertTrue(pr_is_indexed(rows, 18))
+        self.assertTrue(pr_is_indexed(rows, 19))
+        self.assertTrue(pr_is_indexed(rows, 20))
         self.assertTrue(pr_is_indexed(rows, 2))
         self.assertFalse(pr_is_indexed(rows, 9999))
 

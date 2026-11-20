@@ -27,11 +27,13 @@ REQUIRED_IDS = {
     "C742-09", "C742-10", "C742-13", "C742-ALL",
     "ENG-DQ1", "ENG-METRICS", "ENG-PATCH-MATRIX",
     "ENG-REGISTER", "ENG-CLIENT", "U-14", "D-23",
+    "ENG-PATCH742-IMPACT", "C742-16", "C742-17", "C742-18", "C742-19",
+    "C742-20", "C742-21", "C742-22", "C742-23",
 }
 REQUIRED_IDS |= {f"F-{i:02d}" for i in (*range(1, 10), 10, 11)}
 # PR coverage check is intentionally a snapshot: bump only after reviewing new
 # discovered PRs and their own issue/requirement record.
-PR_SNAPSHOT = set(range(1, 19))
+PR_SNAPSHOT = set(range(1, 21))
 
 
 def parse_register(source: str) -> tuple[list[dict], list[str]]:
