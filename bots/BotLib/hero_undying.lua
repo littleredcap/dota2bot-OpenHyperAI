@@ -26,6 +26,8 @@ local sUtility = {"item_pipe", "item_lotus_orb"}
 local nUtility = sUtility[RandomInt(1, #sUtility)]
 
 local sRoleItemsBuyList = {}
+-- Zombie Bite is intentionally deferred: do not buy Aghanim's Shard by default
+-- until its bot usage and opportunity cost are supported by reliable guidance.
 
 sRoleItemsBuyList['pos_4'] = {
     "item_blood_grenade",
@@ -34,7 +36,6 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_essence_distiller",--
 	"item_crimson_guard",--
     "item_guardian_greaves",--
-	"item_aghanims_shard",
 	"item_heavens_halberd",--
 	"item_lotus_orb",--
 	"item_travel_boots",
@@ -66,7 +67,6 @@ sRoleItemsBuyList['pos_5'] = {
 sRoleItemsBuyList['pos_1'] = {
 
 	"item_bristleback_outfit",
-	"item_aghanims_shard",
 	"item_blade_mail",
 	"item_heavens_halberd",
 	"item_lotus_orb",
@@ -87,7 +87,6 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_tank_outfit",
     "item_hand_of_midas",
 	"item_crimson_guard",--
-	"item_aghanims_shard",
 	"item_ultimate_scepter",
 	"item_lotus_orb",--
 	"item_heavens_halberd",--
