@@ -1,6 +1,6 @@
 # Dota 2 7.42 — Deferred Aghanim's Scepter / Shard Purchases
 
-Decision: **2026-11-20**. This project intentionally stops **default** purchases of Aghanim upgrades whose new/reworked benefit from 7.41f–7.42 requires further hero-specific review or missing cast/target logic. Restore them only after mature community build guidance, verified ability behavior, and a separate consideration of economic opportunity cost.
+Decision: **2026-11-20**. This project intentionally stops **default** purchases of Aghanim upgrades whose new/reworked benefit under the current 7.42 rules requires further hero-specific review or missing cast/target logic (including unresolved older-version mismatches). Restore them only after mature community build guidance, verified ability behavior, and a separate consideration of economic opportunity cost.
 
 This is a **buy-list policy**, not a blanket denial of in-game buffs, Roshan drops, custom hero overrides, or special PvN/AllShadow item presets. Do not replace missing upgrades with speculative items; keep the rest of each position's existing item order.
 
