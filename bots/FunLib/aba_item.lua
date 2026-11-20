@@ -178,7 +178,7 @@ Item['sBasicItems'] = {
 	'item_talisman_of_evasion',
 	'item_tango',
 	'item_tango_single',
-	'item_tome_of_knowledge',
+    -- 'item_tome_of_knowledge', -- removed from the game in 7.33
 	'item_tpscroll',
 	'item_ultimate_orb',
 	'item_vitality_booster',
