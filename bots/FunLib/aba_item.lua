@@ -151,7 +151,7 @@ Item['sBasicItems'] = {
 	'item_holy_locket',
 	'item_hyperstone',
 	'item_infused_raindrop',
-	'item_javelin',
+    -- 'item_javelin', -- removed from the shop in 7.42
 	'item_lifesteal',
 	'item_magic_stick',
 	'item_mantle',
@@ -310,7 +310,7 @@ Item['sTopItems'] = {
 	'item_wraith_band',
 	'item_yasha_and_kaya',
 	
-	'item_revenants_brooch',
+    -- 'item_revenants_brooch', -- 7.42: Tier 3 neutral artifact, not a shop item
 	'item_boots_of_bearing',
 --	'item_wraith_pact', -- removed from game
 
@@ -782,7 +782,7 @@ Item['item_mage_slayer']	= GetItemComponents( 'item_mage_slayer' )[1]
 
 -- Item['item_eternal_shroud'] removed from game in 7.41
 
-Item['item_helm_of_the_overlord']	= GetItemComponents( 'item_helm_of_the_overlord' )[1]
+-- 7.42: Helm of the Overlord was removed from the game.
 
 Item['item_overwhelming_blink']	= GetItemComponents( 'item_overwhelming_blink' )[1]
 
@@ -793,7 +793,7 @@ Item['item_arcane_blink']	= GetItemComponents( 'item_arcane_blink' )[1]
 Item['item_wind_waker']	= GetItemComponents( 'item_wind_waker' )[1]
 
 --7.31
-Item['item_revenants_brooch']	= GetItemComponents( 'item_revenants_brooch' )[1]
+-- 7.42: Revenant's Brooch is now a Tier 3 neutral artifact, not a shop recipe.
 
 Item['item_boots_of_bearing']	= GetItemComponents( 'item_boots_of_bearing' )[1]
 
