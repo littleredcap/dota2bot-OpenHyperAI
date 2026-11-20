@@ -42,7 +42,7 @@ The other five newly listed Shard heroes were changed during the initial policy 
 
 ## Implemented changes and safeguards
 
-- Removed **22 direct Scepter**, **41 Blessing** and **21 Shard** entries across **16 hero files** (84 active entries across these passes). The separate prior Undying Shard removal is not counted here.
+- Removed **22 direct Scepter**, **41 Blessing** and **21 Shard** entries across **17 unique hero files** (84 active entries across these passes). The separate prior Undying Shard removal is not counted here.
 - Role aliases, such as Juggernaut's shared build, inherit the updated purchase list. Lone Druid's separate `pos_1_w_bear` list was also updated.
 - `bots/item_purchase_generic.lua` builds its purchase queue from the hero's `sBuyList`, so removing the upgrades from those default lists prevents the normal queue from buying them.
 - Added `scripts/check-deferred-aghanims.js`, exposed as `npm run check:deferred-aghanims`. `npm run build` runs this check before TypeScript-to-Lua generation. The check covers the specified default role build sections and will fail if a deferred purchase is reintroduced.
