@@ -18,8 +18,8 @@ local Tier1NeutralItems = {
     -- --[[Safety Bubble]]         "item_safety_bubble",
     -- --[[Seeds of Serenity]]     "item_seeds_of_serenity",    -- moved to T2 in 7.41
     -- --[[Lance of Pursuit]]      "item_lance_of_pursuit",
-    --[[Occult Bracelet]]       "item_occult_bracelet",
-    --[[Duelist Gloves]]        "item_duelist_gloves",
+    -- 7.42 removed: --[[Occult Bracelet]]       "item_occult_bracelet",
+    -- 7.42 removed: --[[Duelist Gloves]]        "item_duelist_gloves",
     -- --[[Broom Handle]]          "item_broom_handle",
     -- --[[Royal Jelly]]           "item_royal_jelly",
     -- --[[Faded Broach]]          "item_faded_broach",
@@ -34,7 +34,7 @@ local Tier1NeutralItems = {
     --[[Dormant Curio]]         "item_dormant_curio",
     --[[Weighted Dice]]         "item_weighted_dice",
     --[[Ash Legion Shield]]     "item_ash_legion_shield",
-    --[[Dagger of Ristul]]      "item_dagger_of_ristul",
+    -- 7.42 removed: --[[Dagger of Ristul]]      "item_dagger_of_ristul",
     --[[Stonefeather Satchel]]  "item_stonefeather_satchel",
     --[[Possessed Mask]]        "item_possessed_mask",
     -- --[[Forager's Kit]]         "item_foragers_kit",         -- active: plant tree (complex)
@@ -54,15 +54,15 @@ local Tier2NeutralItems = {
     -- --[[Gossamer's Cape]]       "item_gossamer_cape",    -- removed in 7.41
     -- --[[Light Collector]]       "item_light_collector",
     -- --[[Iron Talon]]            "item_iron_talon",       -- removed in 7.41
-    --[[Essence Ring]]          "item_essence_ring",
-    --[[Searing Signet]]        "item_searing_signet",
+    -- 7.42 removed: --[[Essence Ring]]          "item_essence_ring",
+    -- 7.42 removed: --[[Searing Signet]]        "item_searing_signet",
     -- --[[Brigand's Blade]]       "item_misericorde",      -- removed in 7.41
     --[[Tumbler's Toy]]         "item_pogo_stick",
     --[[Mana Draught]]          "item_mana_draught",
-    --[[Poor Man's Shield]]     "item_poor_mans_shield",
+    -- 7.42 removed: --[[Poor Man's Shield]]     "item_poor_mans_shield",
     --[[Defiant Shell]]         "item_defiant_shell",
     --[[Crippling Crossbow]]    "item_crippling_crossbow",
-    --[[Medallion of Courage]]  "item_medallion_of_courage",
+    -- 7.42 removed: --[[Medallion of Courage]]  "item_medallion_of_courage",
     --[[Seeds of Serenity]]     "item_seeds_of_serenity",
 }
 
@@ -75,7 +75,7 @@ local Tier3NeutralItems = {
     -- --[[Craggy Coat]]           "item_craggy_coat",
     -- --[[Enchanted Quiver]]      "item_enchanted_quiver",
     -- --[[Elven Tunic]]           "item_elven_tunic",
-    --[[Cloak of Flames]]       "item_cloak_of_flames",
+    -- 7.42 removed: --[[Cloak of Flames]]       "item_cloak_of_flames",
     -- --[[Ceremonial Robe]]       "item_ceremonial_robe",
     -- --[[Psychic Headband]]      "item_psychic_headband",    -- active: push (complex)
     -- --[[Doubloon]]              "item_doubloon",
@@ -86,7 +86,7 @@ local Tier3NeutralItems = {
     --[[Gunpowder Gauntlets]]   "item_gunpowder_gauntlets",
     -- --[[Ninja Gear]]            "item_ninja_gear",           -- removed in 7.41
     --[[Jidi Pollen Bag]]       "item_jidi_pollen_bag",
-    --[[Unrelenting Eye]]       "item_unrelenting_eye",
+    -- 7.42 removed: --[[Unrelenting Eye]]       "item_unrelenting_eye",
     --[[Spellslinger]]          "item_spellslinger",
     --[[Stormcrafter]]          "item_stormcrafter",
     --[[Partisan's Brand]]      "item_partisans_brand",
@@ -110,9 +110,9 @@ local Tier4NeutralItems = {
     -- --[[Magnifying Monocle]]    "item_magnifying_monocle",   -- removed in 7.41
     -- --[[Ceremonial Robe]]       "item_ceremonial_robe",      -- removed in 7.41
     -- --[[Pyrrhic Cloak]]         "item_pyrrhic_cloak",        -- removed in 7.41
-    --[[Giant Maul]]            "item_giant_maul",
+    -- 7.42 removed: --[[Giant Maul]]            "item_giant_maul",
     --[[Idol of Screeauk]]      "item_idol_of_screeauk",
-    --[[Flayer's Bota]]         "item_flayers_bota",
+    -- 7.42 removed: --[[Flayer's Bota]]         "item_flayers_bota",
     --[[Metamorphic Mandible]]  "item_metamorphic_mandible",
     --[[Dandelion Amulet]]      "item_dandelion_amulet",
     --[[Enchanter's Bauble]]    "item_enchanters_bauble",
@@ -122,7 +122,7 @@ local Tier4NeutralItems = {
 
 local Tier5NeutralItems = {
     -- --[[Force Boots]]           "item_force_boots",
-    --[[Stygian Desolator]]     "item_desolator_2",
+    -- 7.42 removed: --[[Stygian Desolator]]     "item_desolator_2",
     -- --[[Seer Stone]]            "item_seer_stone",
     -- --[[Mirror Shield]]         "item_mirror_shield",
     -- --[[Apex]]                  "item_apex",
@@ -135,7 +135,7 @@ local Tier5NeutralItems = {
     -- --[[Magic Lamp]]            "item_panic_button",         -- removed in 7.41
     --[[Fallen Sky]]            "item_fallen_sky",
     --[[Minotaur Horn]]         "item_minotaur_horn",
-    --[[Spider Legs]]           "item_spider_legs",
+    -- 7.42 removed: --[[Spider Legs]]           "item_spider_legs",
     -- --[[Unrelenting Eye]]       "item_unrelenting_eye",      -- moved to T3 in 7.41
     --[[Riftshadow Prism]]      "item_riftshadow_prism",
     --[[Dezun Bloodrite]]       "item_dezun_bloodrite",
