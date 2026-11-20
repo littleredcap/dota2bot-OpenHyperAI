@@ -49,6 +49,10 @@ else
 end
 
 local sRoleItemsBuyList = {}
+-- 7.42: Aghanim upgrades temporarily omitted from default item builds.
+-- Reason: Scepter moved to Spirit Siphon; Shard now changes Crypt Swarm charges.
+-- Also omit item_ultimate_scepter_2: Blessing would re-purchase the Scepter.
+-- Restore only after community build guidance and ability/targeting verification.
 
 
 sRoleItemsBuyList['pos_2'] = {
@@ -67,12 +71,10 @@ sRoleItemsBuyList['pos_2'] = {
 	"item_crellas_crozier",--
 	"item_bloodstone",--
 	"item_black_king_bar",--
-	"item_aghanims_shard",
 	"item_kaya_and_sange",--
 	"item_octarine_core",--
 	"item_refresher",--
 	"item_moon_shard",
-	"item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_3'] = {
@@ -80,14 +82,12 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_lotus_orb",
 	"item_shivas_guard",--
 	"item_cyclone",
-	"item_aghanims_shard",
 	"item_gungir",--
 	"item_travel_boots",
 	"item_assault",--
 	"item_heart",--
 	"item_moon_shard",
     "item_wind_waker",--
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",--
 }
 
@@ -108,12 +108,10 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_cyclone",
 	"item_bloodstone",--
 	"item_black_king_bar",--
-	"item_aghanims_shard",
 	"item_heavens_halberd", --
     "item_wind_waker",
 	"item_refresher",--
 	"item_moon_shard",
-	"item_ultimate_scepter_2",
 }
 
 sRoleItemsBuyList['pos_5'] = {
@@ -131,11 +129,9 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_cyclone",
 	"item_bloodstone",--
 	"item_black_king_bar",--
-	"item_aghanims_shard",
     "item_wind_waker",
 	"item_refresher",--
 	"item_moon_shard",
-	"item_ultimate_scepter_2",
 }
 
 X['sBuyList'] = sRoleItemsBuyList[sRole]
