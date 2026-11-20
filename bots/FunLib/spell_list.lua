@@ -66,7 +66,7 @@ X['spells'] = {
         ['beastmaster_wild_axes'] = {weight = 0.4},
         ['beastmaster_call_of_the_wild_razorback'] = {weight = 1},
         ['beastmaster_inner_beast'] = {weight = 1},
-        ['beastmaster_call_of_the_wild_raptor'] = {weight = 1},
+        ['beastmaster_summon_raptor'] = {weight = 1},
     },
     
     ['npc_dota_hero_bloodseeker'] = {
