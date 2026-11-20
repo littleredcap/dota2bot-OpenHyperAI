@@ -335,30 +335,33 @@ function GetBaseCreepDefender(ancientLoc: Vector, alreadyAssigned: Unit[]): Unit
     return best;
 }
 
-// A single creep gets one defender. Large active waves / a critical Ancient
-// recruit 2-3 defenders, leaving all others free to evaluate ordinary modes.
-function GetCreepBaseDefenseDesire(bot: Unit, lane: Lane, ancient: Unit | null): BotModeDesire | null {
-    if (!IsValidBuildingTarget(ancient)
-        || jmz.Utils.CountEnemyHeroesNear(ancient.GetLocation(), 2200) > 0
-        || GetBaseCreepAttacker(ancient) === null) return null;
+// Both modes ask the same live question; no mode has to run its desire first.
+export function GetBaseCreepResponse(bot: Unit, ancient: Unit | null): LuaMultiReturn<[boolean, boolean]> {
+    if (!IsValidBuildingTarget(ancient)) return $multi(false, false);
     const attackers = GetBaseCreepThreatCount(ancient);
+    if (attackers === 0) return $multi(false, false);
     const ancientHP = ancient.GetHealth() / math.max(ancient.GetMaxHealth(), 1);
+    const critical = attackers >= 4 || ancientHP <= 0.45;
+    const ancientLoc = ancient.GetLocation();
+    if (jmz.Utils.CountEnemyHeroesNear(ancientLoc, 2200) > 0) return $multi(false, critical);
     let required = 1;
     if (attackers >= 8 || ancientHP <= 0.2) required = 3;
-    else if (attackers >= 4 || ancientHP <= 0.45) required = 2;
+    else if (critical) required = 2;
     const assigned: Unit[] = [];
     for (let i = 0; i < required; i++) {
-        const defender = GetBaseCreepDefender(ancient.GetLocation(), assigned);
+        const defender = GetBaseCreepDefender(ancientLoc, assigned);
         if (defender === null) break;
+        if (defender.GetPlayerID() === bot.GetPlayerID()) return $multi(true, critical);
         assigned.push(defender);
     }
-    for (const defender of assigned) {
-        if (defender.GetPlayerID() === bot.GetPlayerID() && lane === Lane.Mid) {
-            return 0.97 as BotModeDesire;
-        }
-    }
-    // Unselected bots continue evaluating other lane-defense duties.
-    return null;
+    return $multi(false, critical);
+}
+
+// Creep-only responders use mid defense; other lane duties stay available.
+function GetCreepBaseDefenseDesire(bot: Unit, lane: Lane, ancient: Unit | null): BotModeDesire | null {
+    if (lane !== Lane.Mid) return null;
+    const [assigned] = GetBaseCreepResponse(bot, ancient);
+    return assigned ? 0.97 as BotModeDesire : null;
 }
 
 function GetThreatenedLane(): Lane {

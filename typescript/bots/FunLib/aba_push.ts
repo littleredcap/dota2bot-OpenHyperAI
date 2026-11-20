@@ -4,6 +4,7 @@ import Customize = require("bots/Customize/general");
 import { Barracks, BotMode, BotModeDesire, DamageType, Lane, Team, Tower, Unit, UnitType, Vector } from "bots/ts_libs/dota";
 import { IsValidUnit, GetLocationToLocationDistance, RadiantFountainTpPoint, DireFountainTpPoint } from "./utils";
 import { getGlobalGameState, getGlobalLocationState, getCachedAlliesNearLoc, getCachedEnemiesNearLoc, autoCleanupCache, getCachedData } from "./global_cache";
+import { GetBaseCreepResponse } from "./aba_defend";
 
 Customize.ThinkLess = Customize.Enable ? Customize.ThinkLess : 1;
 
@@ -256,12 +257,17 @@ export function GetPushDesire(bot: Unit, lane: Lane): BotModeDesire {
  * Desire core
  * ---------------------------------------------------------------------------*/
 export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
+    const gameState = getGlobalGameState();
+    const ourAncient = gameState.ourAncient;
+    if (!ourAncient) return BotModeDesire.None;
+    const [baseResponder, criticalBaseCreeps] = GetBaseCreepResponse(bot, ourAncient);
+    if (baseResponder) return BotModeDesire.None;
+
     // Keep the intent: avoid pushing too early or when other team jobs override.
     if ((bot as any).laneToPush == null) (bot as any).laneToPush = lane;
 
     // Update global caches
     autoCleanupCache();
-    const gameState = getGlobalGameState();
     const locationState = getGlobalLocationState();
     // const unitState = updateUnitStateCache(); // Not used in this function
 
@@ -280,10 +286,24 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
 
     // --- Strong base-defense gate for push ---
     const team = gameState.team;
-    const ourAncient = gameState.ourAncient;
-    const enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(ourAncient!.GetLocation(), BASE_ANC_RADIUS);
+    const teamAncientLoc = ourAncient.GetLocation();
+    const enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(teamAncientLoc, BASE_ANC_RADIUS);
     // If Ancient under direct pressure → strongly deprioritize pushes
     if (enemiesAtAncient >= 1) return BotModeDesire.ExtraLow;
+
+    const nEffAlliesNearAncient = jmz.GetAlliesNearLoc(teamAncientLoc, 4500).length
+        + jmz.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500).length;
+    const baseDefenseLimited = jmz.GetEnemiesAroundLoc(teamAncientLoc, 4500) > 0 && nEffAlliesNearAncient < 1;
+    const activeDefense = jmz.IsDefending(bot) && nModeDesire >= 0.8;
+    // Use observed hero counts only. Enemy buybacks/cooldowns are not known.
+    const decisivePushWindow = gameState.currentTime >= StartToPushTime
+        && gameState.aliveEnemyCount <= 2
+        && gameState.aliveAllyCount >= 3
+        && gameState.aliveAllyCoreCount >= 1
+        && gameState.aliveAllyCount >= gameState.aliveEnemyCount + 2
+        && jmz.GetHP(bot) >= 0.6
+        && enemiesHere.length === 0
+        && !activeDefense && !baseDefenseLimited && !criticalBaseCreeps;
 
     // --- Push safety gates ---
     // Never push alone when 3+ enemies alive
@@ -297,8 +317,13 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     // Don't push deep (past T2 toward enemy base) when alone or outnumbered
     const enemyFountain = gameState.team === Team.Radiant ? DireFountainTpPoint : RadiantFountainTpPoint;
     const laneFront = GetLaneFrontLocation(gameState.team, lane, 0);
+    // Going to regroup is different from committing alone at high ground.
+    const safeClosingWindow = decisivePushWindow
+        && (GetUnitToLocationDistance(bot, enemyFountain) >= 3200
+            || alliesHere.length >= 2 || bot.GetNearbyLaneCreeps(1100, false).length >= 2);
+    if (safeClosingWindow) nMaxDesire = 0.88;
     if (GetLocationToLocationDistance(laneFront, enemyFountain) < 5000) {
-        if (alliesHere.length < 3 || gameState.aliveAllyCount < gameState.aliveEnemyCount) {
+        if ((!safeClosingWindow && alliesHere.length < 3) || gameState.aliveAllyCount < gameState.aliveEnemyCount) {
             nMaxDesire = math.min(nMaxDesire, 0.08);
         }
     }
@@ -360,13 +385,13 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     }
 
     // If we are actively defending, cap the max desire slightly lower
-    if (jmz.IsDefending(bot) && nModeDesire >= 0.8) {
-        nMaxDesire = 0.75;
+    if (activeDefense) {
+        nMaxDesire = math.min(nMaxDesire, 0.75);
     }
 
     // Respect allied "attack here" human ping on a tower if it matches lane
     const [human, humanPing] = jmz.GetHumanPing();
-    if (human !== null && humanPing !== null && !humanPing.normal_ping && DotaTime() > 0) {
+    if (!criticalBaseCreeps && human !== null && humanPing !== null && !humanPing.normal_ping && DotaTime() > 0) {
         const [isPinged, pingedLane] = jmz.IsPingCloseToValidTower(GetOpposingTeam(), humanPing, 700, 5.0);
         if (isPinged && lane === pingedLane && GameTime() < humanPing.time + pingTimeDelta) {
             return 0.9 as BotModeDesire;
@@ -386,7 +411,6 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     const aAliveCoreCount = gameState.aliveAllyCoreCount;
     const eAliveCoreCount = gameState.aliveEnemyCoreCount;
 
-    const hAncient = gameState.ourAncient;
     // Base push desire calculation - missing function implementation
     let nPushDesire = 0.5; // Default base desire
     //   const allyKills = jmz.GetNumOfTeamTotalKills(false) + 1;
@@ -394,11 +418,8 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     //   const teamKillsRatio = allyKills / enemyKills; // (not used later but retained)
 
     // If enemies are at our ancient and we have few allies nearby → cap desire
-    const teamAncientLoc = hAncient!.GetLocation();
-    const nEffAlliesNearAncient = jmz.GetAlliesNearLoc(teamAncientLoc, 4500).length + jmz.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500).length;
-    const nEnemiesAroundAncient = jmz.GetEnemiesAroundLoc(teamAncientLoc, 4500);
-    if (nEnemiesAroundAncient > 0 && nEffAlliesNearAncient < 1) {
-        nMaxDesire = 0.65;
+    if (baseDefenseLimited) {
+        nMaxDesire = math.min(nMaxDesire, 0.65);
     }
 
     // Enhanced local threat assessment - consider team advantages
@@ -433,23 +454,22 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         }
     }
 
-    // If close to enemy Ancient and it is hittable, prioritize it proportionally to HP
+    const pushLane = WhichLaneToPush(bot, lane);
+    const isCurrentLanePushLane = pushLane === lane;
+    if (decisivePushWindow && !isCurrentLanePushLane) return BotModeDesire.VeryLow;
+
+    // Score a finish here; issue attack orders only from the active Think.
     if (
-        hEnemyAncient &&
+        !criticalBaseCreeps && !baseDefenseLimited && !activeDefense
+        && (!decisivePushWindow || safeClosingWindow) && hEnemyAncient &&
         GetUnitToUnitDistance(bot, hEnemyAncient) < nSearchRange * 0.5 &&
         jmz.CanBeAttacked(hEnemyAncient) &&
         !bot.WasRecentlyDamagedByAnyHero(1) &&
         jmz.GetHP(bot) > 0.5 &&
         !HasBackdoorProtect(hEnemyAncient)
     ) {
-        bot.SetTarget(hEnemyAncient);
-        bot.Action_AttackUnit(hEnemyAncient, true);
         return RemapValClamped(jmz.GetHP(bot), 0, 0.5, BotModeDesire.None, 0.98) as BotModeDesire;
     }
-
-    // Decide which lane to push; consider mid early, ally proximity, etc.
-    const pushLane = WhichLaneToPush(bot, lane);
-    const isCurrentLanePushLane = pushLane === lane;
 
     // Enhanced group push logic - more aggressive when team has advantages
     if ((!jmz.IsCore(bot) && isCurrentLanePushLane) || (jmz.IsCore(bot) && ((jmz.IsLateGame() && isCurrentLanePushLane) || isMidOrEarlyGame))) {
@@ -490,7 +510,8 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
                 nPushDesire = nPushDesire + groupBonus;
             }
 
-            return RemapValClamped(nPushDesire * jmz.GetHP(bot), 0, 1, 0, nMaxDesire) as BotModeDesire;
+            const desire = RemapValClamped(nPushDesire * jmz.GetHP(bot), 0, 1, 0, nMaxDesire);
+            return (safeClosingWindow ? Math.min(nMaxDesire, Math.max(desire, 0.88)) : desire) as BotModeDesire;
         }
     }
 
@@ -729,6 +750,11 @@ export function PushThink(bot: Unit, lane: Lane): void {
     if (jmz.CanNotUseAction(bot)) return;
     if (jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "push")) return;
 
+    // An active push mode can still think before the next desire arbitration.
+    const ourAncient = GetAncient(GetTeam());
+    const [baseResponder, criticalBaseCreeps] = GetBaseCreepResponse(bot, ourAncient);
+    if (baseResponder || (ourAncient && jmz.Utils.CountEnemyHeroesNear(ourAncient.GetLocation(), BASE_ANC_RADIUS) > 0)) return;
+
     // Update global caches
     autoCleanupCache();
     const gameState = getGlobalGameState();
@@ -816,7 +842,7 @@ export function PushThink(bot: Unit, lane: Lane): void {
     hEnemyAncient = gameState.enemyAncient;
     const alliesNearAncient = hEnemyAncient && jmz.GetAlliesNearLoc(hEnemyAncient.GetLocation(), 1600);
     if (
-        hEnemyAncient &&
+        !criticalBaseCreeps && hEnemyAncient &&
         botState.distanceToAncient < 1000 &&
         jmz.CanBeAttacked(hEnemyAncient) &&
         !HasBackdoorProtect(hEnemyAncient) &&

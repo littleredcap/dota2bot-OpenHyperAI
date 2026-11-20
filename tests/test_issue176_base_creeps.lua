@@ -15,6 +15,12 @@ local first = assert(code:find("function WeightedEnemiesAroundLocation(vLoc, nRa
 local last = assert(code:find("\nfunction GetThreatenedLane()", first, true),
     "Missing production end marker")
 local production = code:sub(first, last - 1)
+-- TSTL can place the Think-only attacker helper after the desire helpers.
+if not production:find("function GetBaseCreepAttacker(ancient)", 1, true) then
+    local attackFirst = assert(code:find("local function GetBaseCreepAttacker(ancient)", 1, true))
+    local attackLast = assert(code:find("\nfunction ____exports.GetDefendDesire(bot, lane)", attackFirst, true))
+    production = production .. "\n" .. code:sub(attackFirst, attackLast - 1)
+end
 
 local create = assert(loadstring([[
 return function(options)
@@ -33,6 +39,7 @@ return function(options)
     local t4a = {x=80}
     local t4b = {x=-80}
     local nTeam = 2
+    local ____exports = {}
     local Tower = {Base1=1, Base2=2}
     local Lane = {Top=1, Mid=2, Bot=3}
     local BotModeDesire = {VeryLow=0.12}

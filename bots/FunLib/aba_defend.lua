@@ -201,7 +201,7 @@ local function __TS__ArrayForEach(self, callbackFn, thisArg)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local getDefendState, updateDefendGameStateCache, updateDefendLocationStateCache, updateDefendUnitStateCache, _q, _keyLoc, _recentHeroCountNear, IsValidBuildingTarget, IsBaseThreatActive, WeightedEnemiesAroundLocation, GetBaseCreepAttacker, GetBaseCreepThreatCount, GetBaseCreepDefender, GetCreepBaseDefenseDesire, GetThreatenedLane, GetClosestAllyPos, IsThereNoTeammateTravelBootsDefender, GetHighGroundEdgeWaitPoint, ConsiderPingedDefend, okLoc, Localization, PING_DELTA, MAX_DESIRE_CAP, BASE_THREAT_RADIUS, BASE_THREAT_HOLD, CACHE_ENEMY_AROUND_LOC_HZ, CACHE_LASTSEEN_WINDOW, nTeam, _threatLaneSticky, baseThreatUntil, fTraveBootsDefendTime, _cacheEnemyAroundLoc, DEFEND_CACHE_TTL, defendGameStateCache, defendLocationStateCache, defendUnitStateCache
+local getDefendState, updateDefendGameStateCache, updateDefendLocationStateCache, updateDefendUnitStateCache, _q, _keyLoc, _recentHeroCountNear, IsValidBuildingTarget, IsBaseThreatActive, WeightedEnemiesAroundLocation, GetBaseCreepThreatCount, GetBaseCreepDefender, GetCreepBaseDefenseDesire, GetThreatenedLane, GetClosestAllyPos, IsThereNoTeammateTravelBootsDefender, GetHighGroundEdgeWaitPoint, ConsiderPingedDefend, okLoc, Localization, PING_DELTA, MAX_DESIRE_CAP, BASE_THREAT_RADIUS, BASE_THREAT_HOLD, CACHE_ENEMY_AROUND_LOC_HZ, CACHE_LASTSEEN_WINDOW, nTeam, _threatLaneSticky, baseThreatUntil, fTraveBootsDefendTime, _cacheEnemyAroundLoc, DEFEND_CACHE_TTL, defendGameStateCache, defendLocationStateCache, defendUnitStateCache
 local jmz = require(GetScriptDirectory().."/FunLib/jmz_func")
 local ____dota = require(GetScriptDirectory().."/ts_libs/dota/index")
 local Barracks = ____dota.Barracks
@@ -389,36 +389,6 @@ function WeightedEnemiesAroundLocation(vLoc, nRadius)
     _cacheEnemyAroundLoc[key] = {t = now, count = count}
     return count
 end
-function GetBaseCreepAttacker(ancient)
-    if not IsValidBuildingTarget(ancient) then
-        return nil
-    end
-    local leftT4 = GetTower(nTeam, Tower.Base1)
-    local rightT4 = GetTower(nTeam, Tower.Base2)
-    for ____, creep in ipairs(updateDefendUnitStateCache().enemyCreeps) do
-        do
-            local __continue40
-            repeat
-                if not jmz.IsValid(creep) or GetUnitToLocationDistance(
-                    creep,
-                    ancient:GetLocation()
-                ) > BASE_THREAT_RADIUS then
-                    __continue40 = true
-                    break
-                end
-                local target = creep:GetAttackTarget()
-                if target == ancient or leftT4 ~= nil and target == leftT4 or rightT4 ~= nil and target == rightT4 then
-                    return creep
-                end
-                __continue40 = true
-            until true
-            if not __continue40 then
-                break
-            end
-        end
-    end
-    return nil
-end
 function GetBaseCreepThreatCount(ancient)
     if not IsValidBuildingTarget(ancient) then
         return 0
@@ -470,45 +440,52 @@ function GetBaseCreepDefender(ancientLoc, alreadyAssigned)
     end
     return best
 end
-function GetCreepBaseDefenseDesire(bot, lane, ancient)
-    if not IsValidBuildingTarget(ancient) or jmz.Utils.CountEnemyHeroesNear(
-        ancient:GetLocation(),
-        2200
-    ) > 0 or GetBaseCreepAttacker(ancient) == nil then
-        return nil
+function ____exports.GetBaseCreepResponse(bot, ancient)
+    if not IsValidBuildingTarget(ancient) then
+        return false, false
     end
     local attackers = GetBaseCreepThreatCount(ancient)
+    if attackers == 0 then
+        return false, false
+    end
     local ancientHP = ancient:GetHealth() / math.max(
         ancient:GetMaxHealth(),
         1
     )
+    local critical = attackers >= 4 or ancientHP <= 0.45
+    local ancientLoc = ancient:GetLocation()
+    if jmz.Utils.CountEnemyHeroesNear(ancientLoc, 2200) > 0 then
+        return false, critical
+    end
     local required = 1
     if attackers >= 8 or ancientHP <= 0.2 then
         required = 3
-    elseif attackers >= 4 or ancientHP <= 0.45 then
+    elseif critical then
         required = 2
     end
     local assigned = {}
     do
         local i = 0
         while i < required do
-            local defender = GetBaseCreepDefender(
-                ancient:GetLocation(),
-                assigned
-            )
+            local defender = GetBaseCreepDefender(ancientLoc, assigned)
             if defender == nil then
                 break
+            end
+            if defender:GetPlayerID() == bot:GetPlayerID() then
+                return true, critical
             end
             assigned[#assigned + 1] = defender
             i = i + 1
         end
     end
-    for ____, defender in ipairs(assigned) do
-        if defender:GetPlayerID() == bot:GetPlayerID() and lane == Lane.Mid then
-            return 0.97
-        end
+    return false, critical
+end
+function GetCreepBaseDefenseDesire(bot, lane, ancient)
+    if lane ~= Lane.Mid then
+        return nil
     end
-    return nil
+    local assigned = ____exports.GetBaseCreepResponse(bot, ancient)
+    return assigned and 0.97 or nil
 end
 function GetThreatenedLane()
     local lanes = {Lane.Top, Lane.Mid, Lane.Bot}
@@ -1346,6 +1323,36 @@ DEFEND_CACHE_TTL = 0.5
 defendGameStateCache = nil
 defendLocationStateCache = nil
 defendUnitStateCache = nil
+local function GetBaseCreepAttacker(ancient)
+    if not IsValidBuildingTarget(ancient) then
+        return nil
+    end
+    local leftT4 = GetTower(nTeam, Tower.Base1)
+    local rightT4 = GetTower(nTeam, Tower.Base2)
+    for ____, creep in ipairs(updateDefendUnitStateCache().enemyCreeps) do
+        do
+            local __continue40
+            repeat
+                if not jmz.IsValid(creep) or GetUnitToLocationDistance(
+                    creep,
+                    ancient:GetLocation()
+                ) > BASE_THREAT_RADIUS then
+                    __continue40 = true
+                    break
+                end
+                local target = creep:GetAttackTarget()
+                if target == ancient or leftT4 ~= nil and target == leftT4 or rightT4 ~= nil and target == rightT4 then
+                    return creep
+                end
+                __continue40 = true
+            until true
+            if not __continue40 then
+                break
+            end
+        end
+    end
+    return nil
+end
 function ____exports.GetDefendDesire(bot, lane)
     if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not __TS__StringIncludes(
         bot:GetUnitName(),
