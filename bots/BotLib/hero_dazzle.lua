@@ -8,8 +8,13 @@ local sTalentList = J.Skill.GetTalentList( bot )
 local sAbilityList = J.Skill.GetAbilityList( bot )
 local sRole = J.Item.GetRoleItemsBuyList( bot )
 
-if not J.Utils.GameStates.dazzleNothl then J.Utils.GameStates.dazzleNothl = {[bot:GetPlayerID()] = {body = bot}} end
-if not J.Utils.GameStates.dazzleNothl[bot:GetPlayerID()] then J.Utils.GameStates.dazzleNothl[bot:GetPlayerID()] = {body = bot} end
+local function RememberPhysicalBody()
+    local state = J.Utils.GameStates
+    state.dazzleNothl = state.dazzleNothl or {}
+    local playerID = bot:GetPlayerID()
+    state.dazzleNothl[playerID] = state.dazzleNothl[playerID] or {}
+    state.dazzleNothl[playerID].body = bot
+end
 
 local tTalentTreeList = {
 						{--pos1,2
@@ -194,7 +199,7 @@ local talent4Damage = 0
 function X.SkillsComplement()
 
 	local isPhysicalBody = bot:HasModifier('modifier_dazzle_nothl_projection_physical_body_debuff')
-	if isPhysicalBody then J.Utils.GameStates.dazzleNothl[bot:GetPlayerID()].body = bot end
+	if isPhysicalBody then RememberPhysicalBody() end
 	if J.CanNotUseAbility( bot ) or bot:IsInvisible() or isPhysicalBody then return end
 
 	-- Re-fetch ability handles each tick
@@ -347,15 +352,19 @@ function X.ConsiderNothlProjectionEnd()
 	if #hEnemyList <= 0 then
 		return BOT_ACTION_DESIRE_HIGH
 	end
-	local _bot = J.Utils.GameStates.dazzleNothl[bot:GetPlayerID()].body
-	if J.IsValid(bot) then
-		if J.IsRetreating( _bot )
-		and J.GetHP(_bot) < 0.6
-		and #hEnemyList >= 1
-		then
-			return BOT_ACTION_DESIRE_HIGH
-		end
-	end
+    -- Validate the cached physical body, not the current spirit.
+    -- The per-player cache or its body can be absent after a state reset.
+    local tNothlState = J.Utils.GameStates.dazzleNothl
+    local tPlayerState = tNothlState and tNothlState[bot:GetPlayerID()]
+    local hBody = tPlayerState and tPlayerState.body
+    if hBody ~= bot and J.IsValid(hBody) then
+        if J.IsRetreating(hBody)
+        and J.GetHP(hBody) < 0.6
+        and #hEnemyList >= 1
+        then
+            return BOT_ACTION_DESIRE_HIGH
+        end
+    end
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 
