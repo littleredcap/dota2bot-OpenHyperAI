@@ -92,6 +92,15 @@ class BotPerformanceTests(unittest.TestCase):
         with self.assertRaisesRegex(perf.DataError, "nonnegative"):
             perf.manual_records(match)
 
+    def test_rejects_inconsistent_team_kills_and_damage(self):
+        m = manual_match(team_kills=6)
+        with self.assertRaisesRegex(perf.DataError, "K\\+A"):
+            perf.manual_records(m)
+        m = manual_match()
+        m["team_hero_damage"]["radiant"] = 1
+        with self.assertRaisesRegex(perf.DataError, "hero_damage"):
+            perf.manual_records(m)
+
     def test_manual_rejects_duplicate_player_slot(self):
         match = manual_match()
         match["players"].append(hero(0))
@@ -112,6 +121,7 @@ class BotPerformanceTests(unittest.TestCase):
         self.assertAlmostEqual(row["kill_participation"], 9 / 11)
         self.assertFalse(row["won"])
         self.assertEqual(row["position"], 1)
+        self.assertIsNone(row["start_time_unix"])
 
     def test_unknown_open_dota_hero_id_and_role_are_explicit(self):
         rows = perf.opendota_records(opendota_match(), {128}, None,
@@ -129,6 +139,15 @@ class BotPerformanceTests(unittest.TestCase):
                 "ingest", "--format", "opendota", "--input", str(input_path),
                 "--out", str(Path(td) / "data.jsonl")
             ]), 2)
+
+    def test_open_dota_explicit_position_overrides_any_api_guess(self):
+        m = opendota_match()
+        m["players"][0]["position"] = 5
+        rows = perf.opendota_records(
+            m, {0}, None,
+            {"patch": "7.42", "bot_build": "build", "difficulty": "x", "opponent_profile": "fixed"},
+            {0: 1}, {})
+        self.assertEqual(rows[0]["position"], 1)
 
     def test_manual_does_not_store_names_accounts_or_chat(self):
         match = manual_match()
@@ -150,7 +169,10 @@ class BotPerformanceTests(unittest.TestCase):
             self.assertEqual(len(perf.load_dataset(path)), 1)
 
     def test_wilson_ci_and_kp_missing_samples(self):
-        rows = perf.manual_records(manual_match(team_kills=0))
+        m = manual_match(team_kills=0)
+        m["players"][0]["kills"] = 0
+        m["players"][0]["assists"] = 0
+        rows = perf.manual_records(m)
         data = perf.summary(rows)
         self.assertEqual(data["sample_count"], 1)
         self.assertEqual(data["metric_samples"]["kill_participation"], 0)
@@ -202,6 +224,17 @@ class BotPerformanceTests(unittest.TestCase):
         self.assertIn("KP_DROP_REVIEW", comparison["review_flags"])
         self.assertIn("HERO_DAMAGE_PM_DROP_REVIEW", comparison["review_flags"])
         self.assertIn("not itself a diagnosis", result["limitations"][0])
+
+    def test_recent_10_win_rate_only_from_dated_matches(self):
+        rows = []
+        for i in range(12):
+            m = manual_match(f"recent-{i}")
+            m["start_time_unix"] = 1770000000 + i * 100
+            m["radiant_win"] = i >= 6
+            rows.extend(perf.manual_records(m))
+        result = perf.summary(rows)
+        self.assertAlmostEqual(result["recent10_win_rate"], .6)
+        self.assertIsNotNone(result["metrics"]["kda_ratio"])
 
     def test_markdown_is_descriptive(self):
         rows = perf.manual_records(manual_match())

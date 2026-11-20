@@ -26,7 +26,7 @@
 
 ### 统一的基础字段
 
-- 一场比赛：`match_id`（允许 `local-...` 本地标识）、`duration_seconds`、`patch`、`bot_build`（OHA Git commit）、`game_mode`、`lobby_type`、`difficulty`、`opponent_profile`、`radiant_win`。
+- 一场比赛：`match_id`（允许 `local-...` 本地标识）、可选 `start_time_unix`（UTC Unix 秒；未知则 null）、`duration_seconds`、`patch`、`bot_build`（OHA Git commit）、`game_mode`、`lobby_type`、`difficulty`、`opponent_profile`、`radiant_win`。
 - 每个玩家槽位：`player_slot`（0–4 天辉 / 128–132 夜魇）、`hero`、`position`（1–5 或 null）、明确的 `is_oha_bot` 布尔值、`kills` / `deaths` / `assists`。
 - 可选指标：`gold_per_min`、`xp_per_min`、`last_hits`、`denies`、`hero_damage`、`tower_damage`、`hero_healing`、`obs_placed`、`sen_placed`、`camps_stacked`、`stun_seconds`、`net_worth`。
 - `team_kills` 和 `team_hero_damage` 是 **分队汇总**：若完整 5 人数据可用可安全求和，否则需由可信赛后结果显式提供；不可按队伍中的部分 Bot 自行计算总数。
@@ -36,8 +36,8 @@
 
 | 优先级 | 指标 | 计算与解读 |
 | --- | --- | --- |
-| P0 | 胜率 + 样本量 | 胜场 / 有效场次；同时给出 Wilson 95% 区间，避免小样本按胜率排序 |
-| P0 | K / D / A、KDA | 保存三个原始数；描述性 KDA 约定为 `(K+A)/max(D,1)`；零死亡不当作无限大 |
+| P0 | 胜率 + 样本量 | 胜场 / 有效场次；同时给出 Wilson 95% 区间，避免小样本按胜率排序；有可靠时间字段、至少 10 场时额外给最近 10 场胜率，不作显著性判断 |
+| P0 | K / D / A、KDA | 保存三个原始数；描述性每场 KDA 约定为 `(K+A)/max(D,1)`，多场报告取逐场算术均值；零死亡不当作无限大 |
 | P0 | 击杀参与率 KP | `(K+A)/TeamKills`；若 TeamKills = 0 或未知，KP = null，**不是零** |
 | P0 | GPM、XPM、补刀 / 分钟 | 按角色和版本比较发育，不对辅助设统一绝对门槛 |
 | P0 | 英雄伤害 / 分钟、建筑伤害 / 分钟 | `damage / (duration_seconds/60)`；对推进型英雄不能只看英雄伤害 |
@@ -72,7 +72,7 @@
 
 ### 5.1 导入 Local Host 赛后记录
 
-复制 [示例 JSON](../docs/examples/oha_match.example.json) 为新文件，填入**真实**赛后数据及对应 Bot commit；不可把示例数据用作真实对局统计。
+复制 [示例 JSON](examples/oha_match.example.json) 为新文件，填入**真实**赛后数据及对应 Bot commit；不可把示例数据用作真实对局统计。
 
 ```bash
 python3 scripts/bot_performance.py ingest --format manual \

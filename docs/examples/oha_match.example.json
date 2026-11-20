@@ -51,5 +51,6 @@
       "hero_damage": 24500,
       "tower_damage": 3300
     }
-  ]
+  ],
+  "start_time_unix": 1770000000
 }

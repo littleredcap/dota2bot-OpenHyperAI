@@ -36,7 +36,9 @@ def text_field(value, name, fallback="unknown"):
     result = str(value).strip()
     if not result or any(ord(char) < 32 for char in result):
         raise DataError(f"{name} must be nonempty and printable")
-    return result[:128]
+    if len(result) > 128:
+        raise DataError(f"{name} must be at most 128 characters")
+    return result
 
 
 def nonnegative(value, label, integer=False):
@@ -197,6 +199,7 @@ def opendota_records(match, bot_slots, bot_side, metadata, positions, hero_map):
     data["lobby_type"] = text_field(match.get("lobby_type"), "lobby_type")
     # Do NOT interpret a numeric OpenDota patch ID as a Dota patch version.
     data["patch"] = metadata.get("patch") or "unknown"
+    data["start_time_unix"] = match.get("start_time")
     result = []
     for player in players:
         slot = player["player_slot"]
@@ -210,11 +213,8 @@ def opendota_records(match, bot_slots, bot_side, metadata, positions, hero_map):
         hero = hero_map.get(str(hero_id), f"hero_id:{hero_id}")
         if not isinstance(hero, str) or not hero:
             raise DataError(f"Invalid hero mapping for ID {hero_id}")
-        if "position" in original:
-            # OpenDota positions are only accepted when explicit 1-5 is supplied.
-            pos = original["position"]
-        else:
-            pos = positions.get(slot)
+        # Never accept an inferred API lane/position; caller must provide an OHA 1-5 role.
+        pos = positions.get(slot)
         result.append(make_row(player, team, data, "opendota", duration, hero, pos,
                                totals[team][0], totals[team][1], match["radiant_win"]))
     if not result:
@@ -225,6 +225,10 @@ def opendota_records(match, bot_slots, bot_side, metadata, positions, hero_map):
 def make_row(player, team, match, source, duration, hero, position, team_kills, team_damage, radiant_win):
     if hero is None:
         raise DataError("Bot hero required: do not assume a role or hero from unknown player data")
+    if team_kills is not None and player["kills"] + player["assists"] > team_kills:
+        raise DataError("player K+A cannot exceed team_kills")
+    if team_damage is not None and player["hero_damage"] is not None and player["hero_damage"] > team_damage:
+        raise DataError("player hero_damage cannot exceed team_hero_damage")
     row = {
         "schema": "oha.bot_row.v1",
         "source": source,
@@ -240,6 +244,7 @@ def make_row(player, team, match, source, duration, hero, position, team_kills, 
         "difficulty": text_field(match.get("difficulty"), "difficulty"),
         "opponent_profile": text_field(match.get("opponent_profile"), "opponent_profile"),
         "duration_seconds": duration,
+        "start_time_unix": nonnegative(match.get("start_time_unix"), "start_time_unix", integer=True),
         "won": radiant_win if team == "radiant" else not radiant_win,
         "team_kills": nonnegative(team_kills, "team_kills", integer=True),
         "team_hero_damage": nonnegative(team_damage, "team_hero_damage"),
@@ -265,6 +270,7 @@ def validate_stored(row):
         nonnegative(row.get(key), key, integer=key in COUNTS)
     for key in ("team_kills", "team_hero_damage", "kill_participation", "hero_damage_share"):
         nonnegative(row.get(key), key, integer=key == "team_kills")
+    nonnegative(row.get("start_time_unix"), "start_time_unix", integer=True)
     duration = nonnegative(row.get("duration_seconds"), "duration_seconds", integer=True)
     if not duration or duration > 36000:
         raise DataError("Stored duration_seconds invalid")
@@ -336,7 +342,7 @@ def divide_or_none(a, b):
 
 # Dimensions must match exactly for comparisons; we never auto-infer OHA roles.
 CONTEXT = ("hero", "position", "patch", "game_mode", "lobby_type", "difficulty", "opponent_profile", "source", "team")
-OUTPUT_METRICS = ("kills", "deaths", "assists", "gold_per_min", "xp_per_min",
+OUTPUT_METRICS = ("kills", "deaths", "assists", "kda_ratio", "gold_per_min", "xp_per_min",
                   "kill_participation", "hero_damage_share", "hero_damage_per_min",
                   "tower_damage_per_min", "healing_per_min", "last_hits_per_min",
                   "deaths_per_10min", "obs_placed", "sen_placed", "camps_stacked", "stun_seconds", "net_worth")
@@ -355,6 +361,7 @@ def summary(rows):
         mins = r["duration_seconds"] / 60
         computed.append({
             **r,
+            "kda_ratio": (r["kills"] + r["assists"]) / max(r["deaths"], 1),
             "hero_damage_per_min": divide_or_none(r["hero_damage"], mins),
             "tower_damage_per_min": divide_or_none(r["tower_damage"], mins),
             "healing_per_min": divide_or_none(r["hero_healing"], mins),
@@ -364,6 +371,12 @@ def summary(rows):
     out["metrics"] = {key: average([r.get(key) for r in computed]) for key in OUTPUT_METRICS}
     out["metric_samples"] = {key: sum(r.get(key) is not None for r in computed) for key in OUTPUT_METRICS}
     out["zero_team_kill_matches"] = sum(r["team_kills"] == 0 for r in rows)
+    times = [r for r in rows if r.get("start_time_unix") is not None]
+    if len(times) >= 10 and len({r["match_id"] for r in times}) == len(times):
+        recent = sorted(times, key=lambda r: (r["start_time_unix"], r["match_id"]))[-10:]
+        out["recent10_win_rate"] = round(sum(r["won"] for r in recent) / 10, 5)
+    else:
+        out["recent10_win_rate"] = None
     out["unknown_context"] = any(out[key] in (None, "unknown", "") for key in CONTEXT if key != "position") or out["position"] is None
     return out
 
@@ -447,8 +460,8 @@ def markdown_report(report):
         "",
         "## Hero / position / build breakdown",
         "",
-        "| Hero | Pos | Build | Patch | Side | Games | Win% (Wilson 95%) | KP | GPM | XPM | Hero DPM | Tower DPM | Damage share |",
-        "| --- | --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Hero | Pos | Build | Patch | Side | Games | Win% (Wilson 95%) | Recent10 Win% | KP | KDA | GPM | XPM | Hero DPM | Tower DPM | Damage share |",
+        "| --- | --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for item in report["groups"]:
         metrics = item["metrics"]
@@ -457,7 +470,8 @@ def markdown_report(report):
         cells = [
             item["hero"], str(item["position"] or "?"), item["bot_build"][:12], item["patch"],
             item["team"], str(item["sample_count"]), win,
-            num(metrics["kill_participation"], True), num(metrics["gold_per_min"]),
+            num(item["recent10_win_rate"], True), num(metrics["kill_participation"], True), num(metrics["kda_ratio"]),
+            num(metrics["gold_per_min"]),
             num(metrics["xp_per_min"]), num(metrics["hero_damage_per_min"]),
             num(metrics["tower_damage_per_min"]), num(metrics["hero_damage_share"], True),
         ]
@@ -501,7 +515,11 @@ def parse_positions(text):
         if ":" not in pair:
             raise DataError("positions syntax must be player_slot:position,...")
         raw_slot, raw_pos = pair.split(":", 1)
-        result[slot_of(int(raw_slot))] = position_of(raw_pos)
+        try:
+            slot = slot_of(int(raw_slot))
+        except ValueError:
+            raise DataError("positions must use integer player_slot:position pairs") from None
+        result[slot] = position_of(raw_pos)
     return result
 
 
