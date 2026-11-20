@@ -298,7 +298,8 @@ function X.ConsiderStrafe()
 end
 
 function X.ConsiderTarBomb()
-    if not TarBomb:IsFullyCastable()
+    -- Tar Bomb is not in the 7.42 default ability slots. It may be absent.
+    if TarBomb == nil or not TarBomb:IsFullyCastable()
     then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
@@ -768,7 +769,7 @@ end
 
 --Aghanim's Shard
 function X.ConsiderBurningBarrage()
-    if not BurningBarrage:IsTrained()
+    if BurningBarrage == nil or not BurningBarrage:IsTrained()
     or not BurningBarrage:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE, 0
@@ -856,8 +857,9 @@ end
 
 --Aghanim's Scepter
 function X.ConsiderBurningArmy()
-    if not BurningBarrage:IsTrained()
-    or not BurningBarrage:IsFullyCastable()
+    -- Check the actual Army ability, not the unrelated Burning Barrage.
+    if BurningArmy == nil or not BurningArmy:IsTrained()
+    or not BurningArmy:IsFullyCastable()
     then
         return BOT_ACTION_DESIRE_NONE, 0
     end
