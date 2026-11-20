@@ -23,6 +23,9 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: defer Scepter/Blessing: Fiend's Gate upgrade changed in 7.41f
+-- and now creates Pit of Malice only at the destination portal.
+-- Reconsider only after mature community builds and a separate cast-value review.
 
 local sUtility = {"item_lotus_orb", "item_crimson_guard", "item_heavens_halberd"}
 local nUtility = sUtility[RandomInt(1, #sUtility)]
@@ -38,7 +41,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_abyssal_blade",--
 	-- "item_heart",--
 	"item_moon_shard",
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",--
 }
 
@@ -55,7 +57,6 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_assault",
 	"item_heart",
 	"item_moon_shard",
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",
 }
 
@@ -79,7 +80,6 @@ sRoleItemsBuyList['pos_4'] = {
     "item_shivas_guard",--
     "item_octarine_core",--
     "item_sheepstick",--
-    "item_ultimate_scepter_2",
     "item_moon_shard",
 }
 
@@ -96,7 +96,6 @@ sRoleItemsBuyList['pos_5'] = {
     "item_heart",--
 	"item_octarine_core",--
 	"item_moon_shard",
-	"item_ultimate_scepter_2",
 }
 
 X['sBuyList'] = sRoleItemsBuyList[sRole]
