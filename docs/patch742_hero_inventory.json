@@ -1,0 +1,911 @@
+{
+  "schema": "oha.patch742.hero_inventory.v1",
+  "target_patch": "7.42",
+  "baseline_sha": "cb814c6c8dc51ed08045d6efd9f4a48147992711",
+  "source_url": "https://www.dota2.com/patches/7.42",
+  "hero_files": [
+    {
+      "path": "bots/BotLib/hero_abaddon.lua",
+      "status": "E1",
+      "rules": [
+        "C742-08"
+      ],
+      "note": "Mist Coil 自伤改生命消耗，旧特殊值与行为要核查"
+    },
+    {
+      "path": "bots/BotLib/hero_abyssal_underlord.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_alchemist.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_ancient_apparition.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_antimage.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_arc_warden.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_axe.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_bane.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_batrider.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_beastmaster.lua",
+      "status": "E2",
+      "rules": [
+        "C742-02",
+        "C742-11"
+      ],
+      "note": "包含已删除的 Overlord 默认装备；已有 PR #4；神杖 Ancient Thunderhide 新召唤策略未见实现"
+    },
+    {
+      "path": "bots/BotLib/hero_bloodseeker.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_bounty_hunter.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_brewmaster.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_bristleback.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_broodmother.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_centaur.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_chaos_knight.lua",
+      "status": "E1",
+      "rules": [
+        "C742-09"
+      ],
+      "note": "Ahead, Armageddon 新主动技能尚未接入（内部 ID 待核对）"
+    },
+    {
+      "path": "bots/BotLib/hero_chen.lua",
+      "status": "E1",
+      "rules": [
+        "C742-10"
+      ],
+      "note": "Zealot 新主动与 Holy Persuasion 自身召回未接入"
+    },
+    {
+      "path": "bots/BotLib/hero_clinkz.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_crystal_maiden.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_dark_seer.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_dark_willow.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_dawnbreaker.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_dazzle.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_death_prophet.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_disruptor.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_doom_bringer.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_dragon_knight.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_drow_ranger.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_earth_spirit.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_earthshaker.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_elder_titan.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_ember_spirit.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_enchantress.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_enigma.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_faceless_void.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_furion.lua",
+      "status": "E2",
+      "rules": [
+        "C742-07"
+      ],
+      "note": "Oldgrowth 已改被动，旧脚本仍请求主动释放"
+    },
+    {
+      "path": "bots/BotLib/hero_grimstroke.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_gyrocopter.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_hoodwink.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_huskar.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_invoker.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_jakiro.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_juggernaut.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_keeper_of_the_light.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_kez.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_kunkka.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_largo.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_legion_commander.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_leshrac.lua",
+      "status": "E2",
+      "rules": [
+        "C742-06"
+      ],
+      "note": "Nihilism 旧弹道自救意图不符合新版效果；已有 PR #8"
+    },
+    {
+      "path": "bots/BotLib/hero_lich.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_life_stealer.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_lina.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_lion.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_lone_druid.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_lone_druid_bear.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_luna.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_lycan.lua",
+      "status": "E2",
+      "rules": [
+        "C742-02"
+      ],
+      "note": "包含已删除的 Overlord 默认装备；已有 PR #4"
+    },
+    {
+      "path": "bots/BotLib/hero_magnataur.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_marci.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_mars.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_medusa.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_meepo.lua",
+      "status": "E2",
+      "rules": [
+        "C742-01"
+      ],
+      "note": "旧 MegaMeepo 技能被删除，仍有旧句柄；已有 PR #4"
+    },
+    {
+      "path": "bots/BotLib/hero_mirana.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_monkey_king.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_morphling.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_muerta.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_naga_siren.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_necrolyte.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_nevermore.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_night_stalker.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_nyx_assassin.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_obsidian_destroyer.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_ogre_magi.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_omniknight.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_oracle.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_pangolier.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_phantom_assassin.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_phantom_lancer.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_phoenix.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_primal_beast.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_puck.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_pudge.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_pugna.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_queenofpain.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_rattletrap.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_razor.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_riki.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_ringmaster.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_rubick.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_sand_king.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_shadow_demon.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_shadow_shaman.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_shredder.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_silencer.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_skeleton_king.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_skywrath_mage.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_slardar.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_slark.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_snapfire.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_sniper.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_spectre.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_spirit_breaker.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_storm_spirit.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_sven.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_techies.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_templar_assassin.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_terrorblade.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_tidehunter.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_tinker.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_tiny.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_treant.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_troll_warlord.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_tusk.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_undying.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_ursa.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_vengefulspirit.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_venomancer.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_viper.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_visage.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_void_spirit.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_warlock.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_weaver.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_windrunner.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_winter_wyvern.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_wisp.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_witch_doctor.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    },
+    {
+      "path": "bots/BotLib/hero_zuus.lua",
+      "status": "UNREVIEWED",
+      "rules": [],
+      "note": "尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容"
+    }
+  ],
+  "findings": [
+    {
+      "hero": "hero_meepo.lua",
+      "id": "C742-01",
+      "status": "E2",
+      "check": "present",
+      "needle": "meepo_megameepo",
+      "finding": "旧 MegaMeepo 技能被删除，仍有旧句柄；已有 PR #4"
+    },
+    {
+      "hero": "hero_beastmaster.lua",
+      "id": "C742-02",
+      "status": "E2",
+      "check": "present",
+      "needle": "item_helm_of_the_overlord",
+      "finding": "包含已删除的 Overlord 默认装备；已有 PR #4"
+    },
+    {
+      "hero": "hero_lycan.lua",
+      "id": "C742-02",
+      "status": "E2",
+      "check": "present",
+      "needle": "item_helm_of_the_overlord",
+      "finding": "包含已删除的 Overlord 默认装备；已有 PR #4"
+    },
+    {
+      "hero": "hero_leshrac.lua",
+      "id": "C742-06",
+      "status": "E2",
+      "check": "present",
+      "needle": "J.GetAttackProjectileDamageByRange",
+      "finding": "Nihilism 旧弹道自救意图不符合新版效果；已有 PR #8"
+    },
+    {
+      "hero": "hero_furion.lua",
+      "id": "C742-07",
+      "status": "E2",
+      "check": "present",
+      "needle": "ActionQueue_UseAbility(CurseOfTheOldGrowth)",
+      "finding": "Oldgrowth 已改被动，旧脚本仍请求主动释放"
+    },
+    {
+      "hero": "hero_abaddon.lua",
+      "id": "C742-08",
+      "status": "E1",
+      "check": "present",
+      "needle": "GetSpecialValueInt('self_damage')",
+      "finding": "Mist Coil 自伤改生命消耗，旧特殊值与行为要核查"
+    },
+    {
+      "hero": "hero_chaos_knight.lua",
+      "id": "C742-09",
+      "status": "E1",
+      "check": "absent",
+      "needle": "armageddon",
+      "finding": "Ahead, Armageddon 新主动技能尚未接入（内部 ID 待核对）"
+    },
+    {
+      "hero": "hero_chen.lua",
+      "id": "C742-10",
+      "status": "E1",
+      "check": "absent",
+      "needle": "zealot",
+      "finding": "Zealot 新主动与 Holy Persuasion 自身召回未接入"
+    },
+    {
+      "hero": "hero_beastmaster.lua",
+      "id": "C742-11",
+      "status": "E1",
+      "check": "absent",
+      "needle": "thunderhide",
+      "finding": "神杖 Ancient Thunderhide 新召唤策略未见实现"
+    }
+  ],
+  "common": [
+    {
+      "id": "C742-03",
+      "path": "bots/FretBots/SettingsDefault.lua",
+      "check": "present",
+      "needle": "maxPerTier = {5,5,5,5,5}",
+      "finding": "增强模式五阶奖励配置；7.42 正式中立装备为四阶"
+    },
+    {
+      "id": "C742-04",
+      "path": "bots/Buff/NeutralItems.lua",
+      "check": "present",
+      "needle": "Tier5NeutralItems",
+      "finding": "Buff 增强模式存在第五阶自定义发放，不代表普通模式也存在"
+    },
+    {
+      "id": "C742-05",
+      "path": "bots/FunLib/jmz_func.lua",
+      "check": "present",
+      "needle": "11 * 60",
+      "finding": "Roshan 固定复活窗口与 7.42 递减复活机制可能冲突；已有 PR #6"
+    },
+    {
+      "id": "C742-13",
+      "path": "bots/FunLib/aba_item.lua",
+      "check": "present",
+      "needle": "item_javelin",
+      "finding": "Javelin 在 7.42 已移除，但仍在公共基础物品名单中"
+    },
+    {
+      "id": "C742-14",
+      "path": "bots/ability_item_usage_generic.lua",
+      "check": "present",
+      "needle": "X.ConsiderItemDesire[\"item_helm_of_the_overlord\"]",
+      "finding": "装备已移除，但通用主动使用逻辑仍保留旧分支；可能不可达，需清理/核验"
+    },
+    {
+      "id": "C742-15",
+      "path": "bots/FunLib/aba_item.lua",
+      "check": "present",
+      "needle": "Item['item_helm_of_the_overlord']",
+      "finding": "公共装备初始化仍对已移除 Overlord 查询合成；已有 PR #4"
+    }
+  ]
+}
