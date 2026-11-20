@@ -1,0 +1,30 @@
+name: Dota 7.42 patch-driven source impact review
+
+on:
+  push:
+    branches: [audit/patch742-impact-review]
+  pull_request:
+    branches: [audit/patch742-hero-matrix]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  patch-impact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate existing 128-hero inventory
+        run: python3 scripts/patch742_audit.py --check
+      - name: Verify curated patch changes and removed item signatures
+        run: python3 scripts/patch742_impact.py --check
+      - name: Run old and new static audit regressions
+        run: |
+          python3 -m py_compile scripts/patch742_impact.py scripts/patch742_audit.py
+          python3 -m unittest discover -s tests -p 'test_patch742_audit.py' -v
+          python3 -m unittest discover -s tests -p 'test_patch742_impact.py' -v
