@@ -1,0 +1,30 @@
+name: Patch 7.42 Chen Abaddon item compatibility
+
+on:
+  push:
+    branches: [fix/patch742-chen-abaddon-items]
+  pull_request:
+    branches: [oha-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lua51:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+      - name: Lua syntax and production-function regression
+        run: |
+          luac5.1 -p bots/BotLib/hero_chen.lua
+          luac5.1 -p bots/BotLib/hero_abaddon.lua
+          luac5.1 -p bots/FunLib/aba_item.lua
+          luac5.1 -p bots/FunLib/aba_skill.lua
+          luac5.1 -p tests/test_patch742_chen_abaddon_items.lua
+          lua5.1 tests/test_patch742_chen_abaddon_items.lua
