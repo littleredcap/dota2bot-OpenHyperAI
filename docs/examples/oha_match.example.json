@@ -1,0 +1,56 @@
+{
+  "schema": "oha.match.v1",
+  "match_id": "example-local-0001",
+  "duration_seconds": 2400,
+  "patch": "7.42",
+  "bot_build": "EXAMPLE_COMMIT_NOT_REAL",
+  "game_mode": "all_pick",
+  "lobby_type": "custom_local",
+  "difficulty": "example-fretbots-2",
+  "opponent_profile": "example-valve-default",
+  "radiant_win": true,
+  "team_kills": {
+    "radiant": 20,
+    "dire": 12
+  },
+  "team_hero_damage": {
+    "radiant": 65000,
+    "dire": 49000
+  },
+  "players": [
+    {
+      "player_slot": 0,
+      "is_oha_bot": true,
+      "hero": "npc_dota_hero_axe",
+      "position": 3,
+      "kills": 3,
+      "deaths": 5,
+      "assists": 10,
+      "gold_per_min": 390,
+      "xp_per_min": 480,
+      "last_hits": 124,
+      "denies": 8,
+      "hero_damage": 18000,
+      "tower_damage": 1600,
+      "hero_healing": null,
+      "obs_placed": 1,
+      "sen_placed": 2,
+      "camps_stacked": null,
+      "stun_seconds": null
+    },
+    {
+      "player_slot": 1,
+      "is_oha_bot": false,
+      "hero": "npc_dota_hero_lina",
+      "position": 2,
+      "kills": 5,
+      "deaths": 3,
+      "assists": 9,
+      "gold_per_min": 515,
+      "xp_per_min": 600,
+      "hero_damage": 24500,
+      "tower_damage": 3300
+    }
+  ],
+  "start_time_unix": 1770000000
+}
