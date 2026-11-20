@@ -374,7 +374,7 @@ function X.ConsiderSoulRip()
 	if J.IsGoingOnSomeone(bot, 1200)
 	then
 		local targetAlly = nil
-		local hp = 1000
+		local hp = math.huge
 
 		local nInRangeAlly = J.GetNearbyHeroes(bot,nCastRange, false, BOT_MODE_NONE)
 		for _, allyHero in pairs(nInRangeAlly)
@@ -466,7 +466,7 @@ function X.ConsiderSoulRip()
         and J.IsAttacking(bot)
         then
             local targetAlly = nil
-            local hp = 1000
+            local hp = math.huge
 
             local nInRangeAlly = J.GetNearbyHeroes(bot,nCastRange, false, BOT_MODE_NONE)
             for _, allyHero in pairs(nInRangeAlly)
@@ -493,7 +493,7 @@ function X.ConsiderSoulRip()
 	end
 
     local targetAlly = nil
-    local hp = 1000
+    local hp = math.huge
 
     local nInRangeAlly = J.GetNearbyHeroes(bot,nCastRange, false, BOT_MODE_NONE)
     for _, allyHero in pairs(nInRangeAlly)
