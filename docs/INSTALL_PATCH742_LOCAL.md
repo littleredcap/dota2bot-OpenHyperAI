@@ -7,7 +7,7 @@
 
 ## 一、Windows：推荐安装步骤
 
-1. **获取本分支，而非 Workshop 或默认 main**：进入 [集成分支](https://github.com/littleredcap/dota2bot-OpenHyperAI/tree/integration/patch742-smoke)，选 **Code → Download ZIP**，解压并找到根目录 `bots` 文件夹。或者从 [CI Actions](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/workflows/integration-patch742.yml) 中一次**成功**的运行下载 `OHA-7.42-local-dev-scripts` 测试包（可能需要 GitHub 登录，artifact 有有效期）。
+1. **获取本分支，而非 Workshop 或默认 main**：进入 [集成分支](https://github.com/littleredcap/dota2bot-OpenHyperAI/tree/integration/patch742-smoke)，选 **Code → Download ZIP**，解压并找到根目录 `bots` 文件夹。或者从 [CI Actions](https://github.com/littleredcap/dota2bot-OpenHyperAI/actions/workflows/integration-patch742.yml) 中一次**成功**的运行下载 `OHA-7.42-local-dev-scripts` 测试包（可能需要 GitHub 登录，artifact 有有效期）。**注意 Actions 下载是外层 ZIP**：先解压它，得到 `OHA-7.42-integration-local-dev.zip` 和 SHA-256 清单，再解压这个**内层 ZIP**，最终才获得需要安装的 `bots/` 文件夹。
 2. 在 Steam 库中右键 **Dota 2 → 属性 → 已安装文件 → 浏览**，然后进入：
    
    ```text
