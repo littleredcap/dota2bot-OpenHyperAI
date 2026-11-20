@@ -335,36 +335,38 @@ function X.ConsiderSoulRip()
     end
 
     local nCastRange = J.GetProperCastRange(false, bot, SoulRip:GetCastRange())
-	local nRadius = SoulRip:GetSpecialValueInt('radius')
-    local nDamage = SoulRip:GetSpecialValueInt('damage_per_unit')
+    local nRadius = SoulRip:GetSpecialValueInt('radius')
+    local nDamagePerUnit = SoulRip:GetSpecialValueInt('damage_per_unit')
+    local nMaxUnits = SoulRip:GetSpecialValueInt('max_units')
 
-    local nEnemyHeroes = J.GetNearbyHeroes(bot,nRadius, true, BOT_MODE_NONE)
+    -- Soul Rip's unit count is centered on Undying. Include allied and enemy
+    -- heroes/creeps, exclude the caster and spell target, and respect the cap.
+    -- This is a conservative estimate: some summoned units may not be returned
+    -- by GetNearbyCreeps, so the actual spell may deal more damage.
+    local nEnemyHeroes = J.GetNearbyHeroes(bot, nRadius, true, BOT_MODE_NONE)
+    local nAllyHeroes = J.GetNearbyHeroes(bot, nRadius, false, BOT_MODE_NONE)
+    local nEnemyCreeps = bot:GetNearbyCreeps(nRadius, true)
+    local nAllyCreeps = bot:GetNearbyCreeps(nRadius, false)
+    local nNearbyUnits = #nEnemyHeroes + #nAllyHeroes + #nEnemyCreeps + #nAllyCreeps
+
     for _, enemyHero in pairs(nEnemyHeroes)
     do
         if J.IsValidHero(enemyHero)
         and J.CanCastOnNonMagicImmune(enemyHero)
+        and J.IsInRange(bot, enemyHero, nCastRange)
         and not J.IsSuspiciousIllusion(enemyHero)
         and not enemyHero:HasModifier('modifier_abaddon_borrowed_time')
         and not enemyHero:HasModifier('modifier_dazzle_shallow_grave')
         and not enemyHero:HasModifier('modifier_necrolyte_reapers_scythe')
         and not enemyHero:HasModifier('modifier_oracle_false_promise_timer')
         then
-            local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), nRadius)
-            local nCreeps = bot:GetNearbyCreeps(nRadius, true)
-
-            if nInRangeEnemy ~= nil and #nInRangeEnemy >= 1
+            -- The enemy hero is in nEnemyHeroes, but a Soul Rip target cannot
+            -- be one of the units ripped from. Undying is not in these lists.
+            local nRipUnits = math.min(nMaxUnits, math.max(0, nNearbyUnits - 1))
+            local nEstimatedDamage = nDamagePerUnit * nRipUnits
+            if nRipUnits > 0 and J.CanKillTarget(enemyHero, nEstimatedDamage, DAMAGE_TYPE_MAGICAL)
             then
-                nDamage = nDamage * #nInRangeEnemy
-            end
-
-            if nCreeps ~= nil and #nCreeps >= 1
-            then
-                nDamage = nDamage * #nCreeps
-            end
-
-            if J.CanKillTarget(enemyHero, nDamage, DAMAGE_TYPE_MAGICAL)
-            then
-                return BOT_ACTION_DESIRE_HIGH, bot
+                return BOT_ACTION_DESIRE_HIGH, enemyHero
             end
         end
     end
