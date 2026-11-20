@@ -29,6 +29,10 @@ local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: Aghanim upgrades temporarily omitted from default item builds.
+-- Reason: Scepter now grants Spirit Bear's Summon Lone Druid.
+-- Also omit item_ultimate_scepter_2: Blessing would re-purchase the Scepter.
+-- Restore only after community build guidance and ability/targeting verification.
 
 local sUtility = {"item_mjollnir", "item_radiance"}
 local nUtility = sUtility[RandomInt(1, #sUtility)]
@@ -47,8 +51,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_skadi",--
 	"item_travel_boots",
 	"item_moon_shard",
-    "item_ultimate_scepter",
-    "item_ultimate_scepter_2",
     
 	"item_travel_boots_2",--
 }
@@ -65,14 +67,12 @@ sRoleItemsBuyList['pos_1_w_bear'] = {
     'item_boots',
     -- "item_basher",
     "item_abyssal_blade",--1
-    "item_ultimate_scepter",
     "item_black_king_bar",--1
     "item_assault",--1
     "item_black_king_bar",--2
     "item_monkey_king_bar",--1
 	"item_moon_shard",
     "item_moon_shard",
-    "item_ultimate_scepter_2",
     "item_aghanims_shard",
 
 
@@ -81,8 +81,6 @@ sRoleItemsBuyList['pos_1_w_bear'] = {
     "item_monkey_king_bar",--2
     "item_satanic",--2
     "item_greater_crit",--2
-    "item_ultimate_scepter",
-    "item_ultimate_scepter_2",
     "item_travel_boots_2",--2
 }
 
