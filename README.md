@@ -98,6 +98,12 @@ This project uses [Claude Code](https://claude.ai/claude-code) for AI-assisted d
 | [docs/BOT_API_REFERENCE.md](docs/BOT_API_REFERENCE.md) | Comprehensive Valve bot scripting API reference with examples |
 | [CLAUDE.md](CLAUDE.md) | AI coding assistant guide - common tasks, rules, and workflows |
 
+### Offline regression checks
+
+Run `npm run check:offline` from the repository root with Lua 5.1 installed. The command checks default Aghanim purchases, parses all Lua scripts in `bots/`, `game/`, and `tests/`, and runs the Lua regression entry points.
+
+If your Lua binaries are not named `lua5.1` and `luac5.1` (common on Windows), set the `LUA` and `LUAC` environment variables to the executable paths. Dota 2 is not needed. These checks do not replace in-game validation.
+
 ### Internal Name References
 
 Dota 2 bot scripts use internal code names for heroes, items, and abilities. These are different from the display names you see in-game. When updating builds or fixing bugs, always verify against authoritative sources:
