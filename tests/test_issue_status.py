@@ -4,7 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from check_issue_status import parse_register, PR_LINK, ROW_ID
+from check_issue_status import parse_register, pr_is_indexed, PR_LINK, ROW_ID
 
 ROW = ("| GH-155 | 物品循环 | MIN_FIX_DRAFT | OFFLINE_PASS | OLD | "
        "防止反复拾取 | 仍需客户端以及背包优先级优化 | "
@@ -12,13 +12,15 @@ ROW = ("| GH-155 | 物品循环 | MIN_FIX_DRAFT | OFFLINE_PASS | OLD | "
 
 
 class IssueRegisterTests(unittest.TestCase):
-    def test_current_52_plus_entries_pass(self):
+    def test_current_54_plus_entries_pass(self):
         root = Path(__file__).resolve().parents[1]
         rows, errors = parse_register(
             (root / "docs/ISSUE_AND_REQUIREMENT_STATUS.md").read_text(encoding="utf-8")
         )
         self.assertEqual(errors, [])
-        self.assertGreaterEqual(len(rows), 52)
+        self.assertGreaterEqual(len(rows), 54)
+        self.assertTrue(any(r["id"] == "U-14" for r in rows))
+        self.assertTrue(any(r["id"] == "D-23" for r in rows))
         self.assertTrue(any(r["id"] == "C742-10" and r["strategy"] == "TODO" for r in rows))
         self.assertTrue(any(r["id"] == "GH-170" and r["strategy"] == "PARTIAL" for r in rows))
         self.assertTrue(any(r["id"] == "C742-07" and r["strategy"] == "OLD" for r in rows))
@@ -46,9 +48,21 @@ class IssueRegisterTests(unittest.TestCase):
         _, errors = parse_register(ROW + "\n" + ROW)
         self.assertTrue(any("duplicate ID GH-155" in err for err in errors))
 
+    def test_pr_review_gate_requires_explicit_issue_link(self):
+        root = Path(__file__).resolve().parents[1]
+        rows, errors = parse_register(
+            (root / "docs/ISSUE_AND_REQUIREMENT_STATUS.md").read_text(encoding="utf-8")
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(pr_is_indexed(rows, 17))
+        self.assertTrue(pr_is_indexed(rows, 2))
+        self.assertFalse(pr_is_indexed(rows, 9999))
+
     def test_rule_formats_are_strict(self):
         self.assertIsNotNone(ROW_ID.fullmatch("C742-13"))
         self.assertIsNotNone(ROW_ID.fullmatch("F-01"))
+        self.assertIsNotNone(ROW_ID.fullmatch("U-14"))
+        self.assertIsNotNone(ROW_ID.fullmatch("D-23"))
         self.assertIsNone(ROW_ID.fullmatch("UNKNOWN-1"))
         self.assertEqual(PR_LINK.findall(ROW), ["7"])
 

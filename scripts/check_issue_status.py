@@ -18,7 +18,7 @@ IMPLEMENTATION = {
 }
 VERIFICATION = {"NO_RUN", "STATIC_ONLY", "OFFLINE_PASS", "CLIENT_PASS", "MATCH_PASS"}
 STRATEGY = {"OLD", "PARTIAL", "TODO", "RESEARCH", "N_A", "STRATEGY_VALIDATED"}
-ROW_ID = re.compile(r"(?:GH-\d+|C742-[A-Z0-9-]+|ENG-[A-Z0-9-]+|F-\d{2})\Z")
+ROW_ID = re.compile(r"(?:GH-\d+|C742-[A-Z0-9-]+|ENG-[A-Z0-9-]+|[FUD]-\d{2})\Z")
 PR_LINK = re.compile(r"https://github\.com/littleredcap/dota2bot-OpenHyperAI/pull/(\d+)")
 
 REQUIRED_IDS = {
@@ -26,7 +26,7 @@ REQUIRED_IDS = {
     "C742-01", "C742-05", "C742-06", "C742-07", "C742-08",
     "C742-09", "C742-10", "C742-13", "C742-ALL",
     "ENG-DQ1", "ENG-METRICS", "ENG-PATCH-MATRIX",
-    "ENG-REGISTER", "ENG-CLIENT",
+    "ENG-REGISTER", "ENG-CLIENT", "U-14", "D-23",
 }
 REQUIRED_IDS |= {f"F-{i:02d}" for i in (*range(1, 10), 10, 11)}
 # PR coverage check is intentionally a snapshot: bump only after reviewing new
@@ -86,9 +86,15 @@ def parse_register(source: str) -> tuple[list[dict], list[str]]:
     return records, errors
 
 
+def pr_is_indexed(rows: list[dict], number: int) -> bool:
+    """PR review gate: a new PR must point to at least one recorded issue/requirement."""
+    return any(str(number) in PR_LINK.findall(row["links"]) for row in rows)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--file", type=Path, default=Path("docs/ISSUE_AND_REQUIREMENT_STATUS.md"))
+    parser.add_argument("--pr-number", type=int, help="Fail if this PR is not linked by any issue record")
     args = parser.parse_args(argv)
     try:
         content = args.file.read_text(encoding="utf-8")
@@ -96,6 +102,11 @@ def main(argv=None) -> int:
         print(f"Cannot read register: {exc}", file=sys.stderr)
         return 1
     rows, errors = parse_register(content)
+    if args.pr_number is not None:
+        if args.pr_number < 1:
+            errors.append("--pr-number must be positive")
+        elif not pr_is_indexed(rows, args.pr_number):
+            errors.append(f"PR #{args.pr_number} missing from issue/requirement register; add stable ID first")
     counts = Counter((row["implementation"], row["verification"]) for row in rows)
     print(f"{len(rows)} tracked issues and requirements, {len(counts)} status combinations")
     for err in errors:

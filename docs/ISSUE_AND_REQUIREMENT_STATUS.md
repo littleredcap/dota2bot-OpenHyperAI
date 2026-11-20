@@ -95,6 +95,8 @@
 | ENG-PATCH-MATRIX | 7.42 静态风险矩阵与离线错误分析 | INFRA_DRAFT | OFFLINE_PASS | N_A | 128 个 hero Lua 目录盘点、E1/E2 指纹与现有日志分类。 | UNREVIEWED ≠ 兼容；无人值守客户端自动对局仍是未来方案。 | [PR #15](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/15) |
 | ENG-CLIENT | 无需人工盯屏的客户端自动验证 | DEFERRED | NO_RUN | N_A | 已有日志分类与方案文档，暂未自动启动 Dota。 | 待真正客户端/独立运行环境可用，再验证执行结果、持续停滞和可观察性。 | [PR #12](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/12)、[PR #15](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/15) |
 | ENG-REGISTER | 每项最小修复与未来策略债务独立跟踪 | DOC_DRAFT | STATIC_ONLY | N_A | 本文件集中列出已发现的具体问题、PR、离线验证、策略边界。 | 以后发现新问题即加稳定 ID；最小修复合并不能自动标成策略完成。 | [PR #2](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/2) |
+| U-14 | 用户明确要求每项 Issue/需求记录「最小修复 vs 未来策略」 | DOC_DRAFT | STATIC_ONLY | N_A | 已建立三轴台账、稳定 ID、具体修复与未来施法时机债务。 | 随后每个新 Issue/需求先登记，再在具体 PR 及验证后分别更新；旧项目不因最小修复而关闭。 | [PR #2](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/2)、[PR #12](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/12) |
+| D-23 | PR 状态门禁与最小修复策略债务验证 | INFRA_DRAFT | OFFLINE_PASS | N_A | Python 检查稳定 ID、状态合法性、PR 关联、未完成后续工作；PR 模板列三轴。 | 当前 PR 合并状态需按 GitHub 单独核对；未来 PR 应更新台账，不准仅因 CI 通过就标 CLIENT_PASS/STRATEGY_VALIDATED。 | [PR #2](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/2)、[PR #12](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/12) |
 
 ## 5. 游戏策略功能需求 F-01～F-11（与需求总表保持同一 ID）
 
