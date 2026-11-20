@@ -45,6 +45,7 @@ local nItems = {"item_butterfly", "item_skadi", "item_mjollnir"}
 local sItems = nItems[RandomInt(1, #nItems)]
 
 local sRoleItemsBuyList = {}
+-- 7.42: Khanda (item_angels_demise) removed from the shop; no speculative replacement.
 
 sRoleItemsBuyList['pos_1'] = {
     "item_tango",
@@ -57,7 +58,6 @@ sRoleItemsBuyList['pos_1'] = {
     "item_power_treads",
     "item_lifesteal",
     "item_manta",--
-    "item_angels_demise",--
     "item_black_king_bar",--
     "item_butterfly",--
     "item_aghanims_shard",
@@ -71,7 +71,6 @@ sRoleItemsBuyList['pos_2'] = {
 	"item_mid_outfit",
     "item_lifesteal",
     "item_manta",--
-    "item_angels_demise",--
     "item_black_king_bar",--
     sItems,--
     "item_aghanims_shard",
