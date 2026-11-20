@@ -46,6 +46,8 @@ local getCachedAlliesNearLoc = ____global_cache.getCachedAlliesNearLoc
 local getCachedEnemiesNearLoc = ____global_cache.getCachedEnemiesNearLoc
 local autoCleanupCache = ____global_cache.autoCleanupCache
 local getCachedData = ____global_cache.getCachedData
+local ____aba_defend = require(GetScriptDirectory().."/FunLib/aba_defend")
+local GetBaseCreepResponse = ____aba_defend.GetBaseCreepResponse
 function updateGameStateCache()
     local now = DotaTime()
     if gameStateCache and now - gameStateCache.lastUpdate < PUSH_CACHE_TTL then
@@ -125,11 +127,19 @@ function updateUnitStateCache()
     return unitStateCache
 end
 function ____exports.GetPushDesireHelper(bot, lane)
+    local gameState = getGlobalGameState()
+    local ourAncient = gameState.ourAncient
+    if not ourAncient then
+        return BotModeDesire.None
+    end
+    local baseResponder, criticalBaseCreeps = GetBaseCreepResponse(bot, ourAncient)
+    if baseResponder then
+        return BotModeDesire.None
+    end
     if bot.laneToPush == nil then
         bot.laneToPush = lane
     end
     autoCleanupCache()
-    local gameState = getGlobalGameState()
     local locationState = getGlobalLocationState()
     local nMaxDesire = 0.82
     local nSearchRange = 2000
@@ -147,14 +157,15 @@ function ____exports.GetPushDesireHelper(bot, lane)
         1600
     )
     local team = gameState.team
-    local ourAncient = gameState.ourAncient
-    local enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(
-        ourAncient:GetLocation(),
-        BASE_ANC_RADIUS
-    )
+    local teamAncientLoc = ourAncient:GetLocation()
+    local enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(teamAncientLoc, BASE_ANC_RADIUS)
     if enemiesAtAncient >= 1 then
         return BotModeDesire.ExtraLow
     end
+    local nEffAlliesNearAncient = #jmz.GetAlliesNearLoc(teamAncientLoc, 4500) + #jmz.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500)
+    local baseDefenseLimited = jmz.GetEnemiesAroundLoc(teamAncientLoc, 4500) > 0 and nEffAlliesNearAncient < 1
+    local activeDefense = jmz.IsDefending(bot) and nModeDesire >= 0.8
+    local decisivePushWindow = gameState.currentTime >= StartToPushTime and gameState.aliveEnemyCount <= 2 and gameState.aliveAllyCount >= 3 and gameState.aliveAllyCoreCount >= 1 and gameState.aliveAllyCount >= gameState.aliveEnemyCount + 2 and jmz.GetHP(bot) >= 0.6 and #enemiesHere == 0 and not activeDefense and not baseDefenseLimited and not criticalBaseCreeps
     if #alliesHere <= 1 and gameState.aliveEnemyCount >= 3 then
         return BotModeDesire.None
     end
@@ -163,8 +174,12 @@ function ____exports.GetPushDesireHelper(bot, lane)
     end
     local enemyFountain = gameState.team == Team.Radiant and DireFountainTpPoint or RadiantFountainTpPoint
     local laneFront = GetLaneFrontLocation(gameState.team, lane, 0)
+    local safeClosingWindow = decisivePushWindow and (GetUnitToLocationDistance(bot, enemyFountain) >= 3200 or #alliesHere >= 2 or #bot:GetNearbyLaneCreeps(1100, false) >= 2)
+    if safeClosingWindow then
+        nMaxDesire = 0.88
+    end
     if GetLocationToLocationDistance(laneFront, enemyFountain) < 5000 then
-        if #alliesHere < 3 or gameState.aliveAllyCount < gameState.aliveEnemyCount then
+        if not safeClosingWindow and #alliesHere < 3 or gameState.aliveAllyCount < gameState.aliveEnemyCount then
             nMaxDesire = math.min(nMaxDesire, 0.08)
         end
     end
@@ -211,11 +226,11 @@ function ____exports.GetPushDesireHelper(bot, lane)
     if nH > 0 and currentTime <= StartToPushTime then
         return BOT_MODE_DESIRE_EXTRA_LOW
     end
-    if jmz.IsDefending(bot) and nModeDesire >= 0.8 then
-        nMaxDesire = 0.75
+    if activeDefense then
+        nMaxDesire = math.min(nMaxDesire, 0.75)
     end
     local human, humanPing = jmz.GetHumanPing()
-    if human ~= nil and humanPing ~= nil and not humanPing.normal_ping and DotaTime() > 0 then
+    if not criticalBaseCreeps and human ~= nil and humanPing ~= nil and not humanPing.normal_ping and DotaTime() > 0 then
         local isPinged, pingedLane = jmz.IsPingCloseToValidTower(
             GetOpposingTeam(),
             humanPing,
@@ -235,13 +250,9 @@ function ____exports.GetPushDesireHelper(bot, lane)
     local eAliveCount = gameState.aliveEnemyCount
     local aAliveCoreCount = gameState.aliveAllyCoreCount
     local eAliveCoreCount = gameState.aliveEnemyCoreCount
-    local hAncient = gameState.ourAncient
     local nPushDesire = 0.5
-    local teamAncientLoc = hAncient:GetLocation()
-    local nEffAlliesNearAncient = #jmz.GetAlliesNearLoc(teamAncientLoc, 4500) + #jmz.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500)
-    local nEnemiesAroundAncient = jmz.GetEnemiesAroundLoc(teamAncientLoc, 4500)
-    if nEnemiesAroundAncient > 0 and nEffAlliesNearAncient < 1 then
-        nMaxDesire = 0.65
+    if baseDefenseLimited then
+        nMaxDesire = math.min(nMaxDesire, 0.65)
     end
     local networthAdvantage = gameState.teamNetworth - gameState.enemyNetworth
     local enemyAverageLevel = jmz.GetAverageLevel(true)
@@ -271,9 +282,12 @@ function ____exports.GetPushDesireHelper(bot, lane)
             return BOT_MODE_DESIRE_EXTRA_LOW
         end
     end
-    if hEnemyAncient and GetUnitToUnitDistance(bot, hEnemyAncient) < nSearchRange * 0.5 and jmz.CanBeAttacked(hEnemyAncient) and not bot:WasRecentlyDamagedByAnyHero(1) and jmz.GetHP(bot) > 0.5 and not ____exports.HasBackdoorProtect(hEnemyAncient) then
-        bot:SetTarget(hEnemyAncient)
-        bot:Action_AttackUnit(hEnemyAncient, true)
+    local pushLane = ____exports.WhichLaneToPush(bot, lane)
+    local isCurrentLanePushLane = pushLane == lane
+    if decisivePushWindow and not isCurrentLanePushLane then
+        return BotModeDesire.VeryLow
+    end
+    if not criticalBaseCreeps and not baseDefenseLimited and not activeDefense and (not decisivePushWindow or safeClosingWindow) and hEnemyAncient and GetUnitToUnitDistance(bot, hEnemyAncient) < nSearchRange * 0.5 and jmz.CanBeAttacked(hEnemyAncient) and not bot:WasRecentlyDamagedByAnyHero(1) and jmz.GetHP(bot) > 0.5 and not ____exports.HasBackdoorProtect(hEnemyAncient) then
         return RemapValClamped(
             jmz.GetHP(bot),
             0,
@@ -282,8 +296,6 @@ function ____exports.GetPushDesireHelper(bot, lane)
             0.98
         )
     end
-    local pushLane = ____exports.WhichLaneToPush(bot, lane)
-    local isCurrentLanePushLane = pushLane == lane
     if not jmz.IsCore(bot) and isCurrentLanePushLane or jmz.IsCore(bot) and (jmz.IsLateGame() and isCurrentLanePushLane or isMidOrEarlyGame) then
         local allowNumbers = eAliveCount == 0 or aAliveCoreCount >= eAliveCoreCount or aAliveCoreCount >= 1 and aAliveCount >= eAliveCount + 2 or networthAdvantage > 8000 and aAliveCount >= eAliveCount - 1 or levelAdvantage > 2 and aAliveCount >= eAliveCount - 1
         if allowNumbers then
@@ -320,13 +332,17 @@ function ____exports.GetPushDesireHelper(bot, lane)
                 )
                 nPushDesire = nPushDesire + groupBonus
             end
-            return RemapValClamped(
+            local desire = RemapValClamped(
                 nPushDesire * jmz.GetHP(bot),
                 0,
                 1,
                 0,
                 nMaxDesire
             )
+            return safeClosingWindow and math.min(
+                nMaxDesire,
+                math.max(desire, 0.88)
+            ) or desire
         end
     end
     return lane == Lane.Mid and BotModeDesire.VeryLow or BOT_MODE_DESIRE_EXTRA_LOW
@@ -725,6 +741,14 @@ function ____exports.PushThink(bot, lane)
     if jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "push") then
         return
     end
+    local ourAncient = GetAncient(GetTeam())
+    local baseResponder, criticalBaseCreeps = GetBaseCreepResponse(bot, ourAncient)
+    if baseResponder or ourAncient and jmz.Utils.CountEnemyHeroesNear(
+        ourAncient:GetLocation(),
+        BASE_ANC_RADIUS
+    ) > 0 then
+        return
+    end
     autoCleanupCache()
     local gameState = getGlobalGameState()
     local locationState = getGlobalLocationState()
@@ -794,7 +818,7 @@ function ____exports.PushThink(bot, lane)
         hEnemyAncient:GetLocation(),
         1600
     )
-    if hEnemyAncient and botState.distanceToAncient < 1000 and jmz.CanBeAttacked(hEnemyAncient) and not ____exports.HasBackdoorProtect(hEnemyAncient) and (#____exports.GetAllyHeroesAttackingUnit(hEnemyAncient) >= 3 or #____exports.GetAllyCreepsAttackingUnit(hEnemyAncient) >= 4 or hEnemyAncient:GetHealthRegen() < 20 or (alliesNearAncient and #alliesNearAncient or 0) >= 4) then
+    if not criticalBaseCreeps and hEnemyAncient and botState.distanceToAncient < 1000 and jmz.CanBeAttacked(hEnemyAncient) and not ____exports.HasBackdoorProtect(hEnemyAncient) and (#____exports.GetAllyHeroesAttackingUnit(hEnemyAncient) >= 3 or #____exports.GetAllyCreepsAttackingUnit(hEnemyAncient) >= 4 or hEnemyAncient:GetHealthRegen() < 20 or (alliesNearAncient and #alliesNearAncient or 0) >= 4) then
         bot:Action_AttackUnit(hEnemyAncient, true)
         return
     end
@@ -814,24 +838,24 @@ function ____exports.PushThink(bot, lane)
     local towerDistanceToFountain = bTowerNearby and GetUnitToLocationDistance(nEnemyTowers[1], vTeamFountain) or 0
     for ____, creep in ipairs(nCreeps) do
         do
-            local __continue120
+            local __continue125
             repeat
                 if not jmz.IsValid(creep) or not jmz.CanBeAttacked(creep) then
-                    __continue120 = true
+                    __continue125 = true
                     break
                 end
                 if jmz.IsTormentor(creep) or jmz.IsRoshan(creep) then
-                    __continue120 = true
+                    __continue125 = true
                     break
                 end
                 if bTowerNearby and GetUnitToLocationDistance(creep, vTeamFountain) >= towerDistanceToFountain then
-                    __continue120 = true
+                    __continue125 = true
                     break
                 end
                 bot:Action_AttackUnit(creep, true)
                 return
             until true
-            if not __continue120 then
+            if not __continue125 then
                 break
             end
         end
