@@ -207,7 +207,7 @@
       "minimum_fix": "旧 Drums 调用此前已注释，新主动未接入",
       "future_strategy": "新召唤的空闲时机、团战/控图收益、现有受控单位指令仍需研究",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-031"
     },
     {
       "id": "C742-17",
@@ -222,7 +222,7 @@
       "minimum_fix": "保留旧 Projection 与 End 施法，未追加新子技能",
       "future_strategy": "需考虑本体受控/被追击、灵魂位置、残留时间和新技能的窗口",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-027"
     },
     {
       "id": "C742-18",
@@ -237,7 +237,7 @@
       "minimum_fix": "仍以原熊技能实现为基线，不猜内部技能 ID",
       "future_strategy": "先核对熊携带灵魂状态、复活时机及熊被击杀的高代价风险",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-028"
     },
     {
       "id": "C742-19",
@@ -252,7 +252,7 @@
       "minimum_fix": "原 Decay/SoulRip/Tombstone/FleshGolem 保留，新 Bite 未施放",
       "future_strategy": "需查真实可用条件和目标选择、机会成本与反例",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-029"
     },
     {
       "id": "C742-20",
@@ -267,7 +267,7 @@
       "minimum_fix": "原 Q/W/E/R 流程仍在，但未显式纳入新冷却充能情况；未证实旧技能无法释放",
       "future_strategy": "只在确认 API IsFullyCastable 与充能行为后，决定如何利用二次施放和时机",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-030"
     },
     {
       "id": "C742-21",
@@ -282,7 +282,7 @@
       "minimum_fix": "原技能目标判断存在但没有对应新机制的实机效果证据",
       "future_strategy": "需研究满层/释放频率、Scepter 开团与目标价值，不能机械改旧数字",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-033"
     },
     {
       "id": "C742-22",
@@ -297,7 +297,7 @@
       "minimum_fix": "本次扫描未发现该精确旧名引用，既有主动技能不据此重写",
       "future_strategy": "仍需独立核验新 Innate、升级表和其它变化；未称英雄全面兼容",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-032"
     },
     {
       "id": "C742-23",
@@ -312,7 +312,7 @@
       "minimum_fix": "本次扫描未发现该精确旧名引用，已移除的 Overlord 另追踪",
       "future_strategy": "新版 Innate 对召唤物与目标选择收益未研究",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-032"
     },
     {
       "id": "C742-14",
@@ -327,7 +327,7 @@
       "minimum_fix": "与 C742-15 的物品初始化路径分开，不把死代码当作运行时崩溃",
       "future_strategy": "应在有调用证据后做局部清理，保留 Dominator 有效功能",
       "pr": null,
-      "client_gate": "VT-TODO"
+      "client_gate": "VT-024"
     }
   ]
 }
