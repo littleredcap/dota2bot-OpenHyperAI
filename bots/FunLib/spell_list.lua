@@ -64,7 +64,7 @@ X['spells'] = {
     
     ['npc_dota_hero_beastmaster'] = {
         ['beastmaster_wild_axes'] = {weight = 0.4},
-        ['beastmaster_call_of_the_wild_razorback'] = {weight = 1},
+        ['beastmaster_summon_razorback'] = {weight = 1},
         ['beastmaster_inner_beast'] = {weight = 1},
         ['beastmaster_summon_raptor'] = {weight = 1},
     },
@@ -586,7 +586,7 @@ X['spells'] = {
     ['npc_dota_hero_pangolier'] = {
         ['pangolier_swashbuckle'] = {weight = 0.5},
         ['pangolier_shield_crash'] = {weight = 0.5},
-        ['pangolier_luckyshot'] = {weight = 1},
+        ['pangolier_lucky_shot'] = {weight = 1},
         ['pangolier_rollup'] = {weight = 0.2},
         ['pangolier_rollup_stop'] = {weight = 1},
         ['pangolier_gyroshell'] = {weight = 0.1},
