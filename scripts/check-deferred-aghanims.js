@@ -15,7 +15,7 @@ const deferredScepters = [
 ];
 
 const deferredShards = [
-    'dazzle', 'death_prophet', 'disruptor', 'meepo',
+    'abaddon', 'dazzle', 'death_prophet', 'disruptor', 'meepo',
     'monkey_king', 'undying',
 ];
 
