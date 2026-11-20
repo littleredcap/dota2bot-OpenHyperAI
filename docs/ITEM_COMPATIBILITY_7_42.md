@@ -43,3 +43,7 @@ Source readback checked that both neutral systems contain exactly the 48 current
 Beastmaster's role build already retained Helm of the Dominator, but the hero-specific farming rule still waited for the removed Helm of the Overlord. The farming rule now checks Dominator under the existing 14,000 net-worth threshold and leaves the separate BKB threshold (18,000) unchanged. No item purchases, team logic or shared farming fallbacks were changed.
 
 `lua5.1 tests/test_7_42_beastmaster_farm.lua` loads the generated gameplay module and covers both item checks plus their exact threshold boundaries. This verifies the item milestone, not whether Beastmaster should fight in every such game state.
+
+### FretBots neutral timer in mixed human/Bot lobbies
+
+A team with fewer than five Bots can finish all four tiers without filling the team's award cap. The finding timer now stops when the initialized Bot roster has no pending tiers, as well as when the original caps are satisfied. Future award times and incomplete Bot state still wait; per-tier award caps and tier-closing rules are unchanged. Regression fixtures exercise 5v5 and 4v5 Bot allocations and distinguish waiting from completion. In-game inventory delivery, including full slots, remains a separate validation item.
