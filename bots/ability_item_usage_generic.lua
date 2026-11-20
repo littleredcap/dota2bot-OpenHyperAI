@@ -2962,7 +2962,7 @@ X.ConsiderItemDesire["item_helm_of_the_dominator"] = function( hItem )
 				local nCreepHP = creep:GetHealth()
 				if nCreepHP > maxHP
 					and ( creep:GetHealth() / creep:GetMaxHealth() ) > 0.75
-					and ( not creep:IsAncientCreep() or hItem:GetName() == "item_helm_of_the_overlord" )
+					and not creep:IsAncientCreep()
 					and not J.IsKeyWordUnit( "siege", creep )
 				then
 					hCreep = creep
@@ -2983,13 +2983,7 @@ X.ConsiderItemDesire["item_helm_of_the_dominator"] = function( hItem )
 end
 
 
---大支配
-X.ConsiderItemDesire["item_helm_of_the_overlord"] = function( hItem )
-
-	return X.ConsiderItemDesire["item_helm_of_the_dominator"]( hItem )
-
-end
-
+-- 7.42: Helm of the Overlord was removed; Dominator remains supported.
 
 --挑战
 X.ConsiderItemDesire["item_hood_of_defiance"] = function( hItem )
