@@ -37,3 +37,9 @@ Audit date: 2026-11-20. Scope: **item compatibility**, not the full 7.42 hero/ab
 ## Verification summary
 
 Source readback checked that both neutral systems contain exactly the 48 current artifacts with matching tiers and the 34 supported tier+enhancement entries, that no active Tier 5 neutral list is retained, and that the known removed default purchase entries have been removed. The results are **static checks, not successful runtime tests**.
+
+## Beastmaster farm milestone follow-up
+
+Beastmaster's role build already retained Helm of the Dominator, but the hero-specific farming rule still waited for the removed Helm of the Overlord. The farming rule now checks Dominator under the existing 14,000 net-worth threshold and leaves the separate BKB threshold (18,000) unchanged. No item purchases, team logic or shared farming fallbacks were changed.
+
+`lua5.1 tests/test_7_42_beastmaster_farm.lua` loads the generated gameplay module and covers both item checks plus their exact threshold boundaries. This verifies the item milestone, not whether Beastmaster should fight in every such game state.
