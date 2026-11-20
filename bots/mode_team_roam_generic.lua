@@ -1439,10 +1439,17 @@ end
 -- ==============================
 -- Items & pick/drops (unchanged logic; minor cleanup)
 -- ==============================
+-- Recheck at selection and execution: another mode may deliberately discard
+-- the selected item between these callbacks.
+local function CanConsiderDroppedItem(drop)
+    if drop == nil or drop.item == nil or drop.item:IsNull() then return false end
+    return bot.ohaDiscardedItems == nil or not bot.ohaDiscardedItems[drop.item]
+end
+
 function ItemOpsDesire()
     if DotaTime() >= ConsiderDroppedTime + 2.0 then
         for _, droppedItem in pairs(GetDroppedItemList()) do
-            if droppedItem ~= nil then
+            if CanConsiderDroppedItem(droppedItem) then
                 local itemName = droppedItem.item:GetName()
                 if not J.Utils.SetContains(itemName) and not J.Utils.HasValue(Item['tEarlyConsumableItem'], itemName) then
                     if itemName == 'item_aegis' and J.GetPosition(bot) <= 3 and not J.HasItem(bot, 'item_aegis') then
@@ -1490,7 +1497,7 @@ end
 
 function ItemOpsThink()
     if PickedItem ~= nil then
-        if J.Item.GetEmptyInventoryAmount(bot) > 0 and not PickedItem.item:IsNull() then
+        if CanConsiderDroppedItem(PickedItem) and J.Item.GetEmptyInventoryAmount(bot) > 0 then
             local itemName = PickedItem.item:GetName()
             if tryPickCount >= 3 and not Utils.SetContains(itemName) then
                 tryPickCount = 0
@@ -1665,19 +1672,27 @@ function TrySellOrDropItem()
 	then
 		lastCheckBotToDropTime = DotaTime()
 
-		-- 再尝试丢/卖掉
+		-- Issue #155: a deliberately dropped backpack item must not be picked
+		-- straight back up by item_purchase_generic's generic owned-item loop.
 		if bot:GetLevel() >= 6 and bot:GetNetWorth() >= 14000 and Utils.CountBackpackEmptySpace(bot) <= 1 then
 			for i = 1, #Item['tEarlyConsumableItem']
 			do
 				local itemName = Item['tEarlyConsumableItem'][i]
-				local itemSlot = bot:FindItemSlot( itemName )
+				local itemSlot = bot:FindItemSlot(itemName)
 				if itemSlot >= 6 and itemSlot <= 8
 				then
-					local distance = bot:DistanceFromFountain()
-					if distance <= 300 then
-						bot:ActionImmediate_SellItem( bot:GetItemInSlot( itemSlot ))
-					elseif distance >= 3000 then
-						bot:Action_DropItem( bot:GetItemInSlot( itemSlot ), bot:GetLocation() )
+					local item = bot:GetItemInSlot(itemSlot)
+					if item ~= nil then
+						local distance = bot:DistanceFromFountain()
+						if distance <= 300 then
+							bot:ActionImmediate_SellItem(item)
+							return
+						elseif distance >= 3000 then
+							bot.ohaDiscardedItems = bot.ohaDiscardedItems or {}
+							bot.ohaDiscardedItems[item] = true
+							bot:Action_DropItem(item, bot:GetLocation())
+							return -- one item operation per tick; avoid overwriting actions
+						end
 					end
 				end
 			end

@@ -201,7 +201,7 @@ local function __TS__ArrayForEach(self, callbackFn, thisArg)
 end
 -- End of Lua Library inline imports
 local ____exports = {}
-local getDefendState, updateDefendGameStateCache, updateDefendLocationStateCache, updateDefendUnitStateCache, _q, _keyLoc, _recentHeroCountNear, IsValidBuildingTarget, IsBaseThreatActive, WeightedEnemiesAroundLocation, GetThreatenedLane, GetClosestAllyPos, IsThereNoTeammateTravelBootsDefender, GetHighGroundEdgeWaitPoint, ConsiderPingedDefend, okLoc, Localization, PING_DELTA, MAX_DESIRE_CAP, BASE_THREAT_RADIUS, BASE_THREAT_HOLD, CACHE_ENEMY_AROUND_LOC_HZ, CACHE_LASTSEEN_WINDOW, nTeam, _threatLaneSticky, baseThreatUntil, fTraveBootsDefendTime, _cacheEnemyAroundLoc, DEFEND_CACHE_TTL, defendGameStateCache, defendLocationStateCache, defendUnitStateCache
+local getDefendState, updateDefendGameStateCache, updateDefendLocationStateCache, updateDefendUnitStateCache, _q, _keyLoc, _recentHeroCountNear, IsValidBuildingTarget, IsBaseThreatActive, WeightedEnemiesAroundLocation, GetBaseCreepAttacker, GetBaseCreepThreatCount, GetBaseCreepDefender, GetCreepBaseDefenseDesire, GetThreatenedLane, GetClosestAllyPos, IsThereNoTeammateTravelBootsDefender, GetHighGroundEdgeWaitPoint, ConsiderPingedDefend, okLoc, Localization, PING_DELTA, MAX_DESIRE_CAP, BASE_THREAT_RADIUS, BASE_THREAT_HOLD, CACHE_ENEMY_AROUND_LOC_HZ, CACHE_LASTSEEN_WINDOW, nTeam, _threatLaneSticky, baseThreatUntil, fTraveBootsDefendTime, _cacheEnemyAroundLoc, DEFEND_CACHE_TTL, defendGameStateCache, defendLocationStateCache, defendUnitStateCache
 local jmz = require(GetScriptDirectory().."/FunLib/jmz_func")
 local ____dota = require(GetScriptDirectory().."/ts_libs/dota/index")
 local Barracks = ____dota.Barracks
@@ -365,19 +365,22 @@ function WeightedEnemiesAroundLocation(vLoc, nRadius)
     local unitState = updateDefendUnitStateCache()
     local count = 0
     for ____, unit in ipairs(unitState.enemyHeroes) do
+        if jmz.IsValidHero(unit) and GetUnitToLocationDistance(unit, vLoc) <= nRadius and not jmz.IsSuspiciousIllusion(unit) then
+            count = count + (jmz.IsCore(unit) and 1 or 0.5)
+        end
+    end
+    for ____, unit in ipairs(unitState.enemyCreeps) do
         if jmz.IsValid(unit) and GetUnitToLocationDistance(unit, vLoc) <= nRadius then
             local name = unit:GetUnitName()
-            if jmz.IsValidHero(unit) and not jmz.IsSuspiciousIllusion(unit) then
-                count = count + (jmz.IsCore(unit) and 1 or 0.5)
-            elseif ({string.find(name, "upgraded_mega")}) ~= nil then
+            if __TS__StringIncludes(name, "upgraded_mega") then
                 count = count + 0.6
-            elseif ({string.find(name, "upgraded")}) ~= nil then
+            elseif __TS__StringIncludes(name, "upgraded") then
                 count = count + 0.4
-            elseif ({string.find(name, "siege")}) ~= nil and ({string.find(name, "upgraded")}) == nil then
+            elseif __TS__StringIncludes(name, "siege") then
                 count = count + 0.5
-            elseif ({string.find(name, "warlock_golem")}) ~= nil or ({string.find(name, "lone_druid_bear")}) ~= nil then
+            elseif __TS__StringIncludes(name, "warlock_golem") or __TS__StringIncludes(name, "lone_druid_bear") then
                 count = count + 1
-            elseif unit:IsCreep() or unit:IsAncientCreep() or unit:IsDominated() or unit:HasModifier("modifier_chen_holy_persuasion") or unit:HasModifier("modifier_dominated") then
+            else
                 count = count + 0.2
             end
         end
@@ -385,6 +388,127 @@ function WeightedEnemiesAroundLocation(vLoc, nRadius)
     count = math.floor(count)
     _cacheEnemyAroundLoc[key] = {t = now, count = count}
     return count
+end
+function GetBaseCreepAttacker(ancient)
+    if not IsValidBuildingTarget(ancient) then
+        return nil
+    end
+    local leftT4 = GetTower(nTeam, Tower.Base1)
+    local rightT4 = GetTower(nTeam, Tower.Base2)
+    for ____, creep in ipairs(updateDefendUnitStateCache().enemyCreeps) do
+        do
+            local __continue40
+            repeat
+                if not jmz.IsValid(creep) or GetUnitToLocationDistance(
+                    creep,
+                    ancient:GetLocation()
+                ) > BASE_THREAT_RADIUS then
+                    __continue40 = true
+                    break
+                end
+                local target = creep:GetAttackTarget()
+                if target == ancient or leftT4 ~= nil and target == leftT4 or rightT4 ~= nil and target == rightT4 then
+                    return creep
+                end
+                __continue40 = true
+            until true
+            if not __continue40 then
+                break
+            end
+        end
+    end
+    return nil
+end
+function GetBaseCreepThreatCount(ancient)
+    if not IsValidBuildingTarget(ancient) then
+        return 0
+    end
+    local leftT4 = GetTower(nTeam, Tower.Base1)
+    local rightT4 = GetTower(nTeam, Tower.Base2)
+    local count = 0
+    for ____, creep in ipairs(updateDefendUnitStateCache().enemyCreeps) do
+        if jmz.IsValid(creep) and GetUnitToLocationDistance(
+            creep,
+            ancient:GetLocation()
+        ) <= BASE_THREAT_RADIUS then
+            local target = creep:GetAttackTarget()
+            if target == ancient or leftT4 ~= nil and target == leftT4 or rightT4 ~= nil and target == rightT4 then
+                count = count + 1
+            end
+        end
+    end
+    return count
+end
+function GetBaseCreepDefender(ancientLoc, alreadyAssigned)
+    local best = nil
+    local bestETA = math.huge
+    do
+        local i = 1
+        while i <= #GetTeamPlayers(nTeam) do
+            local member = GetTeamMember(i)
+            if member and member:IsBot() and jmz.IsValidHero(member) and not member:IsIllusion() then
+                local eligible = true
+                for ____, other in ipairs(alreadyAssigned) do
+                    if other:GetPlayerID() == member:GetPlayerID() then
+                        eligible = false
+                    end
+                end
+                if eligible then
+                    local distance = GetUnitToLocationDistance(member, ancientLoc)
+                    local eta = distance / math.max(
+                        member:GetCurrentMovementSpeed(),
+                        250
+                    )
+                    if eta < bestETA then
+                        best = member
+                        bestETA = eta
+                    end
+                end
+            end
+            i = i + 1
+        end
+    end
+    return best
+end
+function GetCreepBaseDefenseDesire(bot, lane, ancient)
+    if not IsValidBuildingTarget(ancient) or jmz.Utils.CountEnemyHeroesNear(
+        ancient:GetLocation(),
+        2200
+    ) > 0 or GetBaseCreepAttacker(ancient) == nil then
+        return nil
+    end
+    local attackers = GetBaseCreepThreatCount(ancient)
+    local ancientHP = ancient:GetHealth() / math.max(
+        ancient:GetMaxHealth(),
+        1
+    )
+    local required = 1
+    if attackers >= 8 or ancientHP <= 0.2 then
+        required = 3
+    elseif attackers >= 4 or ancientHP <= 0.45 then
+        required = 2
+    end
+    local assigned = {}
+    do
+        local i = 0
+        while i < required do
+            local defender = GetBaseCreepDefender(
+                ancient:GetLocation(),
+                assigned
+            )
+            if defender == nil then
+                break
+            end
+            assigned[#assigned + 1] = defender
+            i = i + 1
+        end
+    end
+    for ____, defender in ipairs(assigned) do
+        if defender:GetPlayerID() == bot:GetPlayerID() and lane == Lane.Mid then
+            return 0.97
+        end
+    end
+    return nil
 end
 function GetThreatenedLane()
     local lanes = {Lane.Top, Lane.Mid, Lane.Bot}
@@ -894,6 +1018,15 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     local ds = getDefendState(bot)
     ds.defendLoc = locationState.laneFronts[lane]
     local distanceToDefendLoc = GetUnitToLocationDistance(bot, ds.defendLoc)
+    local creepBaseDesire = GetCreepBaseDefenseDesire(bot, lane, ancient)
+    if creepBaseDesire ~= nil then
+        if creepBaseDesire > 0.9 and ancient then
+            bot._ohaCreepDefenseUntil = DotaTime() + BASE_THREAT_HOLD
+            ds.defendLoc = ancient:GetLocation()
+            bot.laneToDefend = Lane.Mid
+        end
+        return creepBaseDesire
+    end
     local botLevel = bot:GetLevel()
     if bot:GetAssignedLane() ~= lane and distanceToDefendLoc > 3000 and (jmz.GetPosition(bot) == 1 and botLevel < 6 or jmz.GetPosition(bot) == 2 and botLevel < 6 or jmz.GetPosition(bot) == 3 and botLevel < 5 or jmz.GetPosition(bot) == 4 and botLevel < 4 or jmz.GetPosition(bot) == 5 and botLevel < 4) then
         return BotModeDesire.None
@@ -1261,7 +1394,7 @@ function ____exports.DefendThink(bot, lane)
         ))
         return
     end
-    if IsBaseThreatActive() then
+    if IsBaseThreatActive() or (bot._ohaCreepDefenseUntil or -1) > now then
         local ancient = GetAncient(nTeam)
         local anchor = jmz.AdjustLocationWithOffsetTowardsFountain(
             ancient:GetLocation(),
@@ -1297,6 +1430,11 @@ function ____exports.DefendThink(bot, lane)
         end
         if jmz.IsValidHero(enemiesNear[1]) and jmz.IsInRange(bot, enemiesNear[1], nSearchRange) then
             bot:Action_AttackUnit(enemiesNear[1], true)
+            return
+        end
+        local baseCreep = GetBaseCreepAttacker(ancient)
+        if baseCreep and GetUnitToUnitDistance(bot, baseCreep) <= BASE_THREAT_RADIUS then
+            bot:Action_AttackUnit(baseCreep, true)
             return
         end
         local attackMoveLoc = add(
