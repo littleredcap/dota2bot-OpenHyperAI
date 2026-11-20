@@ -15,7 +15,8 @@
     "scripts": {
         "build:lua": "tstl -p tsconfig-tstl.json && node ./typescript/post-process/post-process-lua.js",
         "build:node": "tsc -p tsconfig-node.json",
-        "build": "npm run build:lua",
+        "check:deferred-aghanims": "node ./scripts/check-deferred-aghanims.js",
+        "build": "npm run check:deferred-aghanims && npm run build:lua",
         "dev": "tstl -p tsconfig-tstl.json --watch",
         "prettier": "prettier ./bots ./typescript --write",
         "update-version": "node ./typescript/post-process/update-version.js",
