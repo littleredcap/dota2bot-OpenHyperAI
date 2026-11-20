@@ -58,6 +58,12 @@
 | VT-023 / research | [CK 新 Armageddon 槽位 Mock PR #17](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/17) · C742-09 | 确认 Ability4/6、幻象就绪、地面目标、冲锋引导及 Q/W/R 对冲锋的打断；**现无 Armageddon 策略代码**，不能因槽位测试通过即宣称可用。 | `mock_passed`（仅槽位） + 新策略 `planned`；**blocked_no_client** |
 | VT-024 / release_gate | [7.42 Javelin 清理 PR #17](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/17) · C742-13 | `sBasicItems` 不含 Javelin；版本实际商店及组合装备购买链有效；与 PR #4 Overlord 清理同时合并后不会初始化异常、购买队列卡死。 | `mock_passed`（物品分类）；**blocked_no_client** |
 
+## 3.6 7.42 组合包的独立客户端验证（新增）
+
+| ID / 重要性 | PR/对象 | 场景和通过条件 | 当前状态 |
+| --- | --- | --- | --- |
+| VT-025 / release_gate | [7.42 五项最小修复整合 Draft PR #18](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/18) · ENG-PATCH742-JOINT | 通过 Local Host + Local Dev Script 加载 **PR #18 实际 commit SHA** 而不是 Workshop 旧脚本；验证 OHA 后缀、核心模块启动、Meepo/Leshrac/Furion/Chen/Abaddon/Beastmaster/Lycan 的主要初始化/购买/施法，无 Lua 错误；对已移除 Javelin/Overlord 不再请求配方。每项功能独立 VT-005～007、VT-016、VT-020～024 仍需逐条验收。**单纯看到 .OHA 不能确认文件 SHA**，本地实际文件/启动标记需另证据。 | 联合 CI 44 + 5 项通过；尚无实际 Dota 客户端，**blocked_no_client** |
+
 ## 4. 执行顺序和所需最小证据
 
 未来首次可用客户端时，不应让所有测试混在一起跑数十局：先验证 *脚本加载版本* → VT-001/002/005 的 Meepo API → VT-007 Roshan 计时 → VT-006 购物 → 后续策略场景；只在相应行为能正确触发并观察时才进入完整对局与对照。

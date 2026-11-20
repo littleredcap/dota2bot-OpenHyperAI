@@ -22,6 +22,7 @@ class IssueRegisterTests(unittest.TestCase):
         self.assertTrue(any(r["id"] == "U-14" for r in rows))
         self.assertTrue(any(r["id"] == "D-23" for r in rows))
         self.assertTrue(any(r["id"] == "C742-10" and r["strategy"] == "TODO" for r in rows))
+        self.assertTrue(any(r["id"] == "ENG-PATCH742-JOINT" and r["verification"] == "OFFLINE_PASS" for r in rows))
         self.assertTrue(any(r["id"] == "GH-170" and r["strategy"] == "PARTIAL" for r in rows))
         self.assertTrue(any(r["id"] == "C742-07" and r["strategy"] == "OLD" for r in rows))
         self.assertFalse(any(r["verification"] in ("CLIENT_PASS", "MATCH_PASS") for r in rows))
@@ -55,6 +56,7 @@ class IssueRegisterTests(unittest.TestCase):
         )
         self.assertEqual(errors, [])
         self.assertTrue(pr_is_indexed(rows, 17))
+        self.assertTrue(pr_is_indexed(rows, 18))
         self.assertTrue(pr_is_indexed(rows, 2))
         self.assertFalse(pr_is_indexed(rows, 9999))
 
