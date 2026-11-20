@@ -357,7 +357,7 @@
       "rules": [
         "C742-18"
       ],
-      "note": "7.42 Scepter 让熊可复活 Lone Druid；熊独立技能脚本没有该行为，内部 ID/状态需实机确认"
+      "note": "神杖赋予熊的复活内部 ID 已从 npc_units.txt 确认：lone_druid_spirit_bear_summon_druid；单位独立技能脚本未处理；引擎可用性尚未验证"
     },
     {
       "path": "bots/BotLib/hero_luna.lua",
@@ -912,8 +912,8 @@
       "id": "C742-18",
       "status": "E1",
       "check": "absent",
-      "needle": "summon_lone_druid",
-      "finding": "7.42 Scepter 让熊可复活 Lone Druid；熊独立技能脚本没有该行为，内部 ID/状态需实机确认"
+      "needle": "lone_druid_spirit_bear_summon_druid",
+      "finding": "神杖赋予熊的复活内部 ID 已从 npc_units.txt 确认：lone_druid_spirit_bear_summon_druid；单位独立技能脚本未处理；引擎可用性尚未验证"
     },
     {
       "hero": "hero_undying.lua",

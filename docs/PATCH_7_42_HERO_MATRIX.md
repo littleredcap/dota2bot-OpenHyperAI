@@ -64,7 +64,7 @@
 | `bots/BotLib/hero_lina.lua` | UNREVIEWED | — | 尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容 |
 | `bots/BotLib/hero_lion.lua` | UNREVIEWED | — | 尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容 |
 | `bots/BotLib/hero_lone_druid.lua` | UNREVIEWED | — | 尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容 |
-| `bots/BotLib/hero_lone_druid_bear.lua` | E1 | C742-18 | 7.42 Scepter 让熊可复活 Lone Druid；熊独立技能脚本没有该行为，内部 ID/状态需实机确认 |
+| `bots/BotLib/hero_lone_druid_bear.lua` | E1 | C742-18 | 神杖赋予熊的复活内部 ID 已从 npc_units.txt 确认：lone_druid_spirit_bear_summon_druid；单位独立技能脚本未处理；引擎可用性尚未验证 |
 | `bots/BotLib/hero_luna.lua` | UNREVIEWED | — | 尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容 |
 | `bots/BotLib/hero_lycan.lua` | E2 | C742-02 | 包含已删除的 Overlord 默认装备；已有 PR #4 |
 | `bots/BotLib/hero_magnataur.lua` | UNREVIEWED | — | 尚未逐条比对 7.42 英雄补丁；未发现关键词不等于兼容 |

@@ -28,3 +28,4 @@ jobs:
           python3 -m py_compile scripts/patch742_impact.py scripts/patch742_audit.py
           python3 -m unittest discover -s tests -p 'test_patch742_audit.py' -v
           python3 -m unittest discover -s tests -p 'test_patch742_impact.py' -v
+          python3 -m unittest discover -s tests -p 'test_patch742_hero_mechanics.py' -v
