@@ -8,6 +8,14 @@ This is the **dota2bot-OpenHyperAI** project -- Lua bot scripts for Dota 2 that 
 
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** -- Complete codebase architecture, file map, naming conventions, all systems explained
 - **[docs/PATCH_UPDATE_GUIDE.md](docs/PATCH_UPDATE_GUIDE.md)** -- Step-by-step runbook for updating when a new Dota 2 patch drops
+- **[docs/OHA_NEXT_ARCHITECTURE.md](docs/OHA_NEXT_ARCHITECTURE.md)** -- OHA-Next target architecture and incremental delivery plan; separate from the existing code map
+- **[docs/OHA_NEXT_REQUIREMENTS.md](docs/OHA_NEXT_REQUIREMENTS.md)** -- User requirements, engineering decisions, acceptance criteria and unresolved choices
+- **[docs/OHA_NEXT_STRENGTH_OBJECTIVE.md](docs/OHA_NEXT_STRENGTH_OBJECTIVE.md)** -- User-confirmed goal A: maximum fair-play win probability, without resource/vision cheats or humanlike-play constraints
+- **[docs/GAMEPLAY_RESEARCH_AND_IDEAS.md](docs/GAMEPLAY_RESEARCH_AND_IDEAS.md)** -- Source-backed strategy hypotheses, opportunities/costs, and proactive research ideas (not proven bugs)
+- **[docs/GAMEPLAY_STRATEGY_CATALOG.md](docs/GAMEPLAY_STRATEGY_CATALOG.md)** -- Lifecycle-wide hero/role/team strategies and R/I/W maturity gates; do not buy an unexploitable new active item early
+- **[docs/CLIENT_VALIDATION_BACKLOG.md](docs/CLIENT_VALIDATION_BACKLOG.md)** -- Test cases that require a real Dota client; blocked cases remain open despite passing mocks
+- **[docs/MATCH_DATA_PIPELINE.md](docs/MATCH_DATA_PIPELINE.md)** -- Planned telemetry, data validity, upload and assistant access
+- **[docs/UPSTREAM_AND_FORK_WORKFLOW.md](docs/UPSTREAM_AND_FORK_WORKFLOW.md)** -- Branch roles, provenance and risk-based T0–T3 verification
 
 **Read these docs FIRST before making any changes.** They contain everything needed to make targeted updates without scanning the entire repo.
 
@@ -57,4 +65,10 @@ When user says "update for patch X.XX" or provides patch notes:
 - **Use `sAbilityList[N]` references** when possible -- resilient to ability renames
 - **Always update BOTH neutral item files** (Buff/ AND FretBots/)
 - **Verify on Liquipedia** before trusting patch note summaries about ability names
-- **Test in-game** after changes -- some things can only be verified at runtime
+- **Verify according to change risk** using the OHA-Next T0–T3 policy. Documentation and isolated tool changes do not require a game. Engine-dependent behavior claims need real game evidence, preferably automated; do not require the owner to manually play every PR. Record missing real-game coverage explicitly, and never equate mock success with stronger gameplay.
+
+## OHA-Next Contribution Boundary
+
+Before implementing new hero/team decisions, review recent patch mechanics and community sources; record failure examples and **opportunity costs**, not only legal ability conditions. Log client-only checks with VT IDs instead of losing them in PR commentary. Research/monitoring infrastructure remains deferred.
+
+Keep `main` as the upstream mirror and use small PRs targeting `oha-next`; merges remain owner-reviewed. **Optimize for fair-play match-winning ability, not humanlike behavior, inflated GPM/KDA, or unfair resource/vision access.** Distinguish bug evidence from strength evidence; no real-match claims without fair comparisons. `oha-next` is a development integration branch, not an automatic stable-release claim. Read the requirement IDs and architecture boundary relevant to the change, preserve TS/generated-Lua ownership, and update implementation status only with evidence. Match runners, telemetry and artifacts described as planned are not already configured.

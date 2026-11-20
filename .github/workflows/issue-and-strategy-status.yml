@@ -1,0 +1,30 @@
+name: Issue and strategy maturity register
+
+on:
+  push:
+    branches: [docs/upstream-fork-workflow]
+  pull_request:
+    branches: [oha-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate distinct implementation / verification / strategy status
+        run: |
+          python3 scripts/check_issue_status.py
+          python3 -m unittest discover -s tests -p 'test_issue_status.py' -v
+      - name: Require the current pull request to be recorded
+        if: github.event_name == 'pull_request'
+        env:
+          REVIEW_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 scripts/check_issue_status.py --pr-number "$REVIEW_PR_NUMBER"

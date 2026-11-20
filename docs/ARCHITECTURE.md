@@ -1,6 +1,6 @@
 # Dota 2 Bot Architecture Guide
 
-This document is the single source of truth for understanding, maintaining, and updating the dota2bot-OpenHyperAI codebase. It is designed so that a developer (or AI assistant) can quickly make targeted updates without re-scanning the entire repository.
+This document maps the existing dota2bot-OpenHyperAI codebase so that a developer (or AI assistant) can make targeted updates without re-scanning the entire repository. For OHA-Next's proposed evolution, read [OHA_NEXT_ARCHITECTURE.md](OHA_NEXT_ARCHITECTURE.md); requirements and acceptance criteria are tracked in [OHA_NEXT_REQUIREMENTS.md](OHA_NEXT_REQUIREMENTS.md), and planned match evidence collection is defined in [MATCH_DATA_PIPELINE.md](MATCH_DATA_PIPELINE.md). Planned modules in those documents are not an assertion that they already exist in this code map.
 
 Last verified against: **Patch 7.41a** (March 2026)
 
