@@ -151,7 +151,6 @@ Item['sBasicItems'] = {
 	'item_holy_locket',
 	'item_hyperstone',
 	'item_infused_raindrop',
-	'item_javelin',
 	'item_lifesteal',
 	'item_magic_stick',
 	'item_mantle',
