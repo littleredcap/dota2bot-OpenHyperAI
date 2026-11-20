@@ -29,10 +29,13 @@ end
 local nTalentBuildList = J.Skill.GetTalentBuild( tTalentTreeList )
 
 local sRoleItemsBuyList = {}
+-- 7.42: Aghanim upgrades temporarily omitted from default item builds.
+-- Reason: Scepter now grants Ancient Thunderhide.
+-- Also omit item_ultimate_scepter_2: Blessing would re-purchase the Scepter.
+-- Restore only after community build guidance and ability/targeting verification.
 
 sRoleItemsBuyList['pos_1'] = {
 	"item_bristleback_outfit",
-    "item_ultimate_scepter",
     "item_echo_sabre",
 	"item_harpoon",--
 	"item_assault",--
@@ -43,7 +46,6 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_travel_boots",
 	"item_overwhelming_blink",--
 	"item_moon_shard",
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",--
 }
 
@@ -55,7 +57,6 @@ sRoleItemsBuyList['pos_2'] = {
     "item_bottle",
     "item_magic_wand",
     "item_power_treads",
-    "item_ultimate_scepter",
     "item_echo_sabre",
 	"item_harpoon",--
 	"item_black_king_bar",--
@@ -66,7 +67,6 @@ sRoleItemsBuyList['pos_2'] = {
 	"item_aghanims_shard",
 	"item_overwhelming_blink",--
 	"item_moon_shard",
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",--
 }
 
@@ -74,7 +74,6 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_tank_outfit",
     "item_helm_of_the_dominator",
     -- 7.42: Helm of the Overlord removed; keep Helm of the Dominator.
-    "item_ultimate_scepter",
 	"item_blink",
 	"item_heavens_halberd",
 	"item_aghanims_shard",
@@ -84,14 +83,12 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_overwhelming_blink",--
 	"item_moon_shard",
     "item_refresher",--
-    "item_ultimate_scepter_2",
 	"item_travel_boots_2",--
 }
 
 sRoleItemsBuyList['pos_4'] = {
 	'item_priest_outfit',
 	"item_hand_of_midas",
-	"item_ultimate_scepter",
 	"item_mekansm",
     "item_blink",
 	"item_guardian_greaves",
@@ -100,7 +97,6 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_gungir",--
 	"item_sheepstick",
 	"item_mystic_staff",
-	"item_ultimate_scepter_2",
 	"item_shivas_guard",
     "item_moon_shard",
 	"item_overwhelming_blink",--
@@ -112,7 +108,6 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_glimmer_cape",
 
     "item_pavise",
-	"item_ultimate_scepter",
 	"item_pipe",--
     "item_blink",
     "item_solar_crest",--
@@ -120,7 +115,6 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_aghanims_shard",
 	"item_shivas_guard",--
 	"item_mystic_staff",
-	"item_ultimate_scepter_2",
     "item_moon_shard",
 	"item_sheepstick",--
 	"item_overwhelming_blink",--
