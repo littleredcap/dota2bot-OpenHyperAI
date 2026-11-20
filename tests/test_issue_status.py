@@ -25,8 +25,12 @@ class IssueRegisterTests(unittest.TestCase):
         self.assertTrue(any(r["id"] == "C742-16" and r["strategy"] == "OLD"
                             and r["verification"] == "OFFLINE_PASS" for r in rows))
         self.assertTrue(any(r["id"] == "C742-17" and r["strategy"] == "TODO" for r in rows))
-        self.assertTrue(any(r["id"] == "C742-17-GUARD" and r["strategy"] == "RESEARCH" for r in rows))
-        self.assertTrue(any(r["id"] == "C742-19-BUY" and r["strategy"] == "TODO" for r in rows))
+        self.assertTrue(any(r["id"] == "C742-17-GUARD" and r["strategy"] == "OLD"
+                            and r["verification"] == "OFFLINE_PASS"
+                            and r["implementation"] == "MIN_FIX_DRAFT" for r in rows))
+        self.assertTrue(any(r["id"] == "C742-19-BUY" and r["strategy"] == "TODO"
+                            and r["verification"] == "OFFLINE_PASS"
+                            and r["implementation"] == "MIN_FIX_DRAFT" for r in rows))
         self.assertTrue(any(r["id"] == "ENG-PATCH742-JOINT" and r["verification"] == "OFFLINE_PASS" for r in rows))
         self.assertTrue(any(r["id"] == "GH-170" and r["strategy"] == "PARTIAL" for r in rows))
         self.assertTrue(any(r["id"] == "C742-07" and r["strategy"] == "OLD" for r in rows))
@@ -64,6 +68,8 @@ class IssueRegisterTests(unittest.TestCase):
         self.assertTrue(pr_is_indexed(rows, 18))
         self.assertTrue(pr_is_indexed(rows, 19))
         self.assertTrue(pr_is_indexed(rows, 20))
+        self.assertTrue(pr_is_indexed(rows, 21))
+        self.assertTrue(pr_is_indexed(rows, 22))
         self.assertTrue(pr_is_indexed(rows, 2))
         self.assertFalse(pr_is_indexed(rows, 9999))
 

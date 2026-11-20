@@ -81,8 +81,8 @@
 
 | ID / 性质 | 关联需求 | 离线及真实验收重点 | 状态 |
 | --- | --- | --- | --- |
-| VT-034 / research | C742-19-BUY Undying 默认 Shard 与 Zombie Bite 缺失 | 离线先验证 pos1/2/3/4 默认购买链确实仍有 Shard 且没有 Bite 思考；未来确认定制出装仍可购买、通过 Tormentor 获得 Shard 时不报错；确定停买默认 Shard 与新策略恢复条件，不以局末购买数量当作强度收益。 | 当前静态证据；**blocked_no_client** |
-| VT-035 / release_gate | C742-17-GUARD Dazzle 投影 body 句柄合法性 | 首先用生产函数 Mock 注入 body=nil/无效句柄，检查是否可能调用 J.IsRetreating(nil)；若后续变更有效性校验，验证正常可结束投影与紧急撤退的旧行为不被阻断；Dota 客户端只复核真实投影切身状态。 | **blocked_no_client** |
+| VT-034 / research | C742-19-BUY Undying 默认 Shard 购买 Draft [PR #22](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/22) | **已离线验证** pos1/2/3/4/5 默认列表的 Shard 移除和其它关键装备顺序，Mock 保留自定义仍可选 Shard、PvN 模式；未来客户端需确认不会再次默认购买、合法 Tormentor 获得的 Shard 不会报错，以及 Bite 尚无 AI 的真实限制。恢复默认购买必须另有策略决策与收益证据。 | **mock_passed**（14 项），**blocked_no_client** |
+| VT-035 / release_gate | C742-17-GUARD Dazzle 投影缓存保护 Draft [PR #21](https://github.com/littleredcap/dota2bot-OpenHyperAI/pull/21) | **已离线验证** 实际 ConsiderNothlProjectionEnd 和生产 J.IsValid 的 nil 缓存、玩家缺失、无效/死亡 body、原无敌人/低 HP 撤退 End 条件（13 项）；真实客户端须核实实际身体缓存、局内可见性和投影 End 不因校验错对象而阻断。与 Through the Realm 新技能策略分别验证。 | **mock_passed**（13 项），**blocked_no_client** |
 
 ## 4. 执行顺序和所需最小证据
 

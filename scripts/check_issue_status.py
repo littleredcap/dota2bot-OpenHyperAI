@@ -34,7 +34,7 @@ REQUIRED_IDS = {
 REQUIRED_IDS |= {f"F-{i:02d}" for i in (*range(1, 10), 10, 11)}
 # PR coverage check is intentionally a snapshot: bump only after reviewing new
 # discovered PRs and their own issue/requirement record.
-PR_SNAPSHOT = set(range(1, 21))
+PR_SNAPSHOT = set(range(1, 23))
 
 
 def parse_register(source: str) -> tuple[list[dict], list[str]]:
