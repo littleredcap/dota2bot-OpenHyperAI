@@ -56,3 +56,37 @@ Static GitHub readback verified that:
 2. Test the affected optional-ability paths in a 7.42 local-host lobby; detect nil references in runtime logs without prematurely altering strategy.
 3. Triage specific patch-note *structural* changes (targeting type, new/removed abilities, innate transitions, talent swaps) in `docs/PATCH_UPDATE_GUIDE.md` order.
 4. Keep Undying Zombie Bite and its shard-purchase strategy on hold pending mature community guidance and separate evaluation.
+
+## 7.42 structural follow-up — 2026-11-20
+
+Follow-up scope: confirmed **cast-target API changes**, **explicit talent-side swaps**, and **innate ability skill-build changes**. Verified against the 7.42 patch description plus current game hero slot data. This section extends, but does not supersede, the initial name/slot audit above.
+
+### Confirmed fixes
+
+| Hero | Root cause | Minimal correction |
+|---|---|---|
+| Weaver (\`hero_weaver.lua\`) | The 7.42 Aghanim's Scepter ally-targeted Time Lapse moved to a separate \`weaver_time_lapse_ally\` ability. The old bot targeted allies through the self-only \`weaver_time_lapse\` and read its cast range. | Refresh ally ability handle after Scepter purchase, check unlock/castability, cast that handle on allied heroes, and use its actual cast range. Keep self Time Lapse as the existing no-target action. |
+| Abaddon (\`hero_abaddon.lua\`) | Level 15 talent choices swapped left/right in 7.42; old preferred side could now choose the opposite talent. | Invert the level 15 preference from right to left while preserving other levels. Some talents were replaced in the patch, so this does not promise identical pre-patch effects. |
+| Beastmaster (\`hero_beastmaster.lua\`) | Since 7.41, \`beastmaster_inner_beast\` is innate (not learnable), but two item-independent level-up lists still contained four index-4 entries instead of training \`beastmaster_summon_raptor\` (index 3). | Replace only those four index-4 entries with index 3 in both builds. Each build now contains four points in each learnable basic (1/2/3) and three ult points (6). Preserve position-specific ordering. |
+| Meepo (\`hero_meepo.lua\`) | 7.42 moved Dig (\`meepo_petrify\`) to an Aghanim's Scepter grant. If no handle exists yet, \`Dig:IsTrained()\` would dereference nil. | Guard nil before calling \`IsTrained()\` / \`IsFullyCastable()\`. The separate Shard Fling mechanic is not implemented by this change. |
+
+Commits:
+- Weaver: https://github.com/littleredcap/dota2bot-OpenHyperAI/commit/60560c30d3f53095704ad7b311b12182e014e6ac
+- Abaddon: https://github.com/littleredcap/dota2bot-OpenHyperAI/commit/a773dab8afec618834b606968b40458433e80823
+- Beastmaster skill builds: https://github.com/littleredcap/dota2bot-OpenHyperAI/commit/14adf879542b51c7ce645dae60b6321b3c4e9a70
+- Meepo Dig: https://github.com/littleredcap/dota2bot-OpenHyperAI/commit/6be9891f4ba426ebe8aaacc09f5ee886c2b5b16e
+
+### Findings intentionally not modified
+
+- **Chen (7.42 Zealot)**: new active resurrection on an innate and a new Holy Persuasion self-cast are available, but the existing bot has no verified logic to decide when to activate them. Existing creep-targeting remains valid.
+- **Beastmaster (Summon Ancient Thunderhide)**: Aghanim's Scepter now grants a new no-target summon. Purchase plans and summoning/creep control behavior require a separate tactical review; it was not introduced as an untested auto-cast in this structural patch.
+- **Meepo (Divided We Stand + Shard)**: Fling/pickup has nontrivial unit targeting and effects. This change only protects Dig and does not attempt to build a new Fling combo.
+- **Dazzle (Through the Realm)**: new Shard sub-ability has no validated action conditions; not automatically cast.
+- **Pugna (Oblivion Savant)**: Scepter upgrade reworked into charges. Existing spell actions remain; charge-aware repeat-casting is a new behavior and requires targeted tests.
+- **Other talent replacements/moves**: changes in effect/level are not automatically equivalent to swapping sides. No blanket rewrites of preferred talents or item builds were done.
+- **Innate handling in \`FunLib/aba_skill.lua\`**: the global dynamic slot filter should be validated with visible non-learnable innates before changing it across 127 heroes. The Beastmaster fix is targeted and does not mutate the shared loader.
+- **Undying**: Zombie Bite remains deferred, and \`item_aghanims_shard\` remains absent from the default Undying builds.
+
+### Verification limits
+
+GitHub file readback and static comparisons were used. **No \`luac\` compile, TS build, bot match, or actual Dota 2 runtime execution occurred**. The four targeted fixes address known incompatibilities, but this is not a blanket guarantee that all 7.42 hero abilities are compatible.
