@@ -30,6 +30,7 @@ Remove `item_aghanims_shard` from default builds for:
 
 | Hero script | 7.42 structural reason |
 |---|---|
+| `abaddon` | Shard was moved from Mist Coil to Aphotic Shield in 7.39; existing Mist Coil kill estimates still assumed the obsolete on-hit bonus |
 | `dazzle` | New Through the Realm Nothl Projection sub-ability |
 | `death_prophet` | Shard moved to Crypt Swarm with two charges and a new slow |
 | `disruptor` | Shard now upgrades Kinetic Field's knockback behavior |
@@ -37,11 +38,11 @@ Remove `item_aghanims_shard` from default builds for:
 | `monkey_king` | Shard changes the Tree Dance / Primal Spring jump's landing-point semantics |
 | `undying` | Previously deferred Zombie Bite; remains absent from default builds |
 
-The first five entries were changed during the initial policy pass. Undying was already excluded in `hero_undying.lua` and remains unchanged. Heroes not listed here may still buy their existing Scepter, Blessing, and Shard entries; this is not a blanket ban.
+The other five newly listed Shard heroes were changed during the initial policy pass; Abaddon was added after detecting a legacy pre-7.39 Mist Coil damage assumption. Undying was already excluded in `hero_undying.lua` and remains unchanged. Heroes not listed here may still buy their existing Scepter, Blessing, and Shard entries; this is not a blanket ban.
 
 ## Implemented changes and safeguards
 
-- Removed **22 direct Scepter**, **41 Blessing** and **16 Shard** entries across **16 hero files** (79 active entries across these passes). The separate prior Undying Shard removal is not counted here.
+- Removed **22 direct Scepter**, **41 Blessing** and **21 Shard** entries across **16 hero files** (84 active entries across these passes). The separate prior Undying Shard removal is not counted here.
 - Role aliases, such as Juggernaut's shared build, inherit the updated purchase list. Lone Druid's separate `pos_1_w_bear` list was also updated.
 - `bots/item_purchase_generic.lua` builds its purchase queue from the hero's `sBuyList`, so removing the upgrades from those default lists prevents the normal queue from buying them.
 - Added `scripts/check-deferred-aghanims.js`, exposed as `npm run check:deferred-aghanims`. `npm run build` runs this check before TypeScript-to-Lua generation. The check covers the specified default role build sections and will fail if a deferred purchase is reintroduced.
