@@ -43,7 +43,7 @@ const SpellList: { [key: string]: number } = {
 
     beastmaster_wild_axes: 0.4,
     beastmaster_call_of_the_wild_razorback: 1, // 7.41: renamed from boar
-    beastmaster_call_of_the_wild_raptor: 1, // 7.41: renamed from hawk
+    beastmaster_summon_raptor: 1, // 7.42: current Raptor internal name
     beastmaster_primal_roar: 0,
 
     bloodseeker_bloodrage: 1,
