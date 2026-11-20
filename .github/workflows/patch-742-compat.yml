@@ -1,0 +1,38 @@
+name: Patch 7.42 compatibility (Lua 5.1)
+
+on:
+  pull_request:
+    branches:
+      - oha-next
+  push:
+    branches:
+      - oha-next
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  patch-742-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1
+          lua5.1 -v
+
+      - name: Check modified Lua syntax
+        run: |
+          luac5.1 -p bots/BotLib/hero_meepo.lua
+          luac5.1 -p bots/BotLib/hero_beastmaster.lua
+          luac5.1 -p bots/BotLib/hero_lycan.lua
+          luac5.1 -p bots/FunLib/aba_item.lua
+          luac5.1 -p tests/test_patch742_compat.lua
+
+      - name: Run 7.42 offline compatibility tests
+        run: lua5.1 tests/test_patch742_compat.lua

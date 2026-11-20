@@ -73,7 +73,7 @@ sRoleItemsBuyList['pos_2'] = {
 sRoleItemsBuyList['pos_3'] = {
 	"item_tank_outfit",
     "item_helm_of_the_dominator",
-    "item_helm_of_the_overlord",--
+    -- Patch 7.42: Helm of the Overlord removed; keep valid Dominator.
     "item_ultimate_scepter",
 	"item_blink",
 	"item_heavens_halberd",

@@ -1,0 +1,60 @@
+name: Integrated Dota 7.42 compatibility smoke test
+
+on:
+  push:
+    branches: [integration/patch742-smoke]
+  pull_request:
+    branches: [oha-next]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lua51-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lua5.1 zip
+      - name: Syntax check affected production modules and all suites
+        run: |
+          for file in \
+            bots/BotLib/hero_meepo.lua bots/BotLib/hero_beastmaster.lua \
+            bots/BotLib/hero_lycan.lua bots/BotLib/hero_leshrac.lua \
+            bots/BotLib/hero_furion.lua bots/BotLib/hero_chen.lua \
+            bots/BotLib/hero_abaddon.lua bots/FunLib/aba_item.lua \
+            bots/FunLib/aba_skill.lua bots/FunLib/jmz_func.lua \
+            tests/test_patch742_compat.lua \
+            tests/test_patch742_roshan_respawn.lua \
+            tests/test_patch742_leshrac_nihilism.lua \
+            tests/test_patch742_furion_passive.lua \
+            tests/test_patch742_chen_abaddon_items.lua \
+            tests/test_patch742_integration.lua
+          do
+            luac5.1 -p "$file"
+          done
+      - name: Run five existing PR suites against the combined source
+        run: |
+          lua5.1 tests/test_patch742_compat.lua
+          lua5.1 tests/test_patch742_roshan_respawn.lua
+          lua5.1 tests/test_patch742_leshrac_nihilism.lua
+          lua5.1 tests/test_patch742_furion_passive.lua
+          lua5.1 tests/test_patch742_chen_abaddon_items.lua
+      - name: Assert cross-PR merged item module and hero coexistence
+        run: lua5.1 tests/test_patch742_integration.lua
+      - name: Build local-dev ZIP (tests only, not a certified Dota release)
+        run: |
+          zip -q -r /tmp/OHA-7.42-integration-local-dev.zip bots
+          (cd /tmp && sha256sum OHA-7.42-integration-local-dev.zip > OHA-7.42-integration-local-dev.sha256)
+      - name: Upload scripts for opt-in local testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: OHA-7.42-local-dev-scripts
+          path: |
+            /tmp/OHA-7.42-integration-local-dev.zip
+            /tmp/OHA-7.42-integration-local-dev.sha256
+          retention-days: 14

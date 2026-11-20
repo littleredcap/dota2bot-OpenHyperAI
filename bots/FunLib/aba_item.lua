@@ -151,7 +151,6 @@ Item['sBasicItems'] = {
 	'item_holy_locket',
 	'item_hyperstone',
 	'item_infused_raindrop',
-	'item_javelin',
 	'item_lifesteal',
 	'item_magic_stick',
 	'item_mantle',
@@ -782,7 +781,6 @@ Item['item_mage_slayer']	= GetItemComponents( 'item_mage_slayer' )[1]
 
 -- Item['item_eternal_shroud'] removed from game in 7.41
 
-Item['item_helm_of_the_overlord']	= GetItemComponents( 'item_helm_of_the_overlord' )[1]
 
 Item['item_overwhelming_blink']	= GetItemComponents( 'item_overwhelming_blink' )[1]
 
