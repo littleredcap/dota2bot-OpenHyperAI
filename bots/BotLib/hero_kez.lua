@@ -182,8 +182,6 @@ local hNearbyTowers
 
 local SwitchDisciplineDesire
 
-local nKezMode = 1
-
 function X.SkillsComplement()
 	nLV = bot:GetLevel()
 	nMP = bot:GetMana() / bot:GetMaxMana()
@@ -192,12 +190,6 @@ function X.SkillsComplement()
 	hEnemyList = J.GetNearbyHeroes( bot, 1600, true, BOT_MODE_NONE )
 	hAllyList = J.GetAlliesNearLoc( bot:GetLocation(), 1600 )
 	hNearbyTowers = bot:GetNearbyTowers(800, true);
-
-	if nKezMode % 2 == 0 then
-        bot.kez_mode = 'sai' -- 双叉
-    else
-        bot.kez_mode = 'katana' -- 长刀
-    end
 
     if J.IsInLaningPhase()
     and not J.IsRetreating(bot)
@@ -211,7 +203,8 @@ function X.SkillsComplement()
     or bot:HasModifier('modifier_kez_raptor_dance_immune')
     then return end
 
-	X.DoCombo()
+	local discipline = J.Skill.GetKezDiscipline(bot)
+	if X.DoCombo(discipline) then return end
 
 	castEchoSlashDesire, sMotive = X.ConsiderEchoSlash()
 	if castEchoSlashDesire > 0
@@ -241,10 +234,9 @@ function X.SkillsComplement()
 		return
 	end
 
-    SwitchDisciplineDesire = X.ConsiderSwitchDiscipline()
+    SwitchDisciplineDesire = X.ConsiderSwitchDiscipline(discipline)
     if SwitchDisciplineDesire > 0 then
         bot:Action_UseAbility(SwitchWeapons)
-        nKezMode = nKezMode + 1
         return
     end
 
@@ -855,52 +847,41 @@ function X.ConsiderRavensVeil()
     return BOT_ACTION_DESIRE_NONE
 end
 
-function X.ConsiderSwitchDiscipline()
-    if not J.CanCastAbility(SwitchWeapons) then
+function X.ConsiderSwitchDiscipline(discipline)
+    if discipline == nil or not J.CanCastAbility(SwitchWeapons) then
         return BOT_ACTION_DESIRE_NONE
     end
     if bot:GetAbilityPoints() > 0 then
         return BOT_ACTION_DESIRE_NONE
     end
 
-    if J.IsGoingOnSomeone(bot) then
+    if discipline == 'katana' and J.IsGoingOnSomeone(bot) then
         if J.IsValidHero(botTarget)
         and J.IsInRange(bot, botTarget, 600)
-        and (J.GetHP(botTarget) < 0.6 or (bot:GetNetWorth() > 18000 and FalconRush:IsFullyCastable()))
-		and bot.kez_mode == 'katana'
+        and (J.GetHP(botTarget) < 0.6
+            or (bot:GetNetWorth() > 18000 and FalconRush ~= nil
+                and not FalconRush:IsNull() and FalconRush:IsFullyCastable()))
         then
             return BOT_ACTION_DESIRE_HIGH
         end
     end
 
-    if J.IsRetreating(bot) and not J.IsRealInvisible(bot) then
-        if bot.kez_mode == 'sai' then
-			return BOT_ACTION_DESIRE_HIGH
-        end
+    if discipline == 'sai' and J.IsRetreating(bot) and not J.IsRealInvisible(bot) then
+        return BOT_ACTION_DESIRE_HIGH
     end
 
-    -- if J.IsLaning(bot) or J.IsPushing(bot) then
-    --     if bot.kez_mode == 'katana' then
-    --         return BOT_ACTION_DESIRE_HIGH
-    --     end
-    -- end
-
-    if J.IsFarming(bot)
-    or J.IsDoingRoshan(bot)
-    or J.IsDoingTormentor(bot)
+    if discipline == 'sai'
+    and (J.IsFarming(bot) or J.IsDoingRoshan(bot) or J.IsDoingTormentor(bot))
+    and (bot:GetNetWorth() < 18000 or not J.CanCastAbility(FalconRush))
     then
-        if bot.kez_mode == 'sai' then
-            if bot:GetNetWorth() < 18000 or not J.CanCastAbility(FalconRush) then
-                return BOT_ACTION_DESIRE_HIGH
-            end
-        end
+        return BOT_ACTION_DESIRE_HIGH
     end
 
     return BOT_ACTION_DESIRE_NONE
 end
 
-function X.DoCombo()
-    if bot.kez_mode == 'sai' then
+function X.DoCombo(discipline)
+    if discipline == 'sai' then
         if bot:HasScepter() and not J.CanCastAbility(FalconRush) then
             if J.CanCastAbility(RavensVeil) and not bot:IsRooted() then
                 local nManaCost_falconRush = 0 -- FalconRush:GetManaCost()
@@ -954,7 +935,7 @@ function X.DoCombo()
                         bot:ActionQueue_UseAbilityOnEntity(GrapplingClaw, target)
                         bot:ActionQueue_Delay(eta)
                         bot:ActionQueue_UseAbility(EchoSlash)
-                        return
+                        return true
                     end
                 end
             end

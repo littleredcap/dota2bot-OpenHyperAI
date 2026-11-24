@@ -125,6 +125,44 @@ function X.GetAbilityList( bot )
 end
 
 
+local kezAlternateAbility = {
+	kez_echo_slash = 'kez_falcon_rush',
+	kez_falcon_rush = 'kez_echo_slash',
+	kez_grappling_claw = 'kez_talon_toss',
+	kez_talon_toss = 'kez_grappling_claw',
+	kez_kazurai_katana = 'kez_shodo_sai',
+	kez_shodo_sai = 'kez_kazurai_katana',
+	kez_raptor_dance = 'kez_ravens_veil',
+	kez_ravens_veil = 'kez_raptor_dance',
+}
+
+local function GetVisibleKezAbility(bot, name)
+	local ability = bot:GetAbilityByName(name)
+	if ability ~= nil and not ability:IsNull() and not ability:IsHidden() then
+		return ability
+	end
+	return nil
+end
+
+function X.GetKezDiscipline(bot)
+	-- Read the Q pair independently of training and cooldown.
+	local katana = GetVisibleKezAbility(bot, 'kez_echo_slash')
+	local sai = GetVisibleKezAbility(bot, 'kez_falcon_rush')
+	if (katana ~= nil) == (sai ~= nil) then return nil end
+	return katana and 'katana' or 'sai'
+end
+
+function X.GetKezLevelUpAbility(bot, name)
+	local alternateName = kezAlternateAbility[name]
+	if alternateName == nil then return bot:GetAbilityByName(name), false end
+
+	local planned = GetVisibleKezAbility(bot, name)
+	local alternate = GetVisibleKezAbility(bot, alternateName)
+	-- Keep the pending skill point when the engine has not exposed exactly one side.
+	if (planned ~= nil) == (alternate ~= nil) then return nil, true end
+	return planned or alternate, true
+end
+
 function X.GetRandomBuild( tBuildList )
 
 	return tBuildList[RandomInt( 1, #tBuildList )]

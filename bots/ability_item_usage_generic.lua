@@ -203,7 +203,17 @@ local function AbilityLevelUpComplement()
 			return
 		end
 
-		local abilityToLevelup = bot:GetAbilityByName( abilityName )
+		local abilityToLevelup
+		if botName == 'npc_dota_hero_kez' then
+			local isPaired
+			abilityToLevelup, isPaired = J.Skill.GetKezLevelUpAbility(bot, abilityName)
+			if isPaired then
+				if abilityToLevelup == nil then return end
+				abilityName = abilityToLevelup:GetName()
+			end
+		else
+			abilityToLevelup = bot:GetAbilityByName( abilityName )
+		end
 
 		-- ARDM: if the ability doesn't exist on this hero, the skill list may have been
 		-- built when the hero was still sleeping/uninitialized. Try to rebuild it.
@@ -223,59 +233,6 @@ local function AbilityLevelUpComplement()
 		if abilityName == 'npc_dota_hero_kez'
 		and (abilityToLevelup == nil or abilityToLevelup:IsHidden()) then
 			return
-		end
-
-		-- Kez abilities
-		if botName == 'npc_dota_hero_kez' then
-			if bot.kez_mode == 'sai' then
-				for i = 0, 6 do
-					local hAbility = bot:GetAbilityInSlot(i)
-					if hAbility ~= nil then
-						local sAbilityName = hAbility:GetName()
-						if sAbilityLevelUpList[1] == 'kez_echo_slash' and sAbilityName == 'kez_falcon_rush'
-						then
-							abilityToLevelup = hAbility
-							sAbilityLevelUpList[1] = 'kez_falcon_rush'
-						elseif sAbilityLevelUpList[1] == 'kez_grappling_claw' and sAbilityName == 'kez_talon_toss'
-						then
-							abilityToLevelup = hAbility
-							sAbilityLevelUpList[1] = 'kez_talon_toss'
-						elseif sAbilityLevelUpList[1] == 'kez_kazurai_katana' and sAbilityName == 'kez_shodo_sai'
-						then
-							abilityToLevelup = hAbility
-							sAbilityLevelUpList[1] = 'kez_shodo_sai'
-						elseif sAbilityLevelUpList[1] == 'kez_raptor_dance' and sAbilityName == 'kez_ravens_veil'
-						then
-							abilityToLevelup = hAbility
-							sAbilityLevelUpList[1] = 'kez_ravens_veil'
-						end
-					end
-				end
-			else
-				for i = 0, 6 do
-					local hAbility = bot:GetAbilityInSlot(i)
-					if hAbility ~= nil then
-						local sAbilityName = hAbility:GetName()
-						if sAbilityLevelUpList[1] == 'kez_falcon_rush' and sAbilityName == 'kez_echo_slash'
-						then
-							abilityToLevelup = hAbility
-							sAbilityLevelUpList[1] = 'kez_echo_slash'
-						elseif sAbilityLevelUpList[1] == 'kez_talon_toss' and sAbilityName == 'kez_grappling_claw'
-						then
-							abilityToLevelup = hAbility
-							sAbilityLevelUpList[1] = 'kez_grappling_claw'
-						elseif sAbilityLevelUpList[1] == 'kez_shodo_sai' and sAbilityName == 'kez_kazurai_katana'
-						then
-							abilityToLevelup = hAbility
-							sAbilityLevelUpList[1] = 'kez_kazurai_katana'
-						elseif sAbilityLevelUpList[1] == 'kez_ravens_veil' and sAbilityName == 'kez_raptor_dance'
-						then
-							abilityToLevelup = hAbility
-							sAbilityLevelUpList[1] = 'kez_raptor_dance'
-						end
-					end
-				end
-			end
 		end
 
 		-- fix phoenix_fire_spirits can't upgrade bug.
