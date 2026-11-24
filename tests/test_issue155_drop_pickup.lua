@@ -72,6 +72,7 @@ end
 ]], "issue155-discard"))()
 
 local shouldRecover = assert(loadstring([[
+local function IsLocationVisible(location) return not location.hidden end
 local Item = {
     GetEmptyInventoryAmount = function(hero)
         local n = 0
@@ -142,6 +143,10 @@ test("ignore enemy drops, invalid handles, nil drops and tokens", function()
     eq(shouldRecover({owner=other.bot,item=makeItem("item_blink")}, d.bot), false, "Other owner")
     eq(shouldRecover({owner=d.bot,item={IsNull=function() return true end}}, d.bot), false, "Null item")
     eq(shouldRecover(dropped(d.bot, makeItem("item_tier1_token")), d.bot), false, "Token exception")
+    eq(shouldRecover({owner=d.bot,item=makeItem("item_blink")}, d.bot), false, "Missing location")
+    local unseen = dropped(d.bot, makeItem("item_blink"))
+    unseen.location.hidden = true
+    eq(shouldRecover(unseen, d.bot), false, "Outside vision")
 end)
 
 test("only one item is dropped per tick instead of conflicting action spam", function()
@@ -198,33 +203,51 @@ end
 local itemOps = extract(roamFile, "function ItemOpsDesire()", "\n-- Swap smoke after killing Roshan")
 local runRoam = assert(loadstring([[
 return function(opts)
-    local bot = {GetLocation = function() return {} end}
-    local item = {GetName = function() return "item_healing_lotus" end, IsNull = function() return false end}
+    local bot = {GetLocation = function() return {} end, FindItemSlot = function() return -1 end}
+    local name = opts.horn and 'item_horn_of_battle_greater' or 'item_healing_lotus'
+    local item = {GetName = function() return name end, IsNull = function() return false end}
     local drop = {item = item, owner = bot, location = {}}
+    if opts.horn then drop.owner = opts.otherOwner and {} or nil end
     if opts.marked then bot.ohaDiscardedItems = {[item] = true} end
     if opts.missing then drop.item = nil end
-    local ConsiderDroppedTime, minPickItemCost, tryPickCount = 0, 0, 0
-    local PickedItem, ignorePickupList, pickup
+    local ConsiderDroppedTime, minPickItemCost = 0, 0
+    local PickedItem, pickup
+    local pickupAttempts, attempts = {}, 0
+    local closerAlly = {FindItemSlot = function() return -1 end}
     local function noop() end
-    local Utils = {SetContains=function() return false end, HasValue=function() return false end}
-    local J = {Utils=Utils, Item={GetEmptyInventoryAmount=function() return 1 end}}
+    local Utils = {HasValue=function() return false end}
+    local J = {
+        Item = {GetEmptyInventoryAmount = function() return opts.full and 0 or 1 end},
+        IsRetreating = function(unit)
+            return unit == bot and opts.retreating == true or unit == closerAlly and opts.closerRetreating == true
+        end,
+        GetEnemiesNearLoc = function() return opts.threat and {{}} or {} end,
+        GetAlliesNearLoc = function() return opts.closer and {closerAlly} or {} end,
+    }
     local Item = {tEarlyConsumableItem={}}
-    Utils.GetLocationToLocationDistance = function() return 0 end
-    local function DotaTime() return 3 end
+    local BOT_MODE_DESIRE_MODERATE = 0.6
+    local function IsLocationVisible() return not opts.hidden end
+    local currentTime = 3
+    local function DotaTime() return currentTime end
     local function GetDroppedItemList() return {drop} end
-    local function GetItemCost() return 100 end
-    local function GetUnitToLocationDistance() return 0 end
+    local function GetItemCost() return opts.horn and 0 or 100 end
+    local function GetUnitToLocationDistance(unit) return unit == bot and (opts.distance or 0) or 150 end
     local function RemapValClamped() return 0.8 end
     local function TrySellOrDropItem() end
     local function SwapSmokeSupport() end
     local TrySwapInvItemForCheese, TrySwapInvItemForRefresherShard, TrySwapInvItemForClarity = noop, noop, noop
     local TrySwapInvItemForFlask, TrySwapInvItemForSmoke, TrySwapInvItemForMoonshard = noop, noop, noop
-    function bot:Action_PickUpItem() pickup = true end
+    function bot:Action_PickUpItem() pickup = true; attempts = attempts + 1 end
+    function bot:Action_MoveToLocation() pickup = "move" end
 ]] .. roamGuard .. "\n" .. itemOps .. [[
-    local desire = ItemOpsDesire()
+    local desire, battleHorn = ItemOpsDesire()
     if opts.markAfterDesire then bot.ohaDiscardedItems = {[item] = true} end
-    ItemOpsThink()
-    return desire, pickup
+    if opts.hideAfterDesire then opts.hidden = true end
+    for _ = 1, (opts.retries or 1) do
+        ItemOpsThink()
+        currentTime = currentTime + (opts.retryInterval or 0)
+    end
+    return desire, pickup, attempts, battleHorn
 end
 ]], "issue155-team-roam"))()
 
@@ -244,6 +267,40 @@ test("team roam still recovers a genuine owned item", function()
     local desire, pickup = runRoam({})
     eq(desire, 0.8, "Eligible owned item still creates pickup desire")
     eq(pickup, true, "Eligible owned item is picked up")
+end)
+
+test("team roam stops retrying a failed pickup by item handle", function()
+    local _, _, attempts = runRoam({retries = 5, retryInterval = 0.5})
+    eq(attempts, 3, "Do not keep issuing a failed pickup")
+end)
+
+test("team roam gives the pickup order time to finish", function()
+    local _, _, attempts = runRoam({retries = 5, retryInterval = 0.03})
+    eq(attempts, 1, "Do not spend retries on successive frames")
+end)
+
+test("team roam approaches drops between 100 and 200 units", function()
+    local _, action = runRoam({distance = 160})
+    eq(action, "move", "Close the gap instead of stalling")
+end)
+
+test("team roam can select and pick up the zero-cost Battle Horn", function()
+    local desire, action, _, battleHorn = runRoam({horn = true})
+    eq(desire, 0.6, "A visible Horn receives pickup desire")
+    eq(battleHorn, true, "The mode can act on the Horn desire")
+    eq(action, true, "Pick up the Horn")
+    local _, retryAction = runRoam({horn = true, closer = true, closerRetreating = true, distance = 200})
+    eq(retryAction, "move", "A retreating ally does not reserve the Horn")
+end)
+
+test("team roam leaves unsafe or reserved Horns alone", function()
+    for _, condition in ipairs({'hidden', 'threat', 'closer', 'retreating', 'full', 'otherOwner'}) do
+        local desire, action = runRoam({horn = true, distance = 200, [condition] = true})
+        eq(desire, nil, condition)
+        eq(action, nil, condition)
+    end
+    local _, action = runRoam({horn = true, hideAfterDesire = true})
+    eq(action, nil, "Recheck visibility before picking up")
 end)
 
 test("team roam ignores a ground record without an item handle", function()

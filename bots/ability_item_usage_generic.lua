@@ -923,6 +923,7 @@ local hNearbyEnemyHeroList = {}
 local hNearbyEnemyTowerList = {}
 local botTarget = nil
 local nMode = -1
+local battleHorn = 'item_horn_of_battle_greater'
 local function ItemUsageComplement()
 
 	X.SetStashItemTimeUpdate()
@@ -950,15 +951,16 @@ local function ItemUsageComplement()
 	local aether = J.IsItemAvailable( "item_aether_lens" )
 	if aether ~= nil then aetherRange = 250 else aetherRange = 0 end
 
-	local nItemSlot = { 5, 4, 3, 2, 1, 0, 15, 16 }
+	local nItemSlot = { 5, 4, 3, 2, 1, 0, 15, 16, 8, 7, 6 }
 
-	for _, nSlot in pairs( nItemSlot )
+	for _, nSlot in ipairs( nItemSlot )
 	do
 		local hItem = bot:GetItemInSlot( nSlot )
 		if J.CanCastAbility(hItem)
 		then
 			local sItemName = hItem:GetName()
 			if	X.ConsiderItemDesire[sItemName] ~= nil
+				and (nSlot <= 5 or nSlot >= 15 or sItemName == battleHorn)
 				and not X.IsItemInStash( sItemName )
 			then
 				local nItemDesire, hItemTarget, sCastType, sMotive = X.ConsiderItemDesire[sItemName]( hItem )
@@ -992,9 +994,12 @@ function X.SetUseItem( hItem, hItemTarget, sCastType )
 	then
 		bot:Action_UseAbility( hItem )
 		return
-	elseif sCastType == 'unit' and type(hItemTarget) == 'table'
+	elseif sCastType == 'unit'
 	then
-		bot:Action_UseAbilityOnEntity( hItem, hItemTarget )
+		local targetType = type(hItemTarget)
+		if targetType == 'table' or targetType == 'userdata' then
+			bot:Action_UseAbilityOnEntity( hItem, hItemTarget )
+		end
 		return
 	elseif sCastType == 'ground' or (hItemTarget and type(hItemTarget) ~= 'number' and type(hItemTarget) ~= 'table' and hItemTarget.x ~= nil) -- in case target is a location
 	then
@@ -1085,6 +1090,13 @@ end
 
 
 X.ConsiderItemDesire = {}
+
+X.ConsiderItemDesire[battleHorn] = function()
+	if J.IsPushing(bot) and J.Utils.IsTeamPushingSecondTierOrHighGround(bot) then
+		return BOT_ACTION_DESIRE_HIGH, bot, 'none'
+	end
+	return BOT_ACTION_DESIRE_NONE
+end
 
 --深渊
 X.ConsiderItemDesire["item_abyssal_blade"] = function( hItem )

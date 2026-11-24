@@ -32,7 +32,8 @@ local C = {
 
 local function scanDroppedForAegis(radius)
     for _, dropped in pairs(GetDroppedItemList()) do
-        if dropped and dropped.item:GetName() == 'item_aegis'
+        if dropped.item ~= nil and not dropped.item:IsNull() and dropped.item:GetName() == 'item_aegis'
+           and dropped.location ~= nil and IsLocationVisible(dropped.location)
            and GetUnitToLocationDistance(bot, dropped.location) < radius
         then
             return true

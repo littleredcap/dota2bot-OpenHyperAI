@@ -441,7 +441,8 @@ end
 -- The marker is stored on the bot handle so mode_team_roam and purchase logic
 -- can agree without accessing each other's script-local variables.
 local function ShouldRecoverOwnedDrop(drop, hero)
-	if drop == nil or drop.owner ~= hero or drop.item == nil or drop.item:IsNull() then
+	if drop == nil or drop.owner ~= hero or drop.item == nil or drop.item:IsNull()
+	or drop.location == nil or not IsLocationVisible(drop.location) then
 		return false
 	end
 	if hero.ohaDiscardedItems ~= nil and hero.ohaDiscardedItems[drop.item] then
@@ -678,7 +679,7 @@ function ItemPurchaseThink()
 	for _, d in pairs(dropped) do
 		if ShouldRecoverOwnedDrop(d, bot) then
 			local dist = GetUnitToLocationDistance(bot, d.location)
-			if dist > 200 and dist < 1000 then
+			if dist > 100 and dist < 1000 then
 				bot:Action_MoveToLocation(d.location)
 			elseif dist <= 100 then
 				bot:Action_PickUpItem(d.item)
@@ -722,7 +723,10 @@ function ItemPurchaseThink()
 		local dropItemList = GetDroppedItemList()
 		for _, tDropItem in pairs( dropItemList )
 		do
-			if tDropItem.owner == Utils.GetLoneDruid(bot).hero and not string.find(tDropItem.item:GetName(), 'token')
+			if tDropItem.owner == Utils.GetLoneDruid(bot).hero
+			and tDropItem.item ~= nil and not tDropItem.item:IsNull()
+			and tDropItem.location ~= nil and IsLocationVisible(tDropItem.location)
+			and not string.find(tDropItem.item:GetName(), 'token')
 			and not (string.find(tDropItem.item:GetName(), 'boot') and Item.HasItemWithName(bot, 'boot')) then
 				local distance = GetUnitToLocationDistance(bot, tDropItem.location)
 				if distance > 200 and distance < 1000 and tDropItem.owner == bot

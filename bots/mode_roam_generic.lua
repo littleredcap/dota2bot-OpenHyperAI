@@ -1259,7 +1259,8 @@ function ConsiderHeroMoveOutsideFountain()
 	end
 	if bot:GetActiveMode() == BOT_MODE_ITEM then
 		for _, droppedItem in pairs(GetDroppedItemList()) do
-            if droppedItem ~= nil
+            if droppedItem.item ~= nil and not droppedItem.item:IsNull()
+            and droppedItem.location ~= nil and IsLocationVisible(droppedItem.location)
             and GetUnitToLocationDistance(bot, droppedItem.location) < 1200
             then
 				local iName = droppedItem.item:GetName()
@@ -1410,8 +1411,9 @@ function ConsiderGeneralRoamingInConditions()
 	and (botName == 'npc_dota_hero_lone_druid_bear' or bot:HasModifier('modifier_arc_warden_tempest_double') or J.IsMeepoClone(bot))
 	then
 		for _, droppedItem in pairs(GetDroppedItemList()) do
-            if droppedItem ~= nil
+            if droppedItem.item ~= nil and not droppedItem.item:IsNull()
             and droppedItem.item:GetName() == 'item_aegis'
+            and droppedItem.location ~= nil and IsLocationVisible(droppedItem.location)
             and GetUnitToLocationDistance(bot, droppedItem.location) < 300
             then
                 return BOT_ACTION_DESIRE_ABSOLUTE

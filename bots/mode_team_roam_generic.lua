@@ -32,7 +32,7 @@ local nearbyAllies, nearbyEnemies
 -- Pickup / swap timers
 local PickedItem = nil
 local minPickItemCost = 200
-local ignorePickupList, tryPickCount = {}, 0
+local pickupAttempts = setmetatable({}, {__mode = 'k'})
 local ConsiderDroppedTime = -90
 local SwappedCheeseTime   = -90
 local SwappedClarityTime  = -90
@@ -105,7 +105,7 @@ function GetDesireHelper()
         IsSupport  = not IsHeroCore
     end
 
-    ItemOpsDesire()
+    local itemDesire, isBattleHorn = ItemOpsDesire()
 
     local target
     target, ShouldHelpWhenCoreIsTargeted = X.ConsiderHelpWhenCoreIsTargeted()
@@ -149,6 +149,8 @@ function GetDesireHelper()
         IsAvoidingAbilityZone = true
         return RemapValClamped(J.GetHP(bot), 0.3, 1, BOT_ACTION_DESIRE_VERYHIGH, BOT_ACTION_DESIRE_NONE)
     end
+
+    if isBattleHorn then return itemDesire end
 
     if not J.IsFarming(bot) and not J.IsPushing(bot) and not J.IsDefending(bot)
     and not J.IsDoingRoshan(bot) and not J.IsDoingTormentor(bot)
@@ -297,8 +299,6 @@ function Think()
 	-- diabled think less to avoid failing to last hit
     -- if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "team_roam") then return end
 
-    ItemOpsThink()
-
 	if J.IsValid(hTargetCreep) then
 		bot:Action_AttackUnit(hTargetCreep, true)
 		return
@@ -337,6 +337,8 @@ function Think()
         bot:Action_AttackUnit(targetUnit, false)
         return
     end
+
+    if not ShouldAttackSpecialUnit and ItemOpsThink() then return end
 
     if (IsHeroCore or IsSupport) and J.Utils.IsValidUnit(targetUnit) then
         bot:Action_AttackUnit(targetUnit, false)
@@ -1437,52 +1439,92 @@ function X.ShouldAttackTowerCreep(b)
 end
 
 -- ==============================
--- Items & pick/drops (unchanged logic; minor cleanup)
+-- Item pickup and inventory management
 -- ==============================
 -- Recheck at selection and execution: another mode may deliberately discard
 -- the selected item between these callbacks.
 local function CanConsiderDroppedItem(drop)
-    if drop == nil or drop.item == nil or drop.item:IsNull() then return false end
+    if drop == nil or drop.item == nil or drop.item:IsNull()
+    or drop.location == nil or not IsLocationVisible(drop.location)
+    then
+        return false
+    end
+    local attempt = pickupAttempts[drop.item]
+    if attempt ~= nil and attempt.count >= 3 then return false end
     return bot.ohaDiscardedItems == nil or not bot.ohaDiscardedItems[drop.item]
+end
+
+local battleHorn = 'item_horn_of_battle_greater'
+
+local function CanPickUpBattleHorn(drop)
+    if (drop.owner ~= nil and drop.owner ~= bot)
+    or bot:FindItemSlot(battleHorn) >= 0
+    or J.Item.GetEmptyInventoryAmount(bot) == 0
+    or J.IsRetreating(bot)
+    or #J.GetEnemiesNearLoc(drop.location, 900) > 0
+    then
+        return false
+    end
+
+    local distance = GetUnitToLocationDistance(bot, drop.location)
+    if distance > 1200 then return false end
+    for _, ally in ipairs(J.GetAlliesNearLoc(drop.location, 1200)) do
+        if ally ~= bot and not J.IsRetreating(ally)
+        and J.Item.GetEmptyInventoryAmount(ally) > 0 and ally:FindItemSlot(battleHorn) < 0 then
+            local allyDistance = GetUnitToLocationDistance(ally, drop.location)
+            if allyDistance < distance
+            or (allyDistance == distance and ally:GetPlayerID() < bot:GetPlayerID()) then
+                return false
+            end
+        end
+    end
+    return true
 end
 
 function ItemOpsDesire()
     if DotaTime() >= ConsiderDroppedTime + 2.0 then
-        for _, droppedItem in pairs(GetDroppedItemList()) do
-            if CanConsiderDroppedItem(droppedItem) then
-                local itemName = droppedItem.item:GetName()
-                if not J.Utils.SetContains(itemName) and not J.Utils.HasValue(Item['tEarlyConsumableItem'], itemName) then
-                    if itemName == 'item_aegis' and J.GetPosition(bot) <= 3 and not J.HasItem(bot, 'item_aegis') then
-                        if J.Item.GetEmptyNonBackpackInventoryAmount(bot) == 0 then
-                            local lessValItem = J.Item.GetMainInvLessValItemSlot(bot)
-                            local emptySlot = J.Item.GetEmptyBackpackSlot(bot)
-                            if lessValItem ~= -1 and emptySlot ~= -1 then
-                                bot:ActionImmediate_SwapItems(emptySlot, lessValItem)
-                            end
-                        end
-                        PickedItem = droppedItem
+        ConsiderDroppedTime = DotaTime()
+        PickedItem = nil
+        for _, drop in pairs(GetDroppedItemList()) do
+            if CanConsiderDroppedItem(drop) and GetUnitToLocationDistance(bot, drop.location) < 2000 then
+                local name = drop.item:GetName()
+                local shouldPick = false
+                if name == battleHorn then
+                    shouldPick = CanPickUpBattleHorn(drop)
+                elseif not Utils.HasValue(Item['tEarlyConsumableItem'], name) then
+                    if (name == 'item_aegis' or name == 'item_cheese')
+                    and J.GetPosition(bot) <= 3 and not J.HasItem(bot, 'item_aegis') then
+                        shouldPick = true
+                    elseif name == 'item_refresher_shard' then
+                        shouldPick = J.GetMostUltimateCDUnit() == bot
+                    else
+                        shouldPick = drop.owner == bot and GetItemCost(name) > minPickItemCost
+                            and not string.find(name, 'token')
                     end
-                    if itemName == 'item_cheese' and J.GetPosition(bot) <= 3 and not J.HasItem(bot, 'item_aegis') then
-                        PickedItem = droppedItem
-                    end
-                    if itemName == 'item_refresher_shard' then
-                        local mostCDHero = J.GetMostUltimateCDUnit()
-                        if mostCDHero ~= nil and mostCDHero:IsBot() and bot == mostCDHero then
-                            PickedItem = droppedItem
-                        end
-                    end
-                    local nDropOwner = droppedItem.owner
-                    if nDropOwner ~= nil and nDropOwner == bot and not string.find(itemName, 'token') then
-                        PickedItem = droppedItem
-                    end
-                    if PickedItem ~= nil and GetItemCost(itemName) > minPickItemCost then
-                        return RemapValClamped(J.Utils.GetLocationToLocationDistance(droppedItem.location, bot:GetLocation()),
-                            5000, 0, BOT_ACTION_DESIRE_NONE, BOT_ACTION_DESIRE_VERYHIGH)
-                    end
+                end
+                if shouldPick and (PickedItem == nil or name == battleHorn) then
+                    PickedItem = drop
+                    if name == battleHorn then break end
                 end
             end
         end
-        ConsiderDroppedTime = DotaTime()
+        if PickedItem ~= nil and PickedItem.item:GetName() == 'item_aegis'
+        and J.Item.GetEmptyNonBackpackInventoryAmount(bot) == 0 then
+            local lessValItem = J.Item.GetMainInvLessValItemSlot(bot)
+            local emptySlot = J.Item.GetEmptyBackpackSlot(bot)
+            if lessValItem ~= -1 and emptySlot ~= -1 then
+                bot:ActionImmediate_SwapItems(emptySlot, lessValItem)
+            end
+        end
+    end
+
+    if CanConsiderDroppedItem(PickedItem) then
+        if PickedItem.item:GetName() == battleHorn then
+            if CanPickUpBattleHorn(PickedItem) then return BOT_MODE_DESIRE_MODERATE, true end
+        else
+            return RemapValClamped(GetUnitToLocationDistance(bot, PickedItem.location),
+                5000, 0, BOT_ACTION_DESIRE_NONE, BOT_ACTION_DESIRE_VERYHIGH)
+        end
     end
 
     TrySellOrDropItem()
@@ -1496,35 +1538,27 @@ function ItemOpsDesire()
 end
 
 function ItemOpsThink()
-    if PickedItem ~= nil then
-        if CanConsiderDroppedItem(PickedItem) and J.Item.GetEmptyInventoryAmount(bot) > 0 then
-            local itemName = PickedItem.item:GetName()
-            if tryPickCount >= 3 and not Utils.SetContains(itemName) then
-                tryPickCount = 0
-                Utils.AddToSet(ignorePickupList, PickedItem.item)
-            end
-            if not Utils.SetContains(itemName) and not Utils.HasValue(Item['tEarlyConsumableItem'], itemName) then
-                if itemName == 'item_aegis' or itemName == 'item_cheese' then
-                    if J.GetPosition(bot) <= 3 and not J.HasItem(bot, 'item_aegis') then
-                        GoPickUpItem(PickedItem)
-                    end
-                else
-                    GoPickUpItem(PickedItem)
-                end
-            end
-        end
-    end
-end
+    if not CanConsiderDroppedItem(PickedItem) or J.Item.GetEmptyInventoryAmount(bot) == 0 then return false end
+    local name = PickedItem.item:GetName()
+    if name == battleHorn and not CanPickUpBattleHorn(PickedItem) then return false end
+    if (name == 'item_aegis' or name == 'item_cheese')
+    and (J.GetPosition(bot) > 3 or J.HasItem(bot, 'item_aegis')) then return false end
 
-function GoPickUpItem(goPickItem)
-    local distance = GetUnitToLocationDistance(bot, goPickItem.location)
-    if distance > 200 and distance < 2000 then
-        bot:Action_MoveToLocation(goPickItem.location)
-    elseif distance <= 100 then
-        tryPickCount = tryPickCount + 1
-        bot:Action_PickUpItem(goPickItem.item)
-        return
+    local distance = GetUnitToLocationDistance(bot, PickedItem.location)
+    if distance <= 100 then
+        local item = PickedItem.item
+        local attempt = pickupAttempts[item]
+        local now = DotaTime()
+        if attempt ~= nil and now < attempt.nextTime then return true end
+        pickupAttempts[item] = {count = (attempt and attempt.count or 0) + 1, nextTime = now + 0.5}
+        bot:Action_PickUpItem(item)
+        return true
     end
+    if distance < 2000 then
+        bot:Action_MoveToLocation(PickedItem.location)
+        return true
+    end
+    return false
 end
 
 -- Swap smoke after killing Roshan
