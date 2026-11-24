@@ -46,6 +46,8 @@ end
 local casts, queue, leveled = {}, {}, {}
 local points, chasing, retreating, scepter = 0, false, false, false
 local enemy = {HasModifier = no, GetAttackDamage = one, GetAttackSpeed = one, GetEstimatedDamageToTarget = one}
+enemy.GetMaxHealth = function() return 1000 end
+enemy.GetLocation = empty
 enemy.GetNearbyHeroes = function() return {enemy} end
 local bot = {
     kez_mode = 'katana',
@@ -61,6 +63,7 @@ local bot = {
     HasModifier = no, HasScepter = function() return scepter end,
     GetAbilityPoints = function() return points end,
     GetLevel = one, GetLocation = empty, GetNearbyTowers = empty, GetNearbyHeroes = empty,
+    GetAttackDamage = function() return 200 end, IsFacingLocation = yes,
     GetHealth = one, GetMaxHealth = one, GetMana = one, GetMaxMana = one,
     Action_UseAbility = function(_, ability) table.insert(casts, ability:GetName()) end,
     ActionImmediate_LevelAbility = function(_, name) table.insert(leveled, name) end,
@@ -102,6 +105,7 @@ local env = setmetatable({
     GAME_STATE_PRE_GAME = 1, GetGameState = one, GetGameMode = function() return 0 end,
     DotaTime = function() return 20 end, GetUnitToUnitDistance = one,
     BOT_ACTION_DESIRE_NONE = 0, BOT_ACTION_DESIRE_HIGH = 0.8,
+    DAMAGE_TYPE_PHYSICAL = 1,
     require = function(name) return name == 'bots/FunLib/jmz_func' and J or {} end,
     dofile = function(name) return name == 'bots/BotLib/hero_kez' and hero or {} end,
 }, {__index = _G})
@@ -114,6 +118,7 @@ J.Skill = loadModule('bots/FunLib/aba_skill.lua')
 J.Skill.GetTalentList, J.Skill.GetAbilityList = empty, empty
 hero = loadModule('bots/BotLib/hero_kez.lua')
 local considerParryCancel = hero.ConsiderShodoSaiCancel
+local considerEchoSlash, considerRaptorDance = hero.ConsiderEchoSlash, hero.ConsiderRaptorDance
 for _, spell in ipairs({'EchoSlash', 'GrapplingClaw', 'RaptorDance', 'FalconRush', 'RavensVeil',
     'KazuraiKatana', 'TalonToss', 'ShodoSaiCancel', 'ShodoSai'}) do
     hero['Consider' .. spell] = function() return 0 end
@@ -194,3 +199,40 @@ assert(#casts == 5 and casts[5] == parryCancel, 'did not issue the visible parry
 
 print('PASS: Kez paired leveling and live discipline in both callbacks')
 print('PASS: Kez resolves the parry cancel handle when it is exposed')
+
+local function setValues(name, values)
+    local handle = abilities[name]
+    handle.GetSpecialValueInt = function(_, key) return assert(values[key], name .. ': unexpected ' .. key) end
+    handle.GetSpecialValueFloat = handle.GetSpecialValueInt
+end
+
+local echo = 'kez_echo_slash'
+local raptor = 'kez_raptor_dance'
+setValues(echo, {katana_distance = 800, katana_radius = 225, katana_echo_damage = 30, echo_base_damage = 40, katana_strikes = 2})
+setValues(raptor, {radius = 425, base_damage = 50, strikes = 4, max_health_damage_pct = 2.75})
+expose(1)
+visible[parryCancel] = false
+retreating, chasing = false, false
+J.GetProperTarget = function() return nil end
+J.GetNearbyHeroes = function(_, _, isEnemy) return isEnemy and {enemy} or {} end
+J.IsInRange = function(_, target) return target == enemy end
+J.IsSuspiciousIllusion = no
+J.Chat = {GetNormName = function() return 'test enemy' end}
+
+local function expectPhysicalCast(name, expectedDamage)
+    J.CanCastAbility = function(handle) return handle == abilities[name] end
+    J.CanKillTarget = function(target, damage, damageType)
+        assert(target == enemy and damageType == env.DAMAGE_TYPE_PHYSICAL, 'wrong damage target or type')
+        assert(damage == expectedDamage, name .. ': expected ' .. expectedDamage .. ', got ' .. damage)
+        return true
+    end
+    queue = {}
+    usage.AbilityUsageThink()
+    assert(#queue == 1 and queue[1] == name, 'missing ' .. name .. ' kill cast')
+end
+
+hero.ConsiderEchoSlash = considerEchoSlash
+expectPhysicalCast(echo, 200)
+hero.ConsiderRaptorDance = considerRaptorDance
+expectPhysicalCast(raptor, 310)
+print('PASS: Kez Echo Slash and Raptor Dance use current 7.42 damage')

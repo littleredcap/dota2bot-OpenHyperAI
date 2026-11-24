@@ -126,7 +126,7 @@ local Terrorize     = bot:GetAbilityByName('dark_willow_terrorize')
 local BrambleMazeDesire, BrambleMazeLocation
 local ShadowRealmDesire
 local CurseCrownDesire, CurseCrownTarget
-local BedlamDesire, BedlamTarget
+local BedlamDesire
 local TerrorizeDesire, TerrorizeLocation
 
 local BedlamTime    = 0
@@ -145,7 +145,7 @@ function X.SkillsComplement()
         return
     end
 
-    BedlamDesire, BedlamTarget = X.ConsiderBedlam()
+    BedlamDesire = X.ConsiderBedlam()
     if BedlamDesire > 0
     then
         bot:Action_UseAbility(Bedlam)
@@ -395,42 +395,42 @@ function X.ConsiderCurseCrown()
 end
 
 function X.ConsiderBedlam()
-    if not Bedlam:IsFullyCastable()
+    if not J.CanCastAbility(Bedlam)
     then
-        return BOT_ACTION_DESIRE_NONE, nil
+        return BOT_ACTION_DESIRE_NONE
     end
 
-    if Terrorize:IsTrained()
+    if Terrorize ~= nil and Terrorize:IsTrained()
     then
-        local nFearDuration = Bedlam:GetSpecialValueInt('destination_status_duration')
+        local nFearDuration = Terrorize:GetSpecialValueFloat('destination_status_duration')
         if DotaTime() - TerrorizeTime <= nFearDuration
         then
-            return BOT_ACTION_DESIRE_NONE, nil
+            return BOT_ACTION_DESIRE_NONE
         end
     end
 
-    local nCastRange = J.GetProperCastRange(false, bot, Bedlam:GetCastRange())
+    local nRadius = Bedlam:GetSpecialValueInt('attack_radius')
     local botTarget = J.GetProperTarget(bot)
-    local nEnemyHeroes = J.GetNearbyHeroes(bot,nCastRange, true, BOT_MODE_NONE)
+    local nEnemyHeroes = J.GetNearbyHeroes(bot, nRadius, true, BOT_MODE_NONE)
 
 	if J.IsInTeamFight(bot, 1200)
 	then
         if #nEnemyHeroes >= 1
         then
-            return BOT_ACTION_DESIRE_HIGH, bot
+            return BOT_ACTION_DESIRE_HIGH
         end
 	end
 
     if J.IsGoingOnSomeone(bot)
 	then
-        if J.IsInRange(bot, botTarget, nCastRange)
-        and J.IsValidTarget(botTarget)
+        if J.IsValidTarget(botTarget)
+        and J.IsInRange(bot, botTarget, nRadius)
         then
-            return BOT_ACTION_DESIRE_HIGH, allyTarget
+            return BOT_ACTION_DESIRE_HIGH
         end
 	end
 
-    return BOT_ACTION_DESIRE_NONE, nil
+    return BOT_ACTION_DESIRE_NONE
 end
 
 function X.ConsiderTerrorize()

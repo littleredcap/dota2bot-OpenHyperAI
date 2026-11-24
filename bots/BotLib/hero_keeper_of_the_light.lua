@@ -638,7 +638,7 @@ function X.ConsiderWillOWisp()
 	local nCastRange = J.GetProperCastRange(false, bot, WillOWisp:GetCastRange())
     local nRadius = WillOWisp:GetSpecialValueInt('radius')
     local nCastPoint = WillOWisp:GetCastPoint()
-    local nDuration = WillOWisp:GetSpecialValueInt('duration')
+    local nFirstPulseTime = nCastPoint + WillOWisp:GetSpecialValueFloat('off_duration_initial')
 
     -- TP-cancel: catch enemies channeling a TP if Wisp can lock them down in time
     for _, enemyHero in pairs(nEnemyHeroes) do
@@ -648,9 +648,7 @@ function X.ConsiderWillOWisp()
         and enemyHero:HasModifier('modifier_teleporting')
         then
             local fTPRemaining = J.GetModifierTime(enemyHero, 'modifier_teleporting')
-            -- We need the cast point to be less than the remaining TP time,
-            -- and Wisp duration must be enough to actually interrupt
-            if fTPRemaining > nCastPoint and nDuration > 0.5 then
+            if fTPRemaining > nFirstPulseTime then
                 return BOT_ACTION_DESIRE_HIGH, enemyHero:GetLocation()
             end
         end

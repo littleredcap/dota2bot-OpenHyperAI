@@ -409,15 +409,15 @@ function X.ConsiderMagneticField()
 	then
 		local nEnemyLaneCreeps = bot:GetNearbyLaneCreeps(888, true)
 		local nEnemyTowers = bot:GetNearbyTowers(888, true)
-		local nEnemyBarracks bot:GetNearbyBarracks(888, true)
-		local sEnemyTowers bot:GetNearbyFillers(888, true)
+		local nEnemyBarracks = bot:GetNearbyBarracks(888, true)
+		local nEnemyFillers = bot:GetNearbyFillers(888, true)
 
 		if J.IsAttacking(bot)
 		then
 			if (nEnemyLaneCreeps ~= nil and #nEnemyLaneCreeps >= 3)
 			or (nEnemyTowers ~= nil and #nEnemyTowers >= 1)
 			or (nEnemyBarracks ~= nil and #nEnemyBarracks >= 1)
-			or (sEnemyTowers ~= nil and #sEnemyTowers >= 1)
+			or (nEnemyFillers ~= nil and #nEnemyFillers >= 1)
 			then
 				return BOT_ACTION_DESIRE_HIGH, bot:GetLocation()
 			end
@@ -476,9 +476,9 @@ function X.ConsiderSparkWraith()
 
 	local nCastRange = J.GetProperCastRange(false, bot, SparkWraith:GetCastRange())
 	local nRadius = SparkWraith:GetSpecialValueInt('radius')
-	local nDamage = SparkWraith:GetSpecialValueInt('spark_damage')
+	local nDamage = SparkWraith:GetSpecialValueInt('spark_damage_base')
 	local nCastPoint = SparkWraith:GetCastPoint()
-	local nDelay = SparkWraith:GetSpecialValueInt('activation_delay') + nCastPoint
+	local nDelay = SparkWraith:GetSpecialValueFloat('base_activation_delay') + nCastPoint
 
 	local nEnemyHeroes = J.GetNearbyHeroes(bot,nCastRange, true, BOT_MODE_NONE)
 	for _, enemyHero in pairs(nEnemyHeroes)

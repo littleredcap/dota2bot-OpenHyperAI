@@ -452,7 +452,7 @@ function X.ConsiderCallDown()
 	local nCastRange = CallDown:GetCastRange()
 	local nCastPoint = CallDown:GetCastPoint()
 	local nRadius = CallDown:GetSpecialValueInt('radius')
-    local nDamage = CallDown:GetSpecialValueInt('damage_first')
+    local nDamage = CallDown:GetSpecialValueInt('damage')
 
 	if J.IsInTeamFight(bot, 1200)
 	then

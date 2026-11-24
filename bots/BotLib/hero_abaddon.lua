@@ -197,8 +197,7 @@ function X.ConsiderMistCoil()
 	end
 
 	local nCastRange = MistCoil:GetCastRange()
-	local nDamage = MistCoil:GetSpecialValueInt('target_damage')
-	local nSelfDamage = MistCoil:GetSpecialValueInt('self_damage')
+	local nDamage = MistCoil:GetSpecialValueInt('damage_heal')
     local nDamageType = DAMAGE_TYPE_MAGICAL
     local botTarget = J.GetProperTarget(bot)
     local nEnemyHeroes = J.GetNearbyHeroes(bot,nCastRange, true, BOT_MODE_NONE)
@@ -208,7 +207,7 @@ function X.ConsiderMistCoil()
 
     if J.IsGoingOnSomeone(bot) then
         if J.IsValidHero(botTarget)
-        and J.CanCastOnMagicImmune(botTarget) then
+        and J.CanCastOnNonMagicImmune(botTarget) then
             return BOT_ACTION_DESIRE_HIGH, botTarget
         end
     end
@@ -271,6 +270,7 @@ function X.ConsiderMistCoil()
                 and bot:WasRecentlyDamagedByAnyHero(1)
                 and not bot:HasModifier('modifier_abaddon_borrowed_time')))
         and J.IsValidHero(nInRangeEnemy[1])
+        and J.CanCastOnNonMagicImmune(nInRangeEnemy[1])
         and not J.IsSuspiciousIllusion(nInRangeEnemy[1])
         and not J.IsDisabled(nInRangeEnemy[1])
         then
@@ -302,7 +302,7 @@ function X.ConsiderMistCoil()
     for _, enemyHero in pairs(nEnemyHeroes)
     do
         if J.IsValidHero(enemyHero)
-        and J.CanCastOnMagicImmune(enemyHero)
+        and J.CanCastOnNonMagicImmune(enemyHero)
         and not J.IsSuspiciousIllusion(enemyHero)
         and J.CanKillTarget(enemyHero, nDamage, nDamageType)
         and not enemyHero:HasModifier('modifier_dazzle_shallow_grave')

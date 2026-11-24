@@ -127,7 +127,6 @@ local Doom          = bot:GetAbilityByName('doom_bringer_doom')
 local DevourAbility1 = bot:GetAbilityByName('doom_bringer_empty1')
 local DevourAbility2 = bot:GetAbilityByName('doom_bringer_empty2')
 
-local DevourAncientTalent = bot:GetAbilityByName('special_bonus_unique_doom_2')
 
 local DevourDesire, DevourTarget
 local ScorchedEarthDesire
@@ -212,6 +211,7 @@ function X.ConsiderDevour()
     end
 
 	local nMaxLevel = Devour:GetSpecialValueInt('creep_level')
+    local bCanDevourAncients = Devour:GetSpecialValueInt('can_target_ancient') > 0
     local nCreeps = bot:GetNearbyCreeps(1200, true)
 
     -- local nGoodCreep = {
@@ -246,7 +246,7 @@ function X.ConsiderDevour()
         --         then
         --             if creep:IsAncientCreep()
         --             and creep:GetUnitName() == 'npc_dota_neutral_black_dragon'
-        --             and DevourAncientTalent:IsTrained()
+        --             and bCanDevourAncients
         --             then
         --                 return BOT_ACTION_DESIRE_HIGH, creep
         --             end
@@ -278,6 +278,7 @@ function X.ConsiderDevour()
             end
         end
 
+        local bestNeutral = nil
         for _, creep in pairs(nCreeps)
         do
             if J.IsValid(creep)
@@ -285,6 +286,7 @@ function X.ConsiderDevour()
             and creep:GetLevel() <= nMaxLevel
             and not J.IsRoshan(creep)
             and not J.IsTormentor(creep)
+            and (bCanDevourAncients or not creep:IsAncientCreep())
             then
                 if J.IsInLaningPhase()
                 and creep:GetTeam() ~= bot:GetTeam()
@@ -298,32 +300,17 @@ function X.ConsiderDevour()
                     return BOT_ACTION_DESIRE_HIGH, creep
                 end
 
-                nCreepTarget = nil
-                if creep
-                and creep:GetTeam() == TEAM_NEUTRAL
-                then
-                    nCreepTarget = J.GetMostHpUnit(nCreeps)
-                end
-
-                if nCreepTarget ~= nil
-                then
-                    if nCreepTarget:IsAncientCreep()
-                    and DevourAncientTalent:IsTrained()
-                    then
-                        return BOT_ACTION_DESIRE_HIGH, nCreepTarget
+                if creep:GetTeam() == TEAM_NEUTRAL then
+                    if bestNeutral == nil or creep:GetHealth() > bestNeutral:GetHealth() then
+                        bestNeutral = creep
                     end
-
-                    if not nCreepTarget:IsAncientCreep()
-                    then
-                        return BOT_ACTION_DESIRE_HIGH, nCreepTarget
-                    end
-                end
-
-                if not creep:IsAncientCreep()
-                then
+                else
                     return BOT_ACTION_DESIRE_HIGH, creep
                 end
             end
+        end
+        if bestNeutral ~= nil then
+            return BOT_ACTION_DESIRE_HIGH, bestNeutral
         end
     end
 

@@ -488,8 +488,8 @@ function X.ConsiderManaVoid()
 end
 
 function X.ConsiderCounterSpellAlly()
-	if not CounterSpellAlly:IsTrained()
-	or not CounterSpellAlly:IsFullyCastable()
+	CounterSpellAlly = bot:GetAbilityByName('antimage_counterspell_ally')
+	if not J.CanCastAbility(CounterSpellAlly)
 	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
@@ -524,10 +524,9 @@ function X.ConsiderCounterSpellAlly()
 end
 
 function X.ConsiderBlinkFragment()
+	BlinkFragment = bot:GetAbilityByName('antimage_mana_overload')
 	if not bot:HasScepter()
-	or not BlinkFragment
-	or not BlinkFragment:IsTrained()
-	or not BlinkFragment:IsFullyCastable()
+	or not J.CanCastAbility(BlinkFragment)
 	then
 		return BOT_ACTION_DESIRE_NONE, 0
 	end

@@ -496,8 +496,8 @@ function X.ConsiderWhirlingAxesMelee()
         return BOT_ACTION_DESIRE_NONE
     end
 
-    local nRadius = WhirlingAxesRanged:GetSpecialValueInt('max_range')
-    local nDamage = WhirlingAxesRanged:GetSpecialValueInt('damage')
+    local nRadius = WhirlingAxesMelee:GetSpecialValueInt('max_range')
+    local nDamage = WhirlingAxesMelee:GetSpecialValueInt('damage')
 
     local nEnemyHeroes = J.GetNearbyHeroes(bot,nRadius, true, BOT_MODE_NONE)
     for _, enemyHero in pairs(nEnemyHeroes)

@@ -463,7 +463,8 @@ function X.ConsiderPlagueWard()
         end
 	end
 
-    for _, allyHero in pairs(nAllyHeroes) do
+    local wardAllies = J.CheckBitfieldFlag(PlagueWard:GetBehavior(), ABILITY_BEHAVIOR_UNIT_TARGET) and nAllyHeroes or {}
+    for _, allyHero in pairs(wardAllies) do
         if J.IsValidHero(allyHero)
         and allyHero ~= bot
         and J.IsInRange(bot, allyHero, nCastRange)

@@ -85,12 +85,12 @@ end
 local ChargeOfDarkness  = bot:GetAbilityByName('spirit_breaker_charge_of_darkness')
 local Bulldoze          = bot:GetAbilityByName('spirit_breaker_bulldoze')
 local GreaterBash       = bot:GetAbilityByName('spirit_breaker_greater_bash')
-local PlanarPocket      = bot:GetAbilityByName('spirit_breaker_planar_pocket')
+local PlanarPocket
 local NetherStrike      = bot:GetAbilityByName('spirit_breaker_nether_strike')
 
 local ChargeOfDarknessDesire, ChargeOfDarknessTarget
 local BulldozeDesire
-local PlanarPocketDesire
+local PlanarPocketDesire, PlanarPocketTarget
 local NetherStrikeDesire, NetherStrikeTarget
 local nInRangeEnemy
 
@@ -132,10 +132,10 @@ function X.SkillsComplement()
         return
     end
 
-    PlanarPocketDesire = X.ConsiderPlanarPocket()
+    PlanarPocketDesire, PlanarPocketTarget = X.ConsiderPlanarPocket()
     if PlanarPocketDesire > 0
     then
-        bot:Action_UseAbility(PlanarPocket)
+        bot:Action_UseAbilityOnEntity(PlanarPocket, PlanarPocketTarget)
         return
     end
 
@@ -493,64 +493,34 @@ function X.ConsiderNetherStrike()
 end
 
 function X.ConsiderPlanarPocket()
-    if not PlanarPocket:IsTrained()
-    or not PlanarPocket:IsFullyCastable()
+    PlanarPocket = bot:GetAbilityByName('spirit_breaker_planar_pocket')
+    if not J.CanCastAbility(PlanarPocket)
     or bot:HasModifier('modifier_spirit_breaker_charge_of_darkness')
+    or J.GetHP(bot) <= 0.6
     then
-        return BOT_ACTION_DESIRE_NONE
+        return BOT_ACTION_DESIRE_NONE, nil
     end
 
-    local nRadius = PlanarPocket:GetSpecialValueInt('radius')
-    local botTarget = J.GetProperTarget(bot)
-
-    if J.IsInTeamFight(bot, 1200)
-	then
-        local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), nRadius)
-
-		if nInRangeEnemy ~= nil and #nInRangeEnemy >= 2
-        and bot:WasRecentlyDamagedByAnyHero(1)
-		then
-			return BOT_ACTION_DESIRE_HIGH
-		end
-	end
-
-    if J.IsGoingOnSomeone(bot)
-	then
-		if J.IsValidTarget(botTarget)
-        and J.CanCastOnNonMagicImmune(botTarget)
-        and J.IsInRange(bot, botTarget, 600)
-        and bot:WasRecentlyDamagedByAnyHero(1)
-        and not J.IsChasingTarget(bot, botTarget)
-        and not J.IsSuspiciousIllusion(botTarget)
-        and not J.IsDisabled(botTarget)
-		then
-            return BOT_ACTION_DESIRE_HIGH
-		end
-	end
-
-    if J.IsRetreating(bot)
-	then
-        local nInRangeAlly = J.GetNearbyHeroes(bot,1200, false, BOT_MODE_NONE)
-
-        if nInRangeAlly ~= nil and nInRangeEnemy ~= nil
-        and J.IsValidHero(nInRangeEnemy[1])
-        and J.IsInRange(bot, nInRangeEnemy[1], 600)
-        and J.IsChasingTarget(nInRangeEnemy[1], bot)
-        and not J.IsSuspiciousIllusion(nInRangeEnemy[1])
-        and not J.IsDisabled(nInRangeEnemy[1])
+    local castRange = J.GetProperCastRange(false, bot, PlanarPocket:GetCastRange())
+    local target = nil
+    local targetHealth = 0.5
+    for _, ally in ipairs(J.GetNearbyHeroes(bot, castRange, false, BOT_MODE_NONE)) do
+        if ally ~= bot and J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally)
+        and J.IsInRange(bot, ally, castRange) and ally:WasRecentlyDamagedByAnyHero(2)
         then
-            local nTargetInRangeAlly = J.GetNearbyHeroes(nInRangeEnemy[1], 1200, false, BOT_MODE_NONE)
-
-            if nTargetInRangeAlly ~= nil
-            and ((#nTargetInRangeAlly > #nInRangeAlly)
-                or (bot:WasRecentlyDamagedByAnyHero(1)))
-            then
-		        return BOT_ACTION_DESIRE_HIGH
+            local allyHealth = J.GetHP(ally)
+            if allyHealth < targetHealth then
+                local enemies = J.GetEnemiesNearLoc(ally:GetLocation(), 900)
+                if #J.GetHeroesTargetingUnit(enemies, ally) > 0 then
+                    target = ally
+                    targetHealth = allyHealth
+                end
             end
         end
     end
 
-    return BOT_ACTION_DESIRE_NONE
+    if target ~= nil then return BOT_ACTION_DESIRE_HIGH, target end
+    return BOT_ACTION_DESIRE_NONE, nil
 end
 
 return X

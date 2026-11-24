@@ -541,7 +541,7 @@ function X.ConsiderPrimalSpring()
         return BOT_ACTION_DESIRE_NONE, 0
     end
 
-    local nMaxDistance = PrimalSpring:GetSpecialValueInt('max_distance')
+    local nMaxDistance = PrimalSpring:GetCastRange()
 	local nChannelTime = PrimalSpring:GetChannelTime()
 	local nRadius = PrimalSpring:GetSpecialValueInt('impact_radius')
 
@@ -550,7 +550,7 @@ function X.ConsiderPrimalSpring()
 		local nLocationAoE = bot:FindAoELocation(true, true, bot:GetLocation(), nMaxDistance, nRadius, nChannelTime, 0)
 		if nLocationAoE.count >= 2
 		then
-            local realEnemyCount = J.GetEnemiesNearLoc(bot:GetLocation(), nRadius)
+            local realEnemyCount = J.GetEnemiesNearLoc(nLocationAoE.targetloc, nRadius)
             if realEnemyCount ~= nil and #realEnemyCount >= 2
             then
                 return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
