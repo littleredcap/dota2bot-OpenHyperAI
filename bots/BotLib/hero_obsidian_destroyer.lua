@@ -85,7 +85,7 @@ local ArcaneOrb             = bot:GetAbilityByName('obsidian_destroyer_arcane_or
 local AstralImprisonment    = bot:GetAbilityByName('obsidian_destroyer_astral_imprisonment')
 local EssenceAura           = bot:GetAbilityByName('obsidian_destroyer_essence_aura')
 local SanitysEclipse        = bot:GetAbilityByName('obsidian_destroyer_sanity_eclipse')
-local Objurgation           = bot:GetAbilityByName('obsidian_destroyer_objurgation')
+local Objurgation
 
 local ArcaneOrbDesire, ArcaneOrbTarget
 local AstralImprisonmentDesire, AstralImprisonmentTarget, AstralImprisonmentIntent
@@ -488,7 +488,8 @@ function X.ConsiderSanitysEclipse()
 end
 
 function X.ConsiderObjurgation()
-    if not Objurgation:IsFullyCastable()
+    Objurgation = bot:GetAbilityByName('obsidian_destroyer_objurgation')
+    if not J.CanCastAbility(Objurgation)
     then
         return BOT_ACTION_DESIRE_NONE
     end

@@ -29,14 +29,19 @@ for i = 1, 8 do
     slots[i + 8] = ability('special_bonus_test_' .. i, nil, nil, nil, true)
 end
 
+local casts, objurgationAvailable = {}, true
 local bot = {
     GetUnitName = function() return 'npc_dota_hero_' .. heroName end,
     GetAbilityInSlot = function(_, slot) return slots[slot] end,
     GetAbilityByName = function(_, name)
+        if name == objurgation and not objurgationAvailable then return nil end
         for _, handle in pairs(slots) do
             if handle:GetName() == name then return handle end
         end
     end,
+    GetMana = function() return 100 end,
+    WasRecentlyDamagedByAnyHero = function() return true end,
+    Action_UseAbility = function(_, handle) table.insert(casts, handle) end,
 }
 
 local function loadHero(config)
@@ -53,12 +58,17 @@ local function loadHero(config)
         GetTeamPlayers = function() return {} end,
         Vector = function() return {} end,
         RandomInt = function(first) return first end,
+        BOT_ACTION_DESIRE_NONE = 0, BOT_ACTION_DESIRE_HIGH = 0.8,
         dofile = function() return {} end,
         print = function() end,
         require = function(name) return modules[name] or {} end,
     }, { __index = _G })
     modules['bots/FunLib/aba_skill'] = setfenv(assert(loadfile('bots/FunLib/aba_skill.lua')), env)()
     modules['bots/FunLib/jmz_func'] = setfenv(assert(loadfile('bots/FunLib/jmz_func.lua')), env)()
+    local common = modules['bots/FunLib/jmz_func']
+    common.CanNotUseAbility = function() return false end
+    common.IsInTeamFight = function() return true end
+    common.GetHP = function() return 0.4 end
     return setfenv(assert(loadfile('bots/BotLib/hero_obsidian_destroyer.lua')), env)()
 end
 
@@ -81,3 +91,27 @@ assert(custom.sSkillList[1] == orb and custom.sSkillList[2] == objurgation and c
 assert(custom.sSkillList[10] == 'special_bonus_test_1', 'custom talent order was ignored')
 assert(custom.sBuyList == config.PurchaseList and custom.sSellList == config.SellList, 'custom items were ignored')
 print('PASS: OD default Objurgation build and enabled custom build')
+
+objurgationAvailable = false
+local hero = loadHero()
+slots[0].IsTrained = function() return false end
+local handle = slots[2]
+handle.IsNull = function() return false end
+handle.IsTrained = function() return true end
+handle.IsActivated = function() return true end
+handle.IsPassive = function() return false end
+handle.IsFullyCastable = function() return true end
+handle.GetSpecialValueFloat = function() return 0 end
+for _, name in ipairs({'SanitysEclipse', 'AstralImprisonment', 'ArcaneOrb'}) do
+    hero['Consider' .. name] = function() return 0 end
+end
+hero.SkillsComplement()
+assert(#casts == 0, 'issued a missing Objurgation')
+objurgationAvailable = true
+handle.IsHidden = function() return true end
+hero.SkillsComplement()
+assert(#casts == 0, 'issued a hidden Objurgation')
+handle.IsHidden = function() return false end
+hero.SkillsComplement()
+assert(#casts == 1 and casts[1] == handle, 'did not use the now available Objurgation')
+print('PASS: OD waits for a usable Objurgation handle')
