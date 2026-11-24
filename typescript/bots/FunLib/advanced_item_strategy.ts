@@ -5,11 +5,10 @@
  */
 
 import { HeroName } from "bots/ts_libs/dota/heroes";
+import { UnitType } from "bots/ts_libs/dota";
 import { HeroRolesMap, IsRanged } from "./aba_hero_roles_map";
 
 // Type definitions for Dota 2 API
-declare const GetTeamMember: (team: number, index: number) => any;
-declare const GetOpposingTeam: () => number;
 declare const DotaTime: () => number;
 
 // Position types (pos_1 to pos_5) - these define the primary roles
@@ -263,10 +262,14 @@ const HERO_SPECIFIC_MODIFICATIONS: Partial<
 
 function getEnemyHeroes(): HeroName[] {
     const enemies: HeroName[] = [];
-    for (let i = 1; i <= 5; i++) {
-        const enemy = GetTeamMember(GetOpposingTeam(), i);
-        if (enemy && enemy.IsHero()) {
-            enemies.push(enemy.GetUnitName() as HeroName);
+    const seen: Partial<Record<HeroName, boolean>> = {};
+    for (const enemy of GetUnitList(UnitType.EnemyHeroes)) {
+        if (enemy && !enemy.IsNull() && enemy.CanBeSeen() && enemy.IsAlive() && enemy.IsHero() && !enemy.IsIllusion()) {
+            const name = enemy.GetUnitName() as HeroName;
+            if (!seen[name]) {
+                seen[name] = true;
+                enemies.push(name);
+            }
         }
     }
     return enemies;

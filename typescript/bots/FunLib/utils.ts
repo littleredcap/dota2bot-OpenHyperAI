@@ -303,8 +303,8 @@ export function PrintPings(pingTimeGap: number): void {
     //     PrintTable(zone);
     // }
 
-    for (const playerId of GetTeamPlayers(GetTeam())) {
-        const allyHero = GetTeamMember(playerId);
+    for (const [teamSlot] of ipairs(GetTeamPlayers(GetTeam()))) {
+        const allyHero = GetTeamMember(teamSlot);
         if (allyHero === null || allyHero.IsIllusion()) {
             continue;
         }
@@ -391,8 +391,8 @@ export function SetFrameProcessTime(bot: Unit): void {
 }
 
 export function GetHumanPing(): LuaMultiReturn<[Unit, Ping] | [null, null]> {
-    for (const playerId of GetTeamPlayers(GetTeam())) {
-        const teamMember = GetTeamMember(playerId);
+    for (const [teamSlot] of ipairs(GetTeamPlayers(GetTeam()))) {
+        const teamMember = GetTeamMember(teamSlot);
         if (teamMember !== null && !teamMember.IsBot()) {
             return $multi(teamMember, teamMember.GetMostRecentPing());
         }
@@ -409,8 +409,8 @@ export function IsPingedByAnyPlayer(bot: Unit, pingTimeGap: number, minDistance:
 
     minDistance = minDistance || 1500;
     maxDistance = maxDistance || 10000;
-    for (const playerId of GetTeamPlayers(GetTeam())) {
-        const teamMember = GetTeamMember(playerId);
+    for (const [teamSlot] of ipairs(GetTeamPlayers(GetTeam()))) {
+        const teamMember = GetTeamMember(teamSlot);
         if (teamMember === null || teamMember.IsIllusion() || teamMember === bot) {
             continue;
         }
@@ -693,14 +693,14 @@ export function NumHumanBotPlayersInTeam(team: Team): LuaMultiReturn<[number, nu
 export function GetNearbyAllyAverageHpPercent(bot: Unit, radius: number): number {
     let sum = 0,
         cnt = 0;
-    for (const playerId of GetTeamPlayers(bot.GetTeam())) {
-        const ally = GetTeamMember(playerId);
+    for (const [teamSlot] of ipairs(GetTeamPlayers(bot.GetTeam()))) {
+        const ally = GetTeamMember(teamSlot);
         if (ally && ally.IsAlive() && GetUnitToUnitDistance(ally, bot) <= radius) {
             sum += ally.GetHealth() / ally.GetMaxHealth();
             cnt++;
         }
     }
-    return cnt != null ? sum / cnt : 0;
+    return cnt > 0 ? sum / cnt : 0;
 }
 
 export function IsWithoutSpellShield(npcEnemy: Unit): boolean {
@@ -1239,9 +1239,9 @@ export function IsTeamPushingSecondTierOrHighGround(bot: Unit): boolean {
     }
     const enemyAncient = GetAncient(GetOpposingTeam());
     if (enemyAncient !== null) {
-        for (let playerdId of GetTeamPlayers(bot.GetTeam())) {
-            if (IsHeroAlive(playerdId)) {
-                const teamMember = GetTeamMember(playerdId);
+        for (const [teamSlot, playerId] of ipairs(GetTeamPlayers(bot.GetTeam()))) {
+            if (IsHeroAlive(playerId)) {
+                const teamMember = GetTeamMember(teamSlot);
                 if (
                     teamMember !== null &&
                     teamMember.GetNearbyHeroes(2000, false, BotMode.None).length >= 2 &&
@@ -1328,8 +1328,8 @@ export function FindAllyWithAtLeastDistanceAway(bot: Unit, nDistance: number) {
         return null;
     }
 
-    for (const playerId of GetTeamPlayers(GetTeam())) {
-        const teamMember = GetTeamMember(playerId);
+    for (const [teamSlot] of ipairs(GetTeamPlayers(GetTeam()))) {
+        const teamMember = GetTeamMember(teamSlot);
         if (teamMember !== null && teamMember.IsAlive() && GetUnitToUnitDistance(teamMember, bot) >= nDistance) {
             return teamMember;
         }
@@ -1802,8 +1802,8 @@ export function HasTeamMemberWithCriticalSpellInCooldown(targetLoc: Vector): boo
     // if (cachedRes !== null) {
     //     return cachedRes;
     // }
-    for (const playerId of GetTeamPlayers(GetTeam())) {
-        const teamMember = GetTeamMember(playerId);
+    for (const [teamSlot] of ipairs(GetTeamPlayers(GetTeam()))) {
+        const teamMember = GetTeamMember(teamSlot);
         if (teamMember !== null && teamMember.IsAlive()) {
             const nDuration = GetUnitToLocationDistance(teamMember, targetLoc) / teamMember.GetCurrentMovementSpeed();
             if (HasCriticalSpellWithCooldown(teamMember, nDuration)) {
@@ -1829,8 +1829,8 @@ export function HasTeamMemberWithCriticalItemInCooldown(targetLoc: Vector): bool
     // if (cachedRes !== null) {
     //     return cachedRes;
     // }
-    for (const playerId of GetTeamPlayers(GetTeam())) {
-        const teamMember = GetTeamMember(playerId);
+    for (const [teamSlot] of ipairs(GetTeamPlayers(GetTeam()))) {
+        const teamMember = GetTeamMember(teamSlot);
         if (teamMember !== null && teamMember.IsAlive()) {
             const nDuration = GetUnitToLocationDistance(teamMember, targetLoc) / teamMember.GetCurrentMovementSpeed();
             for (const itemName of ImportantItems) {

@@ -152,6 +152,8 @@ end
 local ____exports = {}
 local ____heroes = require(GetScriptDirectory().."/ts_libs/dota/heroes")
 local HeroName = ____heroes.HeroName
+local ____dota = require(GetScriptDirectory().."/ts_libs/dota/index")
+local UnitType = ____dota.UnitType
 local ____aba_hero_roles_map = require(GetScriptDirectory().."/FunLib/aba_hero_roles_map")
 local HeroRolesMap = ____aba_hero_roles_map.HeroRolesMap
 local IsRanged = ____aba_hero_roles_map.IsRanged
@@ -326,17 +328,14 @@ end
 local HERO_SPECIFIC_MODIFICATIONS = {[HeroName.OgreMagi] = {addItems = {"item_hand_of_midas"}}, [HeroName.Slark] = {replaceItems = {item_bfury = {"item_diffusal_blade"}}}}
 local function getEnemyHeroes()
     local enemies = {}
-    do
-        local i = 1
-        while i <= 5 do
-            local enemy = GetTeamMember(
-                GetOpposingTeam(),
-                i
-            )
-            if enemy and enemy.IsHero() then
-                enemies[#enemies + 1] = enemy.GetUnitName()
+    local seen = {}
+    for ____, enemy in ipairs(GetUnitList(UnitType.EnemyHeroes)) do
+        if enemy and not enemy:IsNull() and enemy:CanBeSeen() and enemy:IsAlive() and enemy:IsHero() and not enemy:IsIllusion() then
+            local name = enemy:GetUnitName()
+            if not seen[name] then
+                seen[name] = true
+                enemies[#enemies + 1] = name
             end
-            i = i + 1
         end
     end
     return enemies

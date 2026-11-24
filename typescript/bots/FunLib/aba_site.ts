@@ -378,8 +378,8 @@ export const IsTheClosestOne = function (bot: Unit, loc: Vector): boolean {
     let minDist = GetUnitToLocationDistance(bot, loc);
     let closestMember = bot;
 
-    for (const id of GetTeamPlayers(GetTeam())) {
-        const member = GetTeamMember(id);
+    for (const [teamSlot] of ipairs(GetTeamPlayers(GetTeam()))) {
+        const member = GetTeamMember(teamSlot);
         if (member && member.IsAlive() && member.GetActiveMode() === BotMode.Farm) {
             const memberDist = GetUnitToLocationDistance(member, loc);
             if (memberDist < minDist) {

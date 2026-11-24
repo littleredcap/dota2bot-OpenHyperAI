@@ -6047,37 +6047,26 @@ function J.GetTormentorWaitingLocation(team)
 	end
 end
 
-local AllyPIDs = nil
 function J.IsClosestToDustLocation(bot, loc)
-	if AllyPIDs == nil then AllyPIDs = GetTeamPlayers(GetTeam()) end
-
-	local closest = nil
-	local closestDist = 100000
-
-	for _, id in pairs(AllyPIDs)
-	do
-		local member = GetTeamMember(id)
-
-		if J.IsValidHero(member)		
-		and member:GetItemSlotType(member:FindItemSlot('item_dust')) == ITEM_SLOT_TYPE_MAIN
-		and member:GetItemInSlot(member:FindItemSlot('item_dust')):IsFullyCastable()
-		and not J.IsSuspiciousIllusion(member)
-		then
-			local dist = GetUnitToLocationDistance(member, loc)
-
-			if dist < closestDist
-			then
-				closest = member
-				closestDist = dist
-			end
-		end
-	end
-
-	if closest ~= nil
-	then
-		return closest == bot
-	end
+    local closest = nil
+    local closestDist = 100000
+    for teamSlot in ipairs(GetTeamPlayers(GetTeam())) do
+        local member = GetTeamMember(teamSlot)
+        if J.IsValidHero(member) and not J.IsSuspiciousIllusion(member) then
+            local dustSlot = member:FindItemSlot('item_dust')
+            if dustSlot >= 0 and member:GetItemSlotType(dustSlot) == ITEM_SLOT_TYPE_MAIN then
+                local dust = member:GetItemInSlot(dustSlot)
+                local distance = GetUnitToLocationDistance(member, loc)
+                if dust ~= nil and dust:IsFullyCastable() and distance < closestDist then
+                    closest = member
+                    closestDist = distance
+                end
+            end
+        end
+    end
+    if closest ~= nil then return closest == bot end
 end
+
 
 function J.GetXUnitsTowardsLocation2(iLoc, tLoc, nUnits)
     local dir = (tLoc - iLoc):Normalized()

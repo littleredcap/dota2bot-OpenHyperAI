@@ -910,11 +910,11 @@ function ____exports.PrintUnitModifiers(unit)
 end
 function ____exports.PrintPings(pingTimeGap)
     local listPings = {}
-    for ____, playerId in ipairs(GetTeamPlayers(GetTeam())) do
+    for teamSlot in ipairs(GetTeamPlayers(GetTeam())) do
         do
             local __continue13
             repeat
-                local allyHero = GetTeamMember(playerId)
+                local allyHero = GetTeamMember(teamSlot)
                 if allyHero == nil or allyHero:IsIllusion() then
                     __continue13 = true
                     break
@@ -1006,8 +1006,8 @@ function ____exports.SetFrameProcessTime(bot)
     end
 end
 function ____exports.GetHumanPing()
-    for ____, playerId in ipairs(GetTeamPlayers(GetTeam())) do
-        local teamMember = GetTeamMember(playerId)
+    for teamSlot in ipairs(GetTeamPlayers(GetTeam())) do
+        local teamMember = GetTeamMember(teamSlot)
         if teamMember ~= nil and not teamMember:IsBot() then
             return teamMember, teamMember:GetMostRecentPing()
         end
@@ -1021,11 +1021,11 @@ function ____exports.IsPingedByAnyPlayer(bot, pingTimeGap, minDistance, maxDista
     local pings = {}
     minDistance = minDistance or 1500
     maxDistance = maxDistance or 10000
-    for ____, playerId in ipairs(GetTeamPlayers(GetTeam())) do
+    for teamSlot in ipairs(GetTeamPlayers(GetTeam())) do
         do
             local __continue42
             repeat
-                local teamMember = GetTeamMember(playerId)
+                local teamMember = GetTeamMember(teamSlot)
                 if teamMember == nil or teamMember:IsIllusion() or teamMember == bot then
                     __continue42 = true
                     break
@@ -1248,14 +1248,14 @@ end
 function ____exports.GetNearbyAllyAverageHpPercent(bot, radius)
     local sum = 0
     local cnt = 0
-    for ____, playerId in ipairs(GetTeamPlayers(bot:GetTeam())) do
-        local ally = GetTeamMember(playerId)
+    for teamSlot in ipairs(GetTeamPlayers(bot:GetTeam())) do
+        local ally = GetTeamMember(teamSlot)
         if ally and ally:IsAlive() and GetUnitToUnitDistance(ally, bot) <= radius then
             sum = sum + ally:GetHealth() / ally:GetMaxHealth()
             cnt = cnt + 1
         end
     end
-    return cnt ~= nil and sum / cnt or 0
+    return cnt > 0 and sum / cnt or 0
 end
 function ____exports.IsWithoutSpellShield(npcEnemy)
     return not npcEnemy:HasModifier("modifier_item_sphere_target") and not npcEnemy:HasModifier("modifier_antimage_spell_shield") and not npcEnemy:HasModifier("modifier_item_lotus_orb_active")
@@ -1692,9 +1692,9 @@ function ____exports.IsTeamPushingSecondTierOrHighGround(bot)
     end
     local enemyAncient = GetAncient(GetOpposingTeam())
     if enemyAncient ~= nil then
-        for ____, playerdId in ipairs(GetTeamPlayers(bot:GetTeam())) do
-            if IsHeroAlive(playerdId) then
-                local teamMember = GetTeamMember(playerdId)
+        for teamSlot, playerId in ipairs(GetTeamPlayers(bot:GetTeam())) do
+            if IsHeroAlive(playerId) then
+                local teamMember = GetTeamMember(teamSlot)
                 if teamMember ~= nil and #teamMember:GetNearbyHeroes(2000, false, BotMode.None) >= 2 and (____exports.IsNearEnemySecondTierTower(teamMember, 2000) or ____exports.IsNearEnemyHighGroundTower(teamMember, 3000) or GetUnitToUnitDistance(teamMember, enemyAncient) < 3000) then
                     ____exports.SetCachedVars(cacheKey, true)
                     return true
@@ -1761,8 +1761,8 @@ function ____exports.FindAllyWithAtLeastDistanceAway(bot, nDistance)
         print("[ERROR] Wrong usage of the method")
         return nil
     end
-    for ____, playerId in ipairs(GetTeamPlayers(GetTeam())) do
-        local teamMember = GetTeamMember(playerId)
+    for teamSlot in ipairs(GetTeamPlayers(GetTeam())) do
+        local teamMember = GetTeamMember(teamSlot)
         if teamMember ~= nil and teamMember:IsAlive() and GetUnitToUnitDistance(teamMember, bot) >= nDistance then
             return teamMember
         end
@@ -2083,8 +2083,8 @@ end
 -- @param targetLoc - The location to check.
 -- @returns True if the team has a member with a critical spell in cooldown, false otherwise.
 function ____exports.HasTeamMemberWithCriticalSpellInCooldown(targetLoc)
-    for ____, playerId in ipairs(GetTeamPlayers(GetTeam())) do
-        local teamMember = GetTeamMember(playerId)
+    for teamSlot in ipairs(GetTeamPlayers(GetTeam())) do
+        local teamMember = GetTeamMember(teamSlot)
         if teamMember ~= nil and teamMember:IsAlive() then
             local nDuration = GetUnitToLocationDistance(teamMember, targetLoc) / teamMember:GetCurrentMovementSpeed()
             if ____exports.HasCriticalSpellWithCooldown(teamMember, nDuration) then
@@ -2100,8 +2100,8 @@ end
 -- @param targetLoc - The location to check.
 -- @returns True if the team has a member with a critical item in cooldown, false otherwise.
 function ____exports.HasTeamMemberWithCriticalItemInCooldown(targetLoc)
-    for ____, playerId in ipairs(GetTeamPlayers(GetTeam())) do
-        local teamMember = GetTeamMember(playerId)
+    for teamSlot in ipairs(GetTeamPlayers(GetTeam())) do
+        local teamMember = GetTeamMember(teamSlot)
         if teamMember ~= nil and teamMember:IsAlive() then
             local nDuration = GetUnitToLocationDistance(teamMember, targetLoc) / teamMember:GetCurrentMovementSpeed()
             for ____, itemName in ipairs(____exports.ImportantItems) do

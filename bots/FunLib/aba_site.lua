@@ -454,8 +454,8 @@ end
 ____exports.IsTheClosestOne = function(bot, loc)
     local minDist = GetUnitToLocationDistance(bot, loc)
     local closestMember = bot
-    for ____, id in ipairs(GetTeamPlayers(GetTeam())) do
-        local member = GetTeamMember(id)
+    for teamSlot in ipairs(GetTeamPlayers(GetTeam())) do
+        local member = GetTeamMember(teamSlot)
         if member and member:IsAlive() and member:GetActiveMode() == BotMode.Farm then
             local memberDist = GetUnitToLocationDistance(member, loc)
             if memberDist < minDist then
