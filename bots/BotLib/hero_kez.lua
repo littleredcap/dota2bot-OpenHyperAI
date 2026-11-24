@@ -166,7 +166,6 @@ local RaptorDance = bot:GetAbilityByName( 'kez_raptor_dance' )
 local FalconRush = bot:GetAbilityByName( 'kez_falcon_rush' )
 local TalonToss = bot:GetAbilityByName( 'kez_talon_toss' )
 local ShodoSai = bot:GetAbilityByName( 'kez_shodo_sai' )
-local ShodoSaiParryCancel = bot:GetAbilityByName( 'kez_shodo_sai_parry_cancel' )
 local RavensVeil = bot:GetAbilityByName( 'kez_ravens_veil' )
 
 local nKeepMana = 220
@@ -276,9 +275,10 @@ function X.SkillsComplement()
         return
     end
 
-    ShodoSaiCancelDesire = X.ConsiderShodoSaiCancel()
+    local parryCancel = bot:GetAbilityByName('kez_shodo_sai_parry_cancel')
+    ShodoSaiCancelDesire = X.ConsiderShodoSaiCancel(parryCancel)
     if ShodoSaiCancelDesire > 0 then
-        bot:Action_UseAbility(ShodoSaiCancel)
+        bot:Action_UseAbility(parryCancel)
         return
     end
 
@@ -798,8 +798,8 @@ function X.ConsiderShodoSai()
     return BOT_ACTION_DESIRE_NONE, 0
 end
 
-function X.ConsiderShodoSaiCancel()
-    if not J.CanCastAbility(ShodoSaiCancel) then
+function X.ConsiderShodoSaiCancel(parryCancel)
+    if not J.CanCastAbility(parryCancel) then
         return BOT_ACTION_DESIRE_NONE
     end
 

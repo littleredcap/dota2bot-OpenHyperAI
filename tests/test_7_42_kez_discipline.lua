@@ -11,6 +11,7 @@ local pairsBySlot = {
     {'kez_raptor_dance', 'kez_ravens_veil'},
 }
 local switch = 'kez_switch_weapons'
+local parryCancel = 'kez_shodo_sai_parry_cancel'
 local talent = 'special_bonus_test'
 local visible, unavailable, abilities = {}, {}, {}
 
@@ -31,6 +32,7 @@ for _, pair in ipairs(pairsBySlot) do
     addAbility(pair[2])
 end
 addAbility(switch)
+addAbility(parryCancel)
 addAbility(talent)
 
 local function expose(side)
@@ -58,7 +60,7 @@ local bot = {
     IsAlive = yes, IsHero = yes, IsInvulnerable = no, IsIllusion = no, IsRooted = no,
     HasModifier = no, HasScepter = function() return scepter end,
     GetAbilityPoints = function() return points end,
-    GetLevel = one, GetLocation = empty, GetNearbyTowers = empty,
+    GetLevel = one, GetLocation = empty, GetNearbyTowers = empty, GetNearbyHeroes = empty,
     GetHealth = one, GetMaxHealth = one, GetMana = one, GetMaxMana = one,
     Action_UseAbility = function(_, ability) table.insert(casts, ability:GetName()) end,
     ActionImmediate_LevelAbility = function(_, name) table.insert(leveled, name) end,
@@ -81,7 +83,10 @@ local J = {
     GetHP = function() return 0.5 end,
     GetManaAfter = one,
     GetEnemiesNearLoc = function() return {enemy} end,
-    CanCastAbility = function(ability) return ability == abilities[switch] or ability == abilities.kez_ravens_veil end,
+    CanCastAbility = function(ability)
+        return ability == abilities[switch] or ability == abilities.kez_ravens_veil
+            or (ability == abilities[parryCancel] and not ability:IsHidden())
+    end,
     IsStaleARDMHero = function() return false, bot, bot:GetUnitName() end,
     Item = {GetRoleItemsBuyList = function() return 'pos_1' end},
     Role = {IsPvNMode = no, IsAllShadow = no},
@@ -108,6 +113,7 @@ end
 J.Skill = loadModule('bots/FunLib/aba_skill.lua')
 J.Skill.GetTalentList, J.Skill.GetAbilityList = empty, empty
 hero = loadModule('bots/BotLib/hero_kez.lua')
+local considerParryCancel = hero.ConsiderShodoSaiCancel
 for _, spell in ipairs({'EchoSlash', 'GrapplingClaw', 'RaptorDance', 'FalconRush', 'RavensVeil',
     'KazuraiKatana', 'TalonToss', 'ShodoSaiCancel', 'ShodoSai'}) do
     hero['Consider' .. spell] = function() return 0 end
@@ -172,4 +178,19 @@ expose(1) -- The queued switch has now actually completed.
 usage.AbilityUsageThink()
 assert(#casts == 4 and casts[4] == switch, 'did not observe katana after the queued switch')
 
+expose(2)
+points = 1 -- Hold the regular weapon switch so the existing retreat cancel can run.
+J.GetAlliesNearLoc = function() return {{}} end
+hero.ConsiderShodoSaiCancel = considerParryCancel
+unavailable[parryCancel] = 'missing'
+usage.AbilityUsageThink()
+assert(#casts == 4, 'issued a missing parry cancel')
+unavailable[parryCancel] = nil
+usage.AbilityUsageThink()
+assert(#casts == 4, 'issued a hidden parry cancel')
+visible[parryCancel] = true
+usage.AbilityUsageThink()
+assert(#casts == 5 and casts[5] == parryCancel, 'did not issue the visible parry cancel')
+
 print('PASS: Kez paired leveling and live discipline in both callbacks')
+print('PASS: Kez resolves the parry cancel handle when it is exposed')
