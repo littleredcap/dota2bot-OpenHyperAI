@@ -119,6 +119,7 @@ J.Skill.GetTalentList, J.Skill.GetAbilityList = empty, empty
 hero = loadModule('bots/BotLib/hero_kez.lua')
 local considerParryCancel = hero.ConsiderShodoSaiCancel
 local considerEchoSlash, considerRaptorDance = hero.ConsiderEchoSlash, hero.ConsiderRaptorDance
+local considerKazuraiKatana = hero.ConsiderKazuraiKatana
 for _, spell in ipairs({'EchoSlash', 'GrapplingClaw', 'RaptorDance', 'FalconRush', 'RavensVeil',
     'KazuraiKatana', 'TalonToss', 'ShodoSaiCancel', 'ShodoSai'}) do
     hero['Consider' .. spell] = function() return 0 end
@@ -236,3 +237,33 @@ expectPhysicalCast(echo, 200)
 hero.ConsiderRaptorDance = considerRaptorDance
 expectPhysicalCast(raptor, 310)
 print('PASS: Kez Echo Slash and Raptor Dance use current 7.42 damage')
+
+local katana = 'kez_kazurai_katana'
+setValues(katana, {bleed_as_rupture_pct = 50, max_stacks = 500})
+abilities[katana].GetCastRange = function() return 200 end
+hero.ConsiderKazuraiKatana = considerKazuraiKatana
+J.CanCastAbility = function(handle) return handle == abilities[katana] end
+J.GetProperCastRange = function(_, _, range) return range end
+J.CanCastOnTargetAdvanced = yes
+local distance, stacks, katanaCasts = 200, 900, 0
+J.IsInRange = function(_, target, range) return target == enemy and distance <= range end
+J.GetModifierCount = function(target, modifier)
+    assert(target == enemy and modifier == 'modifier_kez_katana_bleed')
+    return stacks
+end
+J.CanKillTarget = function(target, damage, damageType)
+    assert(target == enemy and damage == 250 and damageType == env.DAMAGE_TYPE_PHYSICAL)
+    return true
+end
+bot.Action_UseAbilityOnEntity = function(_, ability, target)
+    assert(ability == abilities[katana] and target == enemy)
+    katanaCasts = katanaCasts + 1
+end
+usage.AbilityUsageThink()
+assert(katanaCasts == 1)
+distance = 201
+usage.AbilityUsageThink()
+distance, stacks = 200, 0
+usage.AbilityUsageThink()
+assert(katanaCasts == 1, 'issued an out-of-range or zero-bleed Katana')
+print('PASS: Kez Kazurai Katana checks cast range and caps the target’s bleed burst')

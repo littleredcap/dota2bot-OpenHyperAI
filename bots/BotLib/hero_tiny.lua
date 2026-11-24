@@ -219,7 +219,7 @@ function X.ConsiderAvalanche()
 
 	local nCastRange = J.GetProperCastRange(false, bot, Avalanche:GetCastRange())
 	local nRadius = Avalanche:GetSpecialValueInt('radius')
-	local nDamage = Avalanche:GetSpecialValueInt('value') * (1 + bot:GetSpellAmp())
+	local nDamage = Avalanche:GetSpecialValueInt('avalanche_damage') * (1 + bot:GetSpellAmp())
 	local nManaCost = Avalanche:GetManaCost()
 	local botTarget = J.GetProperTarget(bot)
 

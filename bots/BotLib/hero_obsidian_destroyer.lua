@@ -494,10 +494,6 @@ function X.ConsiderObjurgation()
         return BOT_ACTION_DESIRE_NONE
     end
 
-    local nBarrierPct = Objurgation:GetSpecialValueFloat('mana_pool_to_barrier_pct') / 100
-    local nBarrierFlat = Objurgation:GetSpecialValueFloat('barrier')
-    local nBarrier = nBarrierFlat + bot:GetMana() * nBarrierPct
-
     if J.IsInTeamFight(bot, 1200)
     then
         if J.GetHP(bot) < 0.7

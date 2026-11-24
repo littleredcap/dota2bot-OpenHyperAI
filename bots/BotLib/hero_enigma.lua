@@ -143,8 +143,6 @@ local DemonicSummoning  = bot:GetAbilityByName('enigma_demonic_conversion')
 local MidnightPulse     = bot:GetAbilityByName('enigma_midnight_pulse')
 local BlackHole         = bot:GetAbilityByName('enigma_black_hole')
 
-local MaleficeAdditionalInstanceTalent = bot:GetAbilityByName('special_bonus_unique_enigma_2')
-local MidnightPulseRadiusTalent = bot:GetAbilityByName('special_bonus_unique_enigma_6')
 
 local MaleficeDesire, MaleficeTarget
 local DemonicSummoningDesire, DemonicSummoningLocation
@@ -259,12 +257,7 @@ function X.ConsiderMalefice()
     end
 
 	local nCastRange = J.GetProperCastRange(false, bot, Malefice:GetCastRange())
-    local nStunInstances = Malefice:GetSpecialValueInt('value')
-
-    if MaleficeAdditionalInstanceTalent:IsTrained()
-    then
-        nStunInstances = nStunInstances + Malefice:GetSpecialValueInt('value')
-    end
+    local nStunInstances = Malefice:GetSpecialValueInt('stun_instances')
 
 	local nDamage = Malefice:GetSpecialValueInt('damage') * nStunInstances
 
@@ -554,11 +547,6 @@ function X.ConsiderMidnightPulse()
     local nCastRange = J.GetProperCastRange(false, bot, MidnightPulse:GetCastRange())
     local nRadius = MidnightPulse:GetSpecialValueInt('radius')
 
-    if MidnightPulseRadiusTalent:IsTrained()
-    then
-        nRadius = nRadius + MidnightPulse:GetSpecialValueInt('value')
-    end
-
 	if J.IsInTeamFight(bot, 1200)
 	then
 		local nLocationAoE = bot:FindAoELocation(true, true, bot:GetLocation(), nCastRange, nRadius / 2, 0, 0)
@@ -641,7 +629,7 @@ function X.ConsiderBlackHole()
 
 	local nCastRange = J.GetProperCastRange(false, bot, BlackHole:GetCastRange())
     local nRadius = BlackHole:GetSpecialValueInt('radius')
-    local nDamage = BlackHole:GetSpecialValueInt('value')
+    local nDamage = BlackHole:GetSpecialValueInt('damage')
     local nDuration = BlackHole:GetSpecialValueInt('duration')
 
 	if J.IsInTeamFight(bot, 1200)

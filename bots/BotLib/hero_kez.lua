@@ -554,20 +554,18 @@ function X.ConsiderKazuraiKatana()
         return BOT_ACTION_DESIRE_NONE, nil
     end
 
-    local nCastRange = KazuraiKatana:GetSpecialValueInt('katana_attack_range')
-    local fBonusDamagePercentage = KazuraiKatana:GetSpecialValueInt('katana_bonus_damage') / 100
+    local nCastRange = J.GetProperCastRange(false, bot, KazuraiKatana:GetCastRange())
+    local nBurstPct = KazuraiKatana:GetSpecialValueFloat('bleed_as_rupture_pct') / 100
+    local nMaxStacks = KazuraiKatana:GetSpecialValueInt('max_stacks')
 
     for _, enemy in pairs(hEnemyList) do
         if J.IsValidHero(enemy)
         and J.IsInRange(bot, enemy, nCastRange)
+        and J.CanBeAttacked(enemy)
         and J.CanCastOnTargetAdvanced(enemy)
         then
-            if enemy:IsChanneling() then
-                return BOT_ACTION_DESIRE_HIGH, enemy
-            end
-
-            local nDamage = J.GetModifierCount(bot, 'modifier_kez_katana_bleed')
-            if J.CanKillTarget(enemy, nDamage, DAMAGE_TYPE_PHYSICAL)
+            local nDamage = math.min(J.GetModifierCount(enemy, 'modifier_kez_katana_bleed'), nMaxStacks) * nBurstPct
+            if nDamage > 0 and J.CanKillTarget(enemy, nDamage, DAMAGE_TYPE_PHYSICAL)
             and not enemy:HasModifier('modifier_abaddon_borrowed_time')
             and not enemy:HasModifier('modifier_dazzle_shallow_grave')
             and not enemy:HasModifier('modifier_necrolyte_reapers_scythe')
@@ -583,6 +581,7 @@ function X.ConsiderKazuraiKatana()
     if J.IsGoingOnSomeone(bot) then
         if J.IsValidHero(botTarget)
         and J.IsInRange(bot, botTarget, nCastRange)
+        and J.CanBeAttacked(botTarget)
         and J.CanCastOnTargetAdvanced(botTarget)
         and not botTarget:HasModifier('modifier_abaddon_borrowed_time')
         and not botTarget:HasModifier('modifier_dazzle_shallow_grave')
@@ -591,7 +590,7 @@ function X.ConsiderKazuraiKatana()
         and not botTarget:HasModifier('modifier_troll_warlord_battle_trance')
         and not botTarget:HasModifier('modifier_ursa_enrage')
         then
-            local nDamage = J.GetModifierCount(bot, 'modifier_kez_katana_bleed')
+            local nDamage = math.min(J.GetModifierCount(botTarget, 'modifier_kez_katana_bleed'), nMaxStacks) * nBurstPct
             if (nDamage / bot:GetHealth()) > RemapValClamped(KazuraiKatana:GetLevel(), 2, 4, 0.1, 0.25)
             then
                 return BOT_ACTION_DESIRE_HIGH, botTarget

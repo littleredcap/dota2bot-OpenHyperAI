@@ -110,7 +110,7 @@ local ArenaOfBlood 	= bot:GetAbilityByName('mars_arena_of_blood')
 
 local SpearOfMarsDesire, SpearOfMarsLocation
 local GodsRebukeDesire, GodsRebukeLocation
-local BulwarkDesire
+local BulwarkDesire, BulwarkLocation
 local ArenaOfBloodDesire, ArenaOfBloodLocation
 
 local SpearToAllyDesire, SpearToAllyLocation
@@ -163,10 +163,14 @@ function X.SkillsComplement()
 		return
 	end
 
-	BulwarkDesire = X.ConsiderBulwark()
+	BulwarkDesire, BulwarkLocation = X.ConsiderBulwark()
 	if BulwarkDesire > 0
 	then
-		bot:Action_UseAbility(Bulwark)
+		if J.CheckBitfieldFlag(Bulwark:GetBehavior(), ABILITY_BEHAVIOR_POINT) then
+			bot:Action_UseAbilityOnLocation(Bulwark, BulwarkLocation)
+		else
+			bot:Action_UseAbility(Bulwark)
+		end
 		return
 	end
 end
@@ -505,7 +509,7 @@ function X.ConsiderBulwark()
 		return BOT_ACTION_DESIRE_NONE
 	end
 
-	local nRange = Bulwark:GetSpecialValueInt('soldier_offset')
+	local active = Bulwark:GetToggleState() or bot:HasModifier('modifier_mars_bulwark_active')
 
 	if J.IsRetreating(bot)
 	and not J.IsRealInvisible(bot)
@@ -514,7 +518,7 @@ function X.ConsiderBulwark()
 
 		if #nInRangeAlly >= 1
 		then
-			local numFacing = 0
+			local enemyLocation = nil
 			local nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
 
 			for _, enemyHero in pairs(nInRangeEnemy)
@@ -525,16 +529,15 @@ function X.ConsiderBulwark()
 				and not J.IsSuspiciousIllusion(enemyHero)
 				and not J.IsDisabled(enemyHero)
 				then
-					numFacing = numFacing + 1
+					enemyLocation = enemyHero:GetLocation()
+					break
 				end
 			end
 
-			if  numFacing >= 1
-			and nInRangeEnemy ~= nil
-			and #nInRangeEnemy > #nInRangeAlly
+			if enemyLocation ~= nil and #nInRangeEnemy > #nInRangeAlly
 			then
-				if Bulwark:GetToggleState() == false then
-					return BOT_ACTION_DESIRE_HIGH
+				if not active then
+					return BOT_ACTION_DESIRE_HIGH, enemyLocation
 				end
 
 				return BOT_ACTION_DESIRE_NONE
@@ -542,21 +545,8 @@ function X.ConsiderBulwark()
 		end
 	end
 
-	if J.IsGoingOnSomeone(bot)
-	and J.IsInRange(bot, botTarget, nRange)
-	then
-		if bot:HasScepter()
-		then
-			if Bulwark:GetToggleState() == false then
-				return BOT_ACTION_DESIRE_HIGH
-			end
-
-			return BOT_ACTION_DESIRE_NONE
-		end
-	end
-
-	if Bulwark:GetToggleState() == true then
-		return BOT_ACTION_DESIRE_HIGH
+	if active then
+		return BOT_ACTION_DESIRE_HIGH, J.GetFaceTowardDistanceLocation(bot, 100)
 	end
 
 	return BOT_ACTION_DESIRE_NONE

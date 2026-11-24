@@ -89,7 +89,7 @@ end
 local Reflection    = bot:GetAbilityByName( "terrorblade_reflection" )
 local ConjureImage  = bot:GetAbilityByName( "terrorblade_conjure_image" )
 local Metamorphosis = bot:GetAbilityByName( "terrorblade_metamorphosis" )
-local DemonZeal     = bot:GetAbilityByName( "terrorblade_demon_zeal" )
+local DemonZeal
 local TerrorWave    = bot:GetAbilityByName( "terrorblade_terror_wave" )
 local Sunder        = bot:GetAbilityByName( "terrorblade_sunder" )
 
@@ -381,18 +381,18 @@ function X.ConsiderSunder()
 end
 
 function X.ConsiderDemonZeal()
-    if not DemonZeal:IsTrained()
-	or not DemonZeal:IsFullyCastable()
+    DemonZeal = bot:GetAbilityByName('terrorblade_demon_zeal')
+    if not J.CanCastAbility(DemonZeal)
+	or bot:HasModifier('modifier_terrorblade_metamorphosis_transform')
 	then
 		return BOT_ACTION_DESIRE_NONE
 	end
 
-    local nHealthCost = bot:GetHealth() * DemonZeal:GetSpecialValueFloat('value')
-    local nRadius = bot:GetAttackRange() + Metamorphosis:GetSpecialValueInt('bonus_range')
+    local nHealthCost = bot:GetHealth() * DemonZeal:GetSpecialValueFloat('health_cost_pct') / 100
+    local nRadius = bot:GetAttackRange()
 	local botTarget = J.GetProperTarget(bot)
 
-	if (((bot:GetHealth() - nHealthCost) / bot:GetMaxHealth()) > 0.5)
-	and bot:HasModifier('modifier_terrorblade_metamorphosis_transform')
+	if (bot:GetHealth() - nHealthCost) / bot:GetMaxHealth() > 0.5
 	then
 		if J.IsInTeamFight(bot, 1200)
 		then
@@ -430,13 +430,13 @@ end
 
 function X.ConsiderTerrorWave()
 	if not bot:HasScepter()
-    or not TerrorWave:IsFullyCastable()
+    or not J.CanCastAbility(TerrorWave)
 	or bot:HasModifier('modifier_terrorblade_metamorphosis_transform')
 	then
 		return BOT_ACTION_DESIRE_NONE
 	end
 
-	local nRadius = bot:GetAttackRange() + Metamorphosis:GetSpecialValueInt('bonus_range')
+	local nRadius = TerrorWave:GetSpecialValueInt('scepter_radius')
 	local botTarget = J.GetProperTarget(bot)
 
 	if J.IsInTeamFight(bot, 1200)

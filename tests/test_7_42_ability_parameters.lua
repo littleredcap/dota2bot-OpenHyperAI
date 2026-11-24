@@ -18,7 +18,7 @@ local function ability(values)
         return values[key]
     end
     return {
-        IsFullyCastable = yes, IsTrained = yes, IsHidden = no, IsActivated = yes,
+        IsFullyCastable = yes, IsTrained = yes, IsHidden = no, IsActivated = yes, IsNull = no,
         GetSpecialValueInt = special, GetSpecialValueFloat = special,
         GetCastPoint = function() return 0.3 end,
         GetCastRange = function() return 800 end,
@@ -42,6 +42,7 @@ local function loadHero(name, spells, bot, common)
         RandomInt = function(first) return first end, TEAM_NEUTRAL = 4,
         GetUnitToUnitDistance = function() return 400 end,
         DotaTime = function() return bot.clock or 100 end, ABILITY_BEHAVIOR_UNIT_TARGET = 8,
+        ABILITY_BEHAVIOR_POINT = 16,
         BOT_ACTION_DESIRE_NONE = NONE, BOT_ACTION_DESIRE_HIGH = HIGH, DAMAGE_TYPE_MAGICAL = MAGICAL,
     }, {__index = _G})
     return setfenv(assert(loadfile('bots/BotLib/hero_' .. name .. '.lua')), env)()
@@ -300,3 +301,119 @@ unitTarget = true
 local wardDesire, wardTarget, attach = veno.ConsiderPlagueWard()
 assert(wardDesire == HIGH and wardTarget == farmer and attach)
 print('PASS: Venomancer only chooses Plague Ward attachments when the ability supports them')
+
+enemy.IsChanneling = no
+local enigma = loadHero('enigma', {
+    enigma_malefice = ability({stun_instances = 7, damage = 70}),
+}, {}, {
+    GetProperCastRange = properRange, GetNearbyHeroes = function() return {enemy} end,
+    IsValidHero = yes, CanCastOnNonMagicImmune = yes, CanCastOnTargetAdvanced = yes,
+    IsSuspiciousIllusion = no, IsCastingUltimateAbility = no, CanKillTarget = expectDamage,
+})
+enemy.expectedDamage = 490
+assert(enigma.ConsiderMalefice() == HIGH)
+
+local transformed, health = true, 800
+local demonZeal = loadHero('terrorblade', {
+    terrorblade_demon_zeal = ability({health_cost_pct = 20}),
+}, {
+    HasModifier = function() return transformed end,
+    GetHealth = function() return health end, GetMaxHealth = function() return 1000 end,
+    GetAttackRange = function() return 150 end,
+}, {
+    CanCastAbility = yes, IsInTeamFight = yes, GetNearbyHeroes = function() return {enemy, {}} end,
+    GetProperTarget = function() end,
+})
+assert(demonZeal.ConsiderDemonZeal() == NONE, 'Demon Zeal is illegal during Metamorphosis')
+transformed = false
+assert(demonZeal.ConsiderDemonZeal() == HIGH)
+health = 600
+assert(demonZeal.ConsiderDemonZeal() == NONE, 'Demon Zeal ignored health spent on cast')
+print('PASS: Enigma respects extra Malefice ticks and Terrorblade uses Demon Zeal outside Metamorphosis')
+
+local active, hp, mp = false, 0.4, 1
+local feast = ability({})
+feast.GetCastRange = function() return 125 end
+feast.GetBehavior = function() return active and 8 or 2 end
+local night = loadHero('night_stalker', {night_stalker_midnight_feast = feast}, {
+    GetNearbyNeutralCreeps = function(_, range)
+        assert(range == 125)
+        return {ancient, normal}
+    end,
+}, {
+    IsFarming = yes, GetHP = function() return hp end, GetMP = function() return mp end,
+    GetProperCastRange = properRange, IsValid = yes, IsInRange = yes, IsRoshan = no, IsTormentor = no,
+    CheckBitfieldFlag = function(behavior, flag) return behavior == flag end,
+})
+assert(night.ConsiderMidnightFeast() == NONE, 'ordered Midnight Feast while passive')
+active = true
+local feastDesire, meal = night.ConsiderMidnightFeast()
+assert(feastDesire == HIGH and meal == normal, 'Midnight Feast must select a non-Ancient neutral')
+hp = 0.9
+assert(night.ConsiderMidnightFeast() == NONE, 'spent Midnight Feast with health and mana full enough')
+print('PASS: Night Stalker uses Midnight Feast only when its active is available and useful')
+
+local void = ability({damage = 100, duration_day = 1, duration_night = 2.5})
+local targeted = false
+local nightWithScepter = loadHero('night_stalker', {night_stalker_void = void}, {
+    HasScepter = yes,
+    Action_UseAbilityOnEntity = function(_, spell, target)
+        assert(spell == void and target == enemy)
+        targeted = true
+    end,
+}, {
+    CanNotUseAbility = no, GetProperTarget = function() return enemy end,
+    IsValidHero = yes, IsSuspiciousIllusion = no, CanCastOnNonMagicImmune = yes,
+    GetNearbyHeroes = function() return {enemy} end, CheckTimeOfDay = function() return 'night' end,
+    IsCastingUltimateAbility = no, CanKillTarget = yes,
+})
+nightWithScepter.ConsiderDarkAscension = function() return NONE end
+nightWithScepter.ConsiderCripplingFear = function() return NONE end
+nightWithScepter.SkillsComplement()
+assert(targeted, 'Night Stalker ordered a ground cast on Void with Scepter')
+
+local objective = {}
+local seed = ability({})
+local treant = loadHero('treant', {treant_leech_seed = seed}, {}, {
+    GetProperTarget = function() return objective end, GetProperCastRange = properRange,
+    IsGoingOnSomeone = no, IsRetreating = no, IsDoingRoshan = yes,
+    IsRoshan = function(unit) return unit == objective end,
+    IsInRange = yes, CanCastOnNonMagicImmune = yes, IsAttacking = yes,
+})
+local seedDesire, seedTarget = treant.ConsiderLeechSeed()
+assert(seedDesire == HIGH and seedTarget == objective, 'Leech Seed did not target the objective')
+print('PASS: Night Stalker and Treant keep current unit-target spell orders')
+
+local retreating, shieldRaised, shieldOrder = false, false, nil
+local facingPoint = {}
+local bulwark = ability({})
+bulwark.GetToggleState = no
+bulwark.GetBehavior = function() return 16 end
+local mars = loadHero('mars', {mars_bulwark = bulwark}, {
+    HasScepter = yes,
+    HasModifier = function(_, name) return shieldRaised and name == 'modifier_mars_bulwark_active' end,
+    GetNearbyHeroes = function(_, _, isEnemy) return isEnemy and {enemy, enemy} or {{}} end,
+    IsFacingLocation = yes,
+    Action_UseAbilityOnLocation = function(_, spell, point)
+        assert(spell == bulwark)
+        shieldOrder = point
+    end,
+}, {
+    CanNotUseAbility = no, CanCastAbility = yes, GetProperTarget = function() return enemy end,
+    IsRetreating = function() return retreating end, IsRealInvisible = no,
+    IsValidHero = yes, CanCastOnMagicImmune = yes, IsSuspiciousIllusion = no, IsDisabled = no,
+    IsGoingOnSomeone = yes, IsInRange = yes,
+    GetFaceTowardDistanceLocation = function() return facingPoint end,
+    CheckBitfieldFlag = function(behavior, flag) return behavior == flag end,
+})
+mars.ConsiderSpearToAlly, mars.ConsiderArenaOfBlood = function() return NONE end, function() return NONE end
+mars.ConsiderGodsRebuke, mars.ConsiderSpearOfMars = function() return NONE end, function() return NONE end
+mars.SkillsComplement()
+assert(shieldOrder == nil, 'Mars raised Bulwark for the old Scepter upgrade')
+retreating = true
+mars.SkillsComplement()
+assert(shieldOrder == location, 'Mars should aim Bulwark at an enemy when covering an ally')
+shieldRaised, retreating = true, false
+mars.SkillsComplement()
+assert(shieldOrder == facingPoint, 'Mars should lower the shield once the threat has passed')
+print('PASS: Mars aims Bulwark and skips its obsolete Scepter behavior')

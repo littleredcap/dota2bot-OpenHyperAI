@@ -311,7 +311,7 @@ function X.ConsiderSprout()
             if J.IsValidHero(enemy)
             and J.CanCastOnMagicImmune(enemy)
             and J.IsInRange(bot, enemy, nCastRange)
-            and not J.IsInRange(bot, enemy, Sprout:GetSpecialValueInt('radius'))  -- don't trap self
+            and not J.IsInRange(bot, enemy, Sprout:GetSpecialValueInt('sprout_damage_radius'))
             and J.IsChasingTarget(enemy, bot)
             and bot:WasRecentlyDamagedByHero(enemy, 2.0) then
                 return BOT_ACTION_DESIRE_HIGH, enemy

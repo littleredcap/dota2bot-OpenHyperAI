@@ -247,6 +247,9 @@ function X.SkillsComplement()
 		J.SetQueuePtToINT( bot, false )
 		if AoE then
 			bot:ActionQueue_UseAbilityOnLocation(abilityE, castETarget)
+		elseif J.CheckBitfieldFlag(abilityE:GetBehavior(), ABILITY_BEHAVIOR_POINT)
+		and not J.CheckBitfieldFlag(abilityE:GetBehavior(), ABILITY_BEHAVIOR_UNIT_TARGET) then
+			bot:ActionQueue_UseAbilityOnLocation(abilityE, castETarget:GetLocation())
 		else
 			bot:ActionQueue_UseAbilityOnEntity(abilityE, castETarget)
 		end
@@ -745,6 +748,7 @@ function X.ConsiderE()
 
 	local nRadius = 0
 	local bAoETalent = talent20Left ~= nil and talent20Left:IsTrained()
+		and J.CheckBitfieldFlag(abilityE:GetBehavior(), ABILITY_BEHAVIOR_POINT)
 	if bAoETalent then nRadius = talent20Left:GetSpecialValueInt('value') end
 
 	local nEnemyHeroes = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)

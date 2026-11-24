@@ -128,7 +128,7 @@ function X.ConsiderRocketBarrage()
     end
 
 	local nRadius = RocketBarrage:GetSpecialValueInt('radius')
-    local nDamage = RocketBarrage:GetSpecialValueInt('value')
+    local nDamage = RocketBarrage:GetSpecialValueInt('rocket_damage')
     local nRocketsPerSecond = RocketBarrage:GetSpecialValueInt('rockets_per_second')
     local nDuration = 3
     local nAbilityLevel = RocketBarrage:GetLevel()

@@ -122,8 +122,6 @@ local ChillingTouch     = bot:GetAbilityByName('ancient_apparition_chilling_touc
 local IceBlast          = bot:GetAbilityByName('ancient_apparition_ice_blast')
 local IceBlastRelease   = bot:GetAbilityByName('ancient_apparition_ice_blast_release')
 
-local ColdFeetAoETalent = bot:GetAbilityByName('special_bonus_unique_ancient_apparition_7')
-
 local ColdFeetDesire, ColdFeetTarget
 local IceVortexDesire, IceVortextLocation
 local ChillingTouchDesire, ChillingTouchTarget
@@ -160,7 +158,7 @@ function X.SkillsComplement()
     ColdFeetDesire, ColdFeetTarget = X.ConsiderColdFeet()
     if ColdFeetDesire > 0
     then
-        if ColdFeetAoETalent:IsTrained()
+        if J.CheckBitfieldFlag(ColdFeet:GetBehavior(), ABILITY_BEHAVIOR_POINT)
         then
             local nAoERadius = 450
             local nCastRange = J.GetProperCastRange(false, bot, ColdFeet:GetCastRange())
@@ -170,7 +168,7 @@ function X.SkillsComplement()
             then
                 bot:Action_UseAbilityOnLocation(ColdFeet, nLocationAoE.targetloc)
             else
-                bot:Action_UseAbilityOnEntity(ColdFeet, ColdFeetTarget)
+                bot:Action_UseAbilityOnLocation(ColdFeet, ColdFeetTarget:GetLocation())
             end
         else
             bot:Action_UseAbilityOnEntity(ColdFeet, ColdFeetTarget)

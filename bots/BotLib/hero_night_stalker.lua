@@ -117,12 +117,12 @@ end
 
 local Void              = bot:GetAbilityByName('night_stalker_void')
 local CripplingFear     = bot:GetAbilityByName('night_stalker_crippling_fear')
-local HunterInTheNight  = bot:GetAbilityByName('night_stalker_hunter_in_the_night')
+local MidnightFeast     = bot:GetAbilityByName('night_stalker_midnight_feast')
 local DarkAscension     = bot:GetAbilityByName('night_stalker_darkness')
 
 local VoidDesire, VoidTarget
 local CripplingFearDesire
-local HunterInTheNightDesire, HunterInTheNightTarget
+local MidnightFeastDesire, MidnightFeastTarget
 local DarkAscensionDesire
 
 function X.SkillsComplement()
@@ -145,20 +145,15 @@ function X.SkillsComplement()
     VoidDesire, VoidTarget = X.ConsiderVoid()
     if VoidDesire > 0
     then
-        if bot:HasScepter()
-        then
-            bot:Action_UseAbilityOnLocation(Void, VoidTarget)
-        else
-            bot:Action_UseAbilityOnEntity(Void, VoidTarget)
-        end
+        bot:Action_UseAbilityOnEntity(Void, VoidTarget)
 
         return
     end
 
-    HunterInTheNightDesire, HunterInTheNightTarget = X.ConsiderHunterInTheNight()
-    if HunterInTheNightDesire > 0
+    MidnightFeastDesire, MidnightFeastTarget = X.ConsiderMidnightFeast()
+    if MidnightFeastDesire > 0
     then
-        bot:Action_UseAbilityOnEntity(HunterInTheNight, HunterInTheNightTarget)
+        bot:Action_UseAbilityOnEntity(MidnightFeast, MidnightFeastTarget)
         return
     end
 end
@@ -170,8 +165,6 @@ function X.ConsiderVoid()
     end
 
     local nCastRange = Void:GetCastRange()
-    local nCastPoint = Void:GetCastPoint()
-    local nRadius = 450
     local nDamage = Void:GetSpecialValueInt('damage')
     local nDuration = Void:GetSpecialValueFloat('duration_day')
     local timeOfDay = J.CheckTimeOfDay()
@@ -189,15 +182,10 @@ function X.ConsiderVoid()
         and J.CanCastOnNonMagicImmune(enemyHero)
         and not J.IsSuspiciousIllusion(enemyHero)
         then
-            if enemyHero:IsChanneling() or J.IsCastingUltimateAbility(enemyHero)
+            if (enemyHero:IsChanneling() or J.IsCastingUltimateAbility(enemyHero))
             and timeOfDay == 'night'
             then
-                if bot:HasScepter()
-                then
-                    return BOT_ACTION_DESIRE_HIGH, enemyHero:GetLocation()
-                else
-                    return BOT_ACTION_DESIRE_HIGH, enemyHero
-                end
+                return BOT_ACTION_DESIRE_HIGH, enemyHero
             end
 
             if J.CanKillTarget(enemyHero, nDamage, DAMAGE_TYPE_MAGICAL)
@@ -206,12 +194,7 @@ function X.ConsiderVoid()
             and not enemyHero:HasModifier('modifier_oracle_false_promise_timer')
             and not enemyHero:HasModifier('modifier_templar_assassin_refraction_absorb')
             then
-                if bot:HasScepter()
-                then
-                    return BOT_ACTION_DESIRE_HIGH, enemyHero:GetExtrapolatedLocation(nCastPoint)
-                else
-                    return BOT_ACTION_DESIRE_HIGH, enemyHero
-                end
+                return BOT_ACTION_DESIRE_HIGH, enemyHero
             end
         end
     end
@@ -220,30 +203,18 @@ function X.ConsiderVoid()
 	then
         local strongestTarget = J.GetStrongestUnit(nCastRange, bot, true, false, nDuration)
 
-        if bot:HasScepter()
+        if strongestTarget == nil then
+            strongestTarget = J.GetStrongestUnit(nCastRange, bot, true, true, nDuration)
+        end
+
+        if J.IsValidTarget(strongestTarget)
+        and J.CanCastOnNonMagicImmune(strongestTarget)
+        and not J.IsSuspiciousIllusion(strongestTarget)
+        and not J.IsDisabled(strongestTarget)
+        and not J.IsTaunted(strongestTarget)
+        and not strongestTarget:HasModifier('modifier_necrolyte_reapers_scythe')
         then
-            local nLocationAoE = bot:FindAoELocation(true, true, bot:GetLocation(), nCastRange, nRadius, nCastPoint, 0)
-            local realEnemyCount = J.GetEnemiesNearLoc(nLocationAoE.targetloc, nRadius)
-
-            if realEnemyCount ~= nil and #realEnemyCount >= 2
-            then
-                return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
-            end
-        else
-            if strongestTarget == nil
-            then
-                strongestTarget = J.GetStrongestUnit(nCastRange, bot, true, true, nDuration)
-            end
-
-            if J.IsValidTarget(strongestTarget)
-            and J.CanCastOnNonMagicImmune(strongestTarget)
-            and not J.IsSuspiciousIllusion(strongestTarget)
-            and not J.IsDisabled(strongestTarget)
-            and not J.IsTaunted(strongestTarget)
-            and not strongestTarget:HasModifier('modifier_necrolyte_reapers_scythe')
-            then
-                return BOT_ACTION_DESIRE_HIGH, strongestTarget
-            end
+            return BOT_ACTION_DESIRE_HIGH, strongestTarget
         end
 	end
 
@@ -267,16 +238,7 @@ function X.ConsiderVoid()
             if nInRangeAlly ~= nil and nTargetInRangeAlly ~= nil
             and #nInRangeAlly >= #nTargetInRangeAlly
             then
-                if bot:HasScepter()
-                and not botTarget:HasModifier('modifier_enigma_black_hole_pull')
-                and not botTarget:HasModifier('modifier_faceless_void_chronosphere_freeze')
-                and not botTarget:HasModifier('modifier_legion_commander_duel')
-                and not botTarget:HasModifier('modifier_necrolyte_reapers_scythe')
-                then
-                    return BOT_ACTION_DESIRE_HIGH, botTarget:GetExtrapolatedLocation(nCastPoint)
-                else
-                    return BOT_ACTION_DESIRE_HIGH, botTarget
-                end
+                return BOT_ACTION_DESIRE_HIGH, botTarget
             end
         end
 	end
@@ -299,12 +261,7 @@ function X.ConsiderVoid()
             and ((#nTargetInRangeAlly > #nInRangeAlly)
                 or (J.GetHP(bot) < 0.52 and bot:WasRecentlyDamagedByAnyHero(2)))
             then
-                if bot:HasScepter()
-                then
-                    return BOT_ACTION_DESIRE_HIGH, nInRangeEnemy[1]:GetExtrapolatedLocation(nCastPoint)
-                else
-                    return BOT_ACTION_DESIRE_HIGH, nInRangeEnemy[1]
-                end
+                return BOT_ACTION_DESIRE_HIGH, nInRangeEnemy[1]
             end
         end
     end
@@ -337,12 +294,7 @@ function X.ConsiderVoid()
         and J.IsInRange(bot, botTarget, 500)
         and J.IsAttacking(bot)
         then
-            if bot:HasScepter()
-            then
-                return BOT_ACTION_DESIRE_HIGH, botTarget:GetLocation()
-            else
-                return BOT_ACTION_DESIRE_HIGH, botTarget
-            end
+            return BOT_ACTION_DESIRE_HIGH, botTarget
         end
     end
 
@@ -352,12 +304,7 @@ function X.ConsiderVoid()
         and J.IsInRange(bot, botTarget, 400)
         and J.IsAttacking(bot)
         then
-            if bot:HasScepter()
-            then
-                return BOT_ACTION_DESIRE_HIGH, botTarget:GetLocation()
-            else
-                return BOT_ACTION_DESIRE_HIGH, botTarget
-            end
+            return BOT_ACTION_DESIRE_HIGH, botTarget
         end
     end
 
@@ -384,12 +331,7 @@ function X.ConsiderVoid()
             and not nAllyInRangeEnemy[1]:HasModifier('modifier_enigma_black_hole_pull')
             and not nAllyInRangeEnemy[1]:HasModifier('modifier_faceless_void_chronosphere_freeze')
             then
-                if bot:HasScepter()
-                then
-                    return BOT_ACTION_DESIRE_HIGH, nAllyInRangeEnemy[1]:GetLocation()
-                else
-                    return BOT_ACTION_DESIRE_HIGH, botTarget
-                end
+                return BOT_ACTION_DESIRE_HIGH, nAllyInRangeEnemy[1]
             end
         end
     end
@@ -493,28 +435,22 @@ function X.ConsiderCripplingFear()
     return BOT_ACTION_DESIRE_NONE
 end
 
-function X.ConsiderHunterInTheNight()
-    if HunterInTheNight:IsPassive()
-    or not HunterInTheNight:IsFullyCastable()
+function X.ConsiderMidnightFeast()
+    if MidnightFeast == nil or MidnightFeast:IsNull() or not MidnightFeast:IsTrained()
+    or MidnightFeast:IsHidden() or not MidnightFeast:IsActivated() or not MidnightFeast:IsFullyCastable()
+    or not J.CheckBitfieldFlag(MidnightFeast:GetBehavior(), ABILITY_BEHAVIOR_UNIT_TARGET)
+    or not J.IsFarming(bot)
+    or (J.GetHP(bot) >= 0.65 and J.GetMP(bot) >= 0.5)
     then
         return BOT_ACTION_DESIRE_NONE, nil
     end
 
-    local nCastRange = HunterInTheNight:GetSpecialValueInt('shard_cast_range')
-    local timeOfDay = J.CheckTimeOfDay()
-
-    if J.IsFarming(bot)
-    then
-        local nCreeps = bot:GetNearbyCreeps(nCastRange, true)
-        if nCreeps ~= nil and #nCreeps >= 1
+    local castRange = J.GetProperCastRange(false, bot, MidnightFeast:GetCastRange())
+    for _, creep in ipairs(bot:GetNearbyNeutralCreeps(castRange)) do
+        if J.IsValid(creep) and J.IsInRange(bot, creep, castRange)
+        and not creep:IsAncientCreep() and not J.IsRoshan(creep) and not J.IsTormentor(creep)
         then
-            if J.IsValid(nCreeps[1])
-            and (not nCreeps[1]:IsAncientCreep()
-                or (timeOfDay == 'night' and nCreeps[1]:IsAncientCreep()))
-            and (J.GetHP(bot) < 0.65 or J.GetMP(bot) < 0.5)
-            then
-                return BOT_ACTION_DESIRE_HIGH, nCreeps[1]
-            end
+            return BOT_ACTION_DESIRE_HIGH, creep
         end
     end
 

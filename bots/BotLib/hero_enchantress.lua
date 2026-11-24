@@ -429,13 +429,14 @@ function X.ConsiderSproink()
 
     local nAllyHeroes = J.GetNearbyHeroes(bot,nAttackRange + 100, false, BOT_MODE_NONE)
     local nEnemyHeroes = J.GetNearbyHeroes(bot,nAttackRange, true, BOT_MODE_NONE)
-    local nImpetusMul = Impetus:GetSpecialValueFloat('value') / 100
+    local nImpetusMul = Impetus:GetSpecialValueFloat('distance_damage_pct') / 100
+    local nImpetusCap = Impetus:GetSpecialValueInt('distance_cap')
     local botTarget = J.GetProperTarget(bot)
 
     for _, enemyHero in pairs(nEnemyHeroes)
     do
         if J.IsValidHero(enemyHero)
-        and J.CanKillTarget(enemyHero, nImpetusMul * GetUnitToUnitDistance(bot, enemyHero), DAMAGE_TYPE_PURE)
+        and J.CanKillTarget(enemyHero, nImpetusMul * math.min(nImpetusCap, GetUnitToUnitDistance(bot, enemyHero)), DAMAGE_TYPE_PURE)
         and bot:IsFacingLocation(enemyHero:GetLocation(), 15)
         and not J.IsSuspiciousIllusion(enemyHero)
         and not enemyHero:HasModifier('modifier_abaddon_borrowed_time')

@@ -130,8 +130,6 @@ function X.MinionThink(hMinionUnit)
 	Minion.MinionThink(hMinionUnit)
 end
 
-local bLeechSeedGround = false
-
 local NaturesGrasp      = bot:GetAbilityByName('treant_natures_grasp')
 local LeechSeed         = bot:GetAbilityByName('treant_leech_seed')
 local LivingArmor       = bot:GetAbilityByName('treant_living_armor')
@@ -178,13 +176,7 @@ function X.SkillsComplement()
     LeechSeedDesire, LeechSeedTarget = X.ConsiderLeechSeed()
     if LeechSeedDesire > 0
     then
-        if bLeechSeedGround then
-            bot:Action_UseAbilityOnLocation(LeechSeed, LeechSeedTarget)
-            bLeechSeedGround = false
-            return
-        else
-            bot:Action_UseAbilityOnEntity(LeechSeed, LeechSeedTarget)
-        end
+        bot:Action_UseAbilityOnEntity(LeechSeed, LeechSeedTarget)
         return
     end
 
@@ -349,22 +341,8 @@ function X.ConsiderLeechSeed()
 
     local nCastRange = J.GetProperCastRange(false, bot, LeechSeed:GetCastRange())
     local botTarget = J.GetProperTarget(bot)
-    local nRadius = LeechSeed:GetSpecialValueInt('radius')
 
-    if J.IsGoingOnSomeone(bot)
-	then
-        bLeechSeedGround = false
-        if J.IsValidHero(botTarget)
-        and J.CanCastOnNonMagicImmune(botTarget)
-        and not J.IsChasingTarget(bot, botTarget)
-        then
-            local nLocationAoE = bot:FindAoELocation(true, true, botTarget:GetLocation(), 0, nRadius, 0, 0)
-            if nLocationAoE.count >= 2 and GetUnitToLocationDistance(bot, nLocationAoE.targetloc) <= nCastRange then
-                bLeechSeedGround = true
-                return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
-            end
-        end
-
+    if J.IsGoingOnSomeone(bot) then
         local nInRangeEnemy = J.GetNearbyHeroes(bot,1200, true, BOT_MODE_NONE)
         local target = nil
         local dmg = 0
@@ -423,27 +401,13 @@ function X.ConsiderLeechSeed()
 		end
 	end
 
-    if J.IsDoingRoshan(bot)
+    if (J.IsDoingRoshan(bot) and J.IsRoshan(botTarget)
+        or J.IsDoingTormentor(bot) and J.IsTormentor(botTarget))
+    and J.CanCastOnNonMagicImmune(botTarget)
+    and J.IsInRange(bot, botTarget, nCastRange)
+    and J.IsAttacking(bot)
     then
-        if J.IsRoshan(botTarget)
-        and J.CanCastOnNonMagicImmune(botTarget)
-        and J.IsInRange(bot, botTarget, 500)
-        and J.IsAttacking(bot)
-        then
-            bLeechSeedGround = true
-            return BOT_ACTION_DESIRE_HIGH, bot:GetLocation()
-        end
-    end
-
-    if J.IsDoingTormentor(bot)
-    then
-        if J.IsTormentor(botTarget)
-        and J.IsInRange(bot, botTarget, 500)
-        and J.IsAttacking(bot)
-        then
-            bLeechSeedGround = true
-            return BOT_ACTION_DESIRE_HIGH, bot:GetLocation()
-        end
+        return BOT_ACTION_DESIRE_HIGH, botTarget
     end
 
     return BOT_ACTION_DESIRE_NONE, nil
