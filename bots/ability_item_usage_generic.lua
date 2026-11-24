@@ -8240,12 +8240,15 @@ local function UseGlyph()
 	if GetGlyphCooldown( ) > 0
 		or DotaTime() < 60
 		or bot ~= GetTeamMember( 1 )
-		or not GetTeamMember( 2 ):IsBot()
-		or not GetTeamMember( 3 ):IsBot()
-		or not GetTeamMember( 4 ):IsBot()
-		or not GetTeamMember( 5 ):IsBot()
 	then
 		return
+	end
+
+	for i = 2, 5 do
+		local teammate = GetTeamMember(i)
+		if teammate == nil or not teammate:IsBot() then
+			return
+		end
 	end
 
 	local T1 = {
