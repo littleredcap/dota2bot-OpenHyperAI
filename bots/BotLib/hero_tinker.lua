@@ -135,10 +135,7 @@ end
 local Laser                 = bot:GetAbilityByName('tinker_laser')
 -- local HeatSeekingMissile    = bot:GetAbilityByName('tinker_heat_seeking_missile')
 local MarchOfTheMachines    = bot:GetAbilityByName('tinker_march_of_the_machines')
--- 7.41: Defense Matrix may have been replaced by Deploy Turrets. Try both names.
 local DeployTurrets         = bot:GetAbilityByName('tinker_deploy_turrets')
-                              or bot:GetAbilityByName('tinker_defense_matrix')
-                              or (sAbilityList[3] and bot:GetAbilityByName(sAbilityList[3]))
 local WarpFlare             = bot:GetAbilityByName('tinker_warp_grenade')
 local KeenConveyance        = bot:GetAbilityByName('tinker_keen_teleport')
 local Rearm                 = bot:GetAbilityByName('tinker_rearm')
@@ -181,8 +178,6 @@ function X.SkillsComplement()
     Laser = bot:GetAbilityByName('tinker_laser')
     MarchOfTheMachines = bot:GetAbilityByName('tinker_march_of_the_machines')
     DeployTurrets = bot:GetAbilityByName('tinker_deploy_turrets')
-                    or bot:GetAbilityByName('tinker_defense_matrix')
-                    or (sAbilityList[3] and bot:GetAbilityByName(sAbilityList[3]))
     WarpFlare = bot:GetAbilityByName('tinker_warp_grenade')
     KeenConveyance = bot:GetAbilityByName('tinker_keen_teleport')
     Rearm = bot:GetAbilityByName('tinker_rearm')
@@ -969,6 +964,13 @@ function X.ConsiderRearm()
     local nChannelTime = Rearm:GetChannelTime()
 
     local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), 1600)
+    local bRetreating = J.IsRetreating(bot)
+    for _, enemy in ipairs(nInRangeEnemy) do
+        if enemy:GetAttackTarget() == bot or (bRetreating and J.IsChasingTarget(enemy, bot)) then
+            return BOT_ACTION_DESIRE_NONE
+        end
+    end
+
     if bot.healInBase
     and nInRangeEnemy ~= nil and #nInRangeEnemy == 0
     and KeenConveyance ~= nil and KeenConveyance:IsTrained() and KeenConveyance:GetCooldownTimeRemaining() > nChannelTime
@@ -981,17 +983,6 @@ function X.ConsiderRearm()
     then
         return BOT_ACTION_DESIRE_HIGH
     end
-
-	if J.IsGoingOnSomeone(bot)
-	then
-		if J.IsValidTarget(botTarget)
-		and J.IsInRange(bot, botTarget, 1500)
-        and (MarchOfTheMachines:GetCooldownTimeRemaining() > nChannelTime
-            or not J.CanBlinkDagger(GetBot()))
-		then
-            return BOT_ACTION_DESIRE_HIGH
-		end
-	end
 
     local nEnemyLaneCreeps = bot:GetNearbyLaneCreeps(1600, true)
 
