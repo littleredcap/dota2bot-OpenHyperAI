@@ -6081,8 +6081,8 @@ function J.GetXUnitsTowardsLocation2(iLoc, tLoc, nUnits)
     return iLoc + dir * nUnits
 end
 
-function J.IsUnitWillGoInvisible(unit)
-	return unit:HasModifier('modifier_sandking_sand_storm')
+function J.IsUnitWillGoInvisible(unit, ignoreSandStorm)
+	return (not ignoreSandStorm and unit:HasModifier('modifier_sandking_sand_storm'))
 		or unit:HasModifier('modifier_bounty_hunter_wind_walk')
 		or unit:HasModifier('modifier_clinkz_wind_walk')
 		or unit:HasModifier('modifier_weaver_shukuchi')
