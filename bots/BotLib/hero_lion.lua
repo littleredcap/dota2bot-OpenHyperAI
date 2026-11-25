@@ -180,7 +180,6 @@ local abilityE = bot:GetAbilityByName( sAbilityList[3] )
 local abilityR = bot:GetAbilityByName( sAbilityList[6] )
 local talent4 = bot:GetAbilityByName( sTalentList[4] )
 local talent5 = bot:GetAbilityByName( sTalentList[5] )
-local talent8 = bot:GetAbilityByName( sTalentList[8] )
 
 local castQDesire, castQLocation
 local castWDesire, castWTarget
@@ -190,6 +189,17 @@ local castRDesire, castRTarget
 local nKeepMana, nMP, nHP, nLV, hEnemyList, hAllyList, botTarget, sMotive
 local aetherRange = 0
 local lastCastQTime = -99
+local CanChainControl
+
+local function QueueHex(target, motive)
+	J.SetReportMotive(bDebugMode, motive)
+	J.SetQueuePtToINT(bot, true)
+	if J.CheckBitfieldFlag(abilityW:GetBehavior(), ABILITY_BEHAVIOR_POINT) then
+		bot:ActionQueue_UseAbilityOnLocation(abilityW, target)
+	else
+		bot:ActionQueue_UseAbilityOnEntity(abilityW, target)
+	end
+end
 
 
 function X.SkillsComplement()
@@ -212,9 +222,14 @@ function X.SkillsComplement()
 	hAllyList = J.GetAlliesNearLoc( bot:GetLocation(), 1600 )
 
 	local aether = J.IsItemAvailable( "item_aether_lens" )
-	if aether ~= nil then aetherRange = 250 end
+	if aether ~= nil then aetherRange = aether:GetSpecialValueInt('cast_range_bonus') end
 --	if talent4:IsTrained() then aetherRange = aetherRange + talent4:GetSpecialValueInt( "value" ) end
-	
+	local hexMotive, interrupt
+	castWDesire, castWTarget, hexMotive, interrupt = X.ConsiderW()
+	if interrupt then
+		QueueHex(castWTarget, hexMotive)
+		return
+	end
 
 	castEDesire, castETarget, sMotive = X.ConsiderE()
 	if ( castEDesire > 0 )
@@ -254,21 +269,7 @@ function X.SkillsComplement()
 	end
 
 
-	castWDesire, castWTarget, sMotive = X.ConsiderW()
-	if ( castWDesire > 0 )
-	then
-		J.SetReportMotive( bDebugMode, sMotive )
-
-		J.SetQueuePtToINT( bot, true )
-
-		if talent8:IsTrained()
-		then
-			bot:ActionQueue_UseAbilityOnLocation( abilityW, castWTarget )
-		else
-			bot:ActionQueue_UseAbilityOnEntity( abilityW, castWTarget )
-		end
-		return
-	end
+	if castWDesire > 0 then QueueHex(castWTarget, hexMotive) end
 
 
 end
@@ -373,10 +374,11 @@ function X.ConsiderQ()
 			if nSkillLV >= 2 or nMP > 0.68 or J.GetHP( botTarget ) < 0.5
 			then
 				local nDelayTime = nCastPoint + GetUnitToUnitDistance( bot, botTarget )/1600
-				nTargetLocation = J.GetDelayCastLocation( bot, botTarget, nCastRange, 260, nDelayTime )
-				if nTargetLocation ~= nil
-				then
-					return BOT_ACTION_DESIRE_HIGH, nTargetLocation, 'Q-攻击:'..J.Chat.GetNormName( botTarget )
+				if CanChainControl(botTarget, nDelayTime + 0.15) then
+					nTargetLocation = J.GetDelayCastLocation(bot, botTarget, nCastRange, 260, nDelayTime)
+					if nTargetLocation ~= nil then
+						return BOT_ACTION_DESIRE_HIGH, nTargetLocation, 'Q-攻击:'..J.Chat.GetNormName(botTarget)
+					end
 				end
 			end
 		end
@@ -511,192 +513,109 @@ function X.ConsiderQ()
 end
 
 
+local hexChainModifiers = {
+    'modifier_lion_impale', 'modifier_lion_voodoo',
+    'modifier_shadow_shaman_voodoo', 'modifier_shadow_shaman_shackles',
+    'modifier_bane_nightmare', 'modifier_sheepstick_debuff',
+}
+
+function CanChainControl(target, latestImpact)
+    if not J.IsDisabled(target) then return true end
+
+    local remaining = J.GetRemainStunTime(target)
+    for _, modifier in ipairs(hexChainModifiers) do
+        remaining = math.max(remaining, J.GetModifierTime(target, modifier))
+    end
+    return remaining > 0 and remaining <= latestImpact
+end
+
 function X.ConsiderW()
+    if not J.CanCastAbility(abilityW) then return BOT_ACTION_DESIRE_NONE end
 
+    local castRange = abilityW:GetCastRange() + aetherRange
+    -- Instant Hex still needs a small allowance for turning and the next decision tick.
+    local latestImpact = abilityW:GetCastPoint() + 0.15
+    local pointCast = J.CheckBitfieldFlag(abilityW:GetBehavior(), ABILITY_BEHAVIOR_POINT)
+    local enemies = J.GetNearbyHeroes(bot, castRange, true, BOT_MODE_NONE)
 
-	if not abilityW:IsFullyCastable()
-		or lastCastQTime > DotaTime() - 0.8
-	then return 0 end
+    local function eligible(target)
+        return J.IsValidHero(target) and not J.IsSuspiciousIllusion(target)
+            and J.CanCastOnNonMagicImmune(target) and (pointCast or J.CanCastOnTargetAdvanced(target))
+            and J.IsInRange(bot, target, castRange)
+    end
 
-	local nSkillLV = abilityW:GetLevel()
-	local nCastRange = abilityW:GetCastRange() + aetherRange
-	local nCastPoint = abilityW:GetCastPoint()
-	local nManaCost = abilityW:GetManaCost()
-	local nDamage = abilityW:GetAbilityDamage()
-	local nDamageType = DAMAGE_TYPE_MAGICAL
-	local nInRangeEnemyList = J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE )
-	local nInBonusEnemyList = J.GetNearbyHeroes(bot, nCastRange + 300, true, BOT_MODE_NONE )
+    local function targetForOrder(target)
+        if pointCast then return target:GetLocation() end
+        return target
+    end
 
-	--打断
-	for _, npcEnemy in pairs( nInBonusEnemyList )
-	do
-		if J.IsValidHero( npcEnemy )
-			and ( J.CanCastOnTargetAdvanced( npcEnemy ) or talent8:IsTrained() )
-			and J.CanCastOnNonMagicImmune( npcEnemy )
-		then
-			if npcEnemy:IsChanneling()
-			then
-				if talent8:IsTrained()
-				then
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation(), 'W-打断吟唱:'..J.Chat.GetNormName( npcEnemy )
-				else
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy, 'W-打断吟唱:'..J.Chat.GetNormName( npcEnemy )
-				end
-			end
+    for _, enemy in ipairs(enemies) do
+        if eligible(enemy) and (enemy:IsChanneling() or enemy:IsCastingAbility()) then
+            return BOT_ACTION_DESIRE_HIGH, targetForOrder(enemy), 'W-打断', true
+        end
+    end
 
-			if npcEnemy:IsCastingAbility()
-				and J.IsInRange( bot, npcEnemy, nCastRange + 50 )
-			then
-				if talent8:IsTrained()
-				then
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation(), 'W-打断施法:'..J.Chat.GetNormName( npcEnemy )
-				else
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy, 'W-打断施法:'..J.Chat.GetNormName( npcEnemy )
-				end
-			end
-		end
-	end
+    if lastCastQTime > DotaTime() - 0.8 then return BOT_ACTION_DESIRE_NONE end
 
+    if J.IsInTeamFight(bot, 1200) and (#enemies >= 2 or #hAllyList >= 3) then
+        if pointCast then
+            local radius = abilityW:GetSpecialValueInt('radius')
+            local location = J.GetAoeEnemyHeroLocation(bot, castRange, radius, 2)
+            if location ~= nil then
+                local affected = 0
+                for _, enemy in ipairs(J.GetNearbyHeroes(bot, castRange + radius, true, BOT_MODE_NONE)) do
+                    if J.IsValidHero(enemy) and J.CanCastOnNonMagicImmune(enemy)
+                    and not J.IsSuspiciousIllusion(enemy) and CanChainControl(enemy, latestImpact)
+                    and GetUnitToLocationDistance(enemy, location) <= radius then
+                        affected = affected + 1
+                    end
+                end
+                if affected >= 2 then return BOT_ACTION_DESIRE_HIGH, location, 'W-团控' end
+            end
+        end
 
-	--团战中对最强的敌人使用
-	if J.IsInTeamFight( bot, 1200 )
-		and ( #nInBonusEnemyList >= 2 or #hAllyList >= 3 )
-	then
+        local mostDangerous, mostDamage = nil, 0
+        for _, enemy in ipairs(enemies) do
+            if eligible(enemy) and CanChainControl(enemy, latestImpact) then
+                local damage = enemy:GetEstimatedDamageToTarget(false, bot, 3.0, DAMAGE_TYPE_PHYSICAL)
+                if damage > mostDamage then
+                    mostDangerous, mostDamage = enemy, damage
+                end
+            end
+        end
+        if mostDangerous ~= nil then
+            return BOT_ACTION_DESIRE_HIGH, targetForOrder(mostDangerous), 'W-团战'
+        end
+    end
 
-		if talent8:IsTrained()
-		then
-			local nAoeLoc = J.GetAoeEnemyHeroLocation( bot, nCastRange, 250, 2 )
-			if nAoeLoc ~= nil
-			then
-				return BOT_ACTION_DESIRE_HIGH, nAoeLoc, 'W-团控'
-			end
-		end
+    if J.IsGoingOnSomeone(bot) and eligible(botTarget) and CanChainControl(botTarget, latestImpact) then
+        if J.IsChasingTarget(bot, botTarget) then
+            return BOT_ACTION_DESIRE_HIGH, targetForOrder(botTarget), 'W-追击'
+        end
+        for _, ally in ipairs(J.GetAlliesNearLoc(botTarget:GetLocation(), 850)) do
+            if ally ~= bot and J.IsValidHero(ally) and not J.IsRetreating(ally) then
+                return BOT_ACTION_DESIRE_HIGH, targetForOrder(botTarget), 'W-先手'
+            end
+        end
+    end
 
+    local retreating = J.IsRetreating(bot)
+    local protectingSelf = nLV >= 10 and bot:WasRecentlyDamagedByAnyHero(3.0)
+    if retreating or protectingSelf then
+        for _, enemy in ipairs(enemies) do
+            if eligible(enemy) and CanChainControl(enemy, latestImpact)
+            and ((retreating and J.IsInRange(bot, enemy, 600)) or bot:WasRecentlyDamagedByHero(enemy, 4.0)) then
+                return BOT_ACTION_DESIRE_HIGH, targetForOrder(enemy), 'W-自保'
+            end
+        end
+    end
 
-		local npcMostDangerousEnemy = nil
-		local nMostDangerousDamage = 0
-		for _, npcEnemy in pairs( nInBonusEnemyList )
-		do
-			if J.IsValid( npcEnemy )
-				and J.CanCastOnNonMagicImmune( npcEnemy )
-				and ( J.CanCastOnTargetAdvanced( npcEnemy ) or talent8:IsTrained() )
-				and not J.IsDisabled( npcEnemy )
-				and not J.IsTaunted( npcEnemy )
-				and not npcEnemy:IsDisarmed()
-			then
-				local npcEnemyDamage = npcEnemy:GetEstimatedDamageToTarget( false, bot, 3.0, DAMAGE_TYPE_PHYSICAL )
-				if ( npcEnemyDamage > nMostDangerousDamage )
-				then
-					nMostDangerousDamage = npcEnemyDamage
-					npcMostDangerousEnemy = npcEnemy
-				end
-			end
-		end
+    if J.IsDoingRoshan(bot) and nMP > 0.6 and J.IsRoshan(botTarget)
+    and J.IsInRange(bot, botTarget, castRange) and CanChainControl(botTarget, latestImpact) then
+        return BOT_ACTION_DESIRE_HIGH, targetForOrder(botTarget), 'W-肉山'
+    end
 
-		if npcMostDangerousEnemy ~= nil
-			and J.IsInRange( bot, npcMostDangerousEnemy, nCastRange + 50 )
-		then
-			if talent8:IsTrained()
-			then
-				return BOT_ACTION_DESIRE_HIGH, npcMostDangerousEnemy:GetLocation(), 'W-团战:'..J.Chat.GetNormName( npcMostDangerousEnemy )
-			else
-				return BOT_ACTION_DESIRE_HIGH, npcMostDangerousEnemy, 'W-团战:'..J.Chat.GetNormName( npcMostDangerousEnemy )
-			end
-		end
-
-	end
-
-
-	--攻击
-	if J.IsGoingOnSomeone( bot )
-	then
-		if J.IsValidHero( botTarget )
-			and J.CanCastOnNonMagicImmune( botTarget )
-			and ( J.CanCastOnTargetAdvanced( botTarget ) or talent8:IsTrained() )
-			and J.IsInRange( bot, botTarget, nCastRange + 150 )
-			and not J.IsDisabled( botTarget )
-			and not J.IsTaunted( botTarget )
-			and not botTarget:IsDisarmed()
-		then
-			if talent8:IsTrained()
-			then
-				return BOT_ACTION_DESIRE_HIGH, botTarget:GetLocation(), 'W-进攻:'..J.Chat.GetNormName( botTarget )
-			else
-				return BOT_ACTION_DESIRE_HIGH, botTarget, 'W-进攻:'..J.Chat.GetNormName( botTarget )
-			end
-		end
-	end
-
-
-	--保护自己
-	if bot:WasRecentlyDamagedByAnyHero( 3.0 ) and nLV >= 10
-		and bot:GetActiveMode() ~= BOT_MODE_RETREAT
-		and #nInRangeEnemyList >= 1
-	then
-		for _, npcEnemy in pairs( nInRangeEnemyList )
-		do
-			if J.IsValid( npcEnemy )
-				and J.CanCastOnNonMagicImmune( npcEnemy )
-				and ( J.CanCastOnTargetAdvanced( npcEnemy ) or talent8:IsTrained() )
-				and not J.IsDisabled( npcEnemy )
-				and not J.IsTaunted( npcEnemy )
-				and not npcEnemy:IsDisarmed()
-			then
-				if talent8:IsTrained()
-				then
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation(), 'W-保护自己:'..J.Chat.GetNormName( npcEnemy )
-				else
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy, 'W-保护自己'
-				end
-			end
-		end
-	end
-
-
-	--撤退
-	if J.IsRetreating( bot )
-	then
-		for _, npcEnemy in pairs( nInRangeEnemyList )
-		do
-			if J.IsValidHero( npcEnemy )
-				and ( bot:WasRecentlyDamagedByHero( npcEnemy, 4.0 )
-						or GetUnitToUnitDistance( bot, npcEnemy ) <= 600 )
-				and J.CanCastOnNonMagicImmune( npcEnemy )
-				and ( J.CanCastOnTargetAdvanced( npcEnemy ) or talent8:IsTrained() )
-				and not J.IsDisabled( npcEnemy )
-				and not J.IsTaunted( npcEnemy )
-				and not npcEnemy:IsDisarmed()
-			then
-				if talent8:IsTrained()
-				then
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy:GetLocation(), 'W-撤退:'..J.Chat.GetNormName( npcEnemy )
-				else
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy, "W-撤退:"..J.Chat.GetNormName( npcEnemy )
-				end
-			end
-		end
-	end
-
-	--roshan
-	if J.IsDoingRoshan( bot ) and nMP > 0.6
-	then
-		if J.IsRoshan( botTarget )
-			and J.IsInRange( bot, botTarget, nCastRange )
-			and not J.IsDisabled( botTarget )
-			and not botTarget:IsDisarmed()
-		then
-			if talent8:IsTrained()
-			then
-				return BOT_ACTION_DESIRE_HIGH, botTarget:GetLocation(), 'W-肉山:'..J.Chat.GetNormName( botTarget )
-			else
-				return BOT_ACTION_DESIRE_HIGH, botTarget, "W-肉山"
-			end
-		end
-	end
-
-	return BOT_ACTION_DESIRE_NONE
-
-
+    return BOT_ACTION_DESIRE_NONE
 end
 
 
