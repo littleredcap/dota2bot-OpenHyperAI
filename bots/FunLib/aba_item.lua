@@ -1223,6 +1223,61 @@ function Item.GetBasicItems( sItemList )
 
 end
 
+function Item.IsPurchaseBundle(name)
+	return Item[name] ~= nil and #(GetItemComponents(name) or {}) == 0
+end
+
+function Item.GetPurchaseRecipe(name)
+	return (GetItemComponents(name) or {})[1] or Item[name]
+end
+
+-- One owned handle can satisfy only one occurrence in a recipe tree.
+function Item.GetMissingPurchaseComponents(bot, name)
+	local owned, missing = {}, {}
+	local function countSlots(unit, lastSlot)
+		for slot = 0, lastSlot do
+			local item = unit:GetItemInSlot(slot)
+			if item ~= nil and not item:IsNull() then
+				local itemName = item:GetName()
+				owned[itemName] = (owned[itemName] or 0) + 1
+			end
+		end
+	end
+
+	countSlots(bot, 14)
+	local courier = bot.theCourier
+	if courier ~= nil and not courier:IsNull() then countSlots(courier, 8) end
+
+	if (owned[name] or 0) > 0
+	or ((name == 'item_ultimate_scepter' or name == 'item_ultimate_scepter_2' or name == 'item_moon_shard')
+		and Item.IsItemInTargetHero(name, bot)) then
+		return missing, true, true
+	end
+
+	local usedComponent = false
+	local function need(itemName)
+		local slotName = itemName
+		if not string.find(itemName, '^item_double_') then
+			slotName = tDefineItemRealName[itemName] or itemName
+		end
+		local available = owned[slotName] or 0
+		if available > 0 then
+			owned[slotName] = available - 1
+			usedComponent = true
+			return
+		end
+
+		local recipe = Item.GetPurchaseRecipe(itemName)
+		if recipe == nil or #recipe == 0 then
+			missing[#missing + 1] = itemName
+			return
+		end
+		for _, component in ipairs(recipe) do need(component) end
+	end
+	need(name)
+	return missing, usedComponent, false
+end
+
 -- function Item.ItemBasicItemsNotInHeroSlots(finalItem, bot)
 	
 -- end

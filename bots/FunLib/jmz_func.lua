@@ -36,21 +36,22 @@ J.Utils = require( GetScriptDirectory()..'/FunLib/utils' )
 J.Customize = require(GetScriptDirectory()..'/FunLib/custom_loader')
 
 
-function J.SetUserHeroInit( nAbilityBuildList, nTalentBuildList, sBuyList, sSellList )
-	-- A place to change the bot setup.
-	local bot = GetBot()
-	local botName = bot:GetUnitName()
-	local sBotDir, tBotSet = "game/Customize/hero/" .. string.gsub(botName, "npc_dota_hero_", ""), nil
-	local status, _ = xpcall(function() tBotSet = require( sBotDir ) end, function( err ) print( '[WARN] When loading customized game file: '..err ) end )
-	if not (status and tBotSet) then
-		sBotDir = GetScriptDirectory() .. "/Customize/hero/" .. string.gsub(botName, "npc_dota_hero_", "")
-		status, _ = xpcall(function() tBotSet = require( sBotDir ) end, function( err ) print( '[WARN] When loading customized file: '..err ) end )
+function J.GetUserHeroConfig(bot)
+	local name = string.gsub(bot:GetUnitName(), 'npc_dota_hero_', '')
+	local ok, config = pcall(require, 'game/Customize/hero/' .. name)
+	if not ok or type(config) ~= 'table' then
+		ok, config = pcall(require, GetScriptDirectory() .. '/Customize/hero/' .. name)
 	end
-	if status and tBotSet and tBotSet.Enable then
-		nAbilityBuildList = tBotSet.AbilityUpgrade
-		nTalentBuildList = J.GetTalentBuildList( tBotSet.Talent )
-		sBuyList = tBotSet.PurchaseList
-		sSellList = tBotSet.SellList
+	if ok and type(config) == 'table' and config.Enable then return config end
+end
+
+function J.SetUserHeroInit( nAbilityBuildList, nTalentBuildList, sBuyList, sSellList )
+	local config = J.GetUserHeroConfig(GetBot())
+	if config ~= nil then
+		nAbilityBuildList = config.AbilityUpgrade or nAbilityBuildList
+		if config.Talent ~= nil then nTalentBuildList = J.GetTalentBuildList(config.Talent) end
+		sBuyList = config.PurchaseList or sBuyList
+		sSellList = config.SellList or sSellList
 	end
 	return nAbilityBuildList, nTalentBuildList, sBuyList, sSellList
 end

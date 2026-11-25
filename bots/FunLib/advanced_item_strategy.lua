@@ -313,7 +313,7 @@ local ITEMS_BY_POSITION = {
 }
 local COUNTER_ITEMS = {
     evasion = {"item_monkey_king_bar", "item_bloodthorn"},
-    magic_heavy = {"item_black_king_bar", "item_pipe_of_insight", "item_lotus_orb"},
+    magic_heavy = {"item_black_king_bar", "item_pipe", "item_lotus_orb"},
     illusion_heavy = {"item_maelstrom", "item_mjollnir", "item_radiance", "item_battlefury"},
     invisibility = {"item_dust", "item_gem", "item_ward_sentry"},
     heroes = {[HeroName.PhantomAssassin] = {"item_monkey_king_bar", "item_bloodthorn"}, [HeroName.Riki] = {"item_dust", "item_gem", "item_ward_sentry"}, [HeroName.Antimage] = {"item_cyclone", "item_black_king_bar"}}
@@ -535,6 +535,9 @@ function AdvancedItemStrategy.GetCounterItems(self, enemies)
         end
     end
     return counterItems
+end
+function AdvancedItemStrategy.GetVisibleCounterItems(self)
+    return self:GetCounterItems(getEnemyHeroes())
 end
 function AdvancedItemStrategy.GetPositionSpecificItems(self, bot, position)
     return self:GetItemBuild(bot, position)
