@@ -16,6 +16,10 @@ local function distance(a, b) return math.sqrt((a.x - b.x)^2 + (a.y - b.y)^2) en
 local function heroAt(x, y, health)
     return {
         GetLocation = function(self) return self.location end,
+        GetExtrapolatedLocation = function(self, delay)
+            assert(delay >= 0.55, 'look beyond the bare cast point for allies')
+            return self.predicted or self.location
+        end,
         GetHealth = function() return health end,
         IsAttackImmune = no,
         HasModifier = no,
@@ -34,6 +38,7 @@ local spell = {
     IsNull = no,
     GetCastRange = function() return 800 end,
     GetCastPoint = function() return 0.35 end,
+    GetAOERadius = function(self) return self.aoeRadius or 0 end,
     GetSpecialValueInt = function(_, name) return name == 'radius' and 400 or 4 end,
     name = 'faceless_void_chronosphere',
 }
@@ -114,7 +119,6 @@ end
 
 local sniper, tiny = heroAt(365, 0, 400), heroAt(635, 0, 800)
 local mars, dazzle = heroAt(365, 0, 1100), heroAt(635, 0, 500)
-mars.core = true
 enemies, allies = {sniper, tiny}, {bot, mars, dazzle}
 assert(decide() == nil, 'hold a two-target Chronosphere when it would also freeze Mars and Dazzle')
 
@@ -133,8 +137,15 @@ mars.predicted = vector(500, 0)
 assert(decide() == nil, 'account for a core moving into the sphere during the cast point')
 
 local witchDoctor = heroAt(500, 0, 550)
-enemies, allies = {sniper, tiny, witchDoctor}, {bot, witchDoctor}
-assert(decide() == aim, 'allow three meaningful enemy targets when the only collateral is one support')
+dazzle.location = vector(500, 0)
+enemies, allies = {sniper, tiny, witchDoctor}, {bot, dazzle}
+assert(decide() == nil, 'a normal teamfight cast must avoid supports even when it can catch three enemies')
+
+spell.aoeRadius = 500
+dazzle.location = vector(960, 0)
+assert(not hero.IsChronosphereAllySafe(spell, aim), 'protect allies inside the current effective radius')
+spell.aoeRadius = nil
+assert(hero.IsChronosphereAllySafe(spell, aim))
 
 spell.name = 'faceless_void_time_zone'
 enemies, allies = {sniper, tiny}, {bot, mars, dazzle}

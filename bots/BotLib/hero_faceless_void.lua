@@ -434,16 +434,37 @@ local function IsChronosphereTarget(enemy)
 		and not enemy:HasModifier('modifier_templar_assassin_refraction_absorb')
 end
 
-local function GetChronosphereAllyCost(location, radius, allies)
-	local cost = 0
+local function ChronosphereHitsAlly(location, radius, allies)
+	-- Leave room for allies near the edge and for movement while Void turns to cast.
+	local safetyRadius = radius + 40
 	for _, ally in ipairs(allies) do
-		if J.Site.GetDistance(location, ally.current) <= radius
-			or J.Site.GetDistance(location, ally.predicted) <= radius
+		if J.Site.GetDistance(location, ally.current) <= safetyRadius
+			or J.Site.GetDistance(location, ally.predicted) <= safetyRadius
 		then
-			cost = cost + ally.cost
+			return true
 		end
 	end
-	return cost
+	return false
+end
+
+local function GetChronosphereAllies(ability, radius)
+	local allies = {}
+	local turnAndCastTime = ability:GetCastPoint() + 0.25
+	local searchRadius = ability:GetCastRange() + radius + 200
+	for _, ally in ipairs(J.GetAlliesNearLoc(bot:GetLocation(), searchRadius)) do
+		if ally ~= bot then
+			table.insert(allies, {
+				current = ally:GetLocation(),
+				predicted = ally:GetExtrapolatedLocation(turnAndCastTime),
+			})
+		end
+	end
+	return allies
+end
+
+function X.IsChronosphereAllySafe(ability, location)
+	local radius = math.max(ability:GetSpecialValueInt('radius'), ability:GetAOERadius() or 0)
+	return not ChronosphereHitsAlly(location, radius, GetChronosphereAllies(ability, radius))
 end
 
 local function FindTeamfightChronosphere(castRange, radius, castPoint, allies, suggestedLocation)
@@ -458,7 +479,7 @@ local function FindTeamfightChronosphere(castRange, radius, castPoint, allies, s
 	if #enemies < 2 then return nil, nil end
 
 	local bestLocation, bestTarget
-	local bestAllyCost, bestEnemyCount = math.huge, 0
+	local bestEnemyCount = 0
 	local function ConsiderLocation(location)
 		if location == nil then return end
 		if J.Site.GetDistance(origin, location) > castRange then
@@ -476,14 +497,11 @@ local function FindTeamfightChronosphere(castRange, radius, castPoint, allies, s
 				end
 			end
 		end
-		if enemyCount < 2 then return end
-
-		local allyCost = GetChronosphereAllyCost(location, radius, allies)
-		if enemyCount - allyCost >= 2
-			and (allyCost < bestAllyCost or (allyCost == bestAllyCost and enemyCount > bestEnemyCount))
+		if enemyCount >= 2 and enemyCount > bestEnemyCount
+			and not ChronosphereHitsAlly(location, radius, allies)
 		then
 			bestLocation, bestTarget = location, target
-			bestAllyCost, bestEnemyCount = allyCost, enemyCount
+			bestEnemyCount = enemyCount
 		end
 	end
 
@@ -523,15 +541,8 @@ function X.ConsiderChronosphere()
 	local bFreezesAllies = Chronosphere:GetName() == 'faceless_void_chronosphere'
 	local allies = {}
 	if bFreezesAllies then
-		for _, ally in ipairs(J.GetAlliesNearLoc(bot:GetLocation(), nCastRange + nRadius + 200)) do
-			if ally ~= bot then
-				table.insert(allies, {
-					current = ally:GetLocation(),
-					predicted = J.GetCorrectLoc(ally, nCastPoint),
-					cost = J.IsCore(ally) and 2 or 1,
-				})
-			end
-		end
+		nRadius = math.max(nRadius, Chronosphere:GetAOERadius() or 0)
+		allies = GetChronosphereAllies(Chronosphere, nRadius)
 	end
 
 	if J.IsInTeamFight(bot, 1200)
@@ -584,7 +595,7 @@ function X.ConsiderChronosphere()
 				and not J.IsLocationInChrono(loc)
 				and not J.IsLocationInBlackHole(loc)
 				and not J.IsLocationInArena(loc, nRadius)
-				and GetChronosphereAllyCost(loc, nRadius, allies) == 0
+				and not ChronosphereHitsAlly(loc, nRadius, allies)
 				then
 					bot:SetTarget(botTarget)
 					return BOT_ACTION_DESIRE_HIGH, loc
@@ -633,7 +644,7 @@ function X.ConsiderChronosphere()
 					and not J.IsLocationInChrono(nLocationAoE.targetloc)
 					and not J.IsLocationInBlackHole(nLocationAoE.targetloc)
 					and not J.IsLocationInArena(nLocationAoE.targetloc, nRadius)
-					and GetChronosphereAllyCost(nLocationAoE.targetloc, nRadius, allies) == 0
+					and not ChronosphereHitsAlly(nLocationAoE.targetloc, nRadius, allies)
 					then
 						return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
 					end

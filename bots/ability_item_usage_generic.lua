@@ -1455,14 +1455,12 @@ local function FindBkbCounterInitiation(item)
     if botName ~= 'npc_dota_hero_faceless_void' then return end
     local ability = bot:GetAbilityByName('faceless_void_chronosphere')
     if not BkbEnablesCast(item, ability) then return end
-    local radius = ability:GetSpecialValueInt('radius')
+    local radius = math.max(ability:GetSpecialValueInt('radius'), ability:GetAOERadius() or 0)
     if radius <= 0 then return end
     local area = bot:FindAoELocation(true, true, bot:GetLocation(), ability:GetCastRange(), radius, ability:GetCastPoint(), 0)
     if area.count < 2 or area.targetloc == nil or #J.GetEnemiesNearLoc(area.targetloc, radius) < 2
-    or J.GetAvailableFightAllies(bot, area.targetloc, 1200) == 0 then return end
-    for _, ally in ipairs(J.GetAlliesNearLoc(area.targetloc, radius)) do
-        if ally ~= bot and J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally) then return end
-    end
+    or J.GetAvailableFightAllies(bot, area.targetloc, 1200) == 0
+    or not BotBuild.IsChronosphereAllySafe(ability, area.targetloc) then return end
     return function() bot:ActionQueue_UseAbilityOnLocation(ability, area.targetloc) end
 end
 

@@ -5,6 +5,7 @@ local function zero() return 0 end
 local function pos(x) return {x = x} end
 local function distance(a, b) return math.abs(a.x - b.x) end
 local detection = {}
+local chronosphereSafetySource
 do
     local file = assert(io.open('bots/FunLib/jmz_func.lua', 'r'))
     local source = file:read('*a')
@@ -12,6 +13,14 @@ do
     local start = assert(source:find('function J.HasItemConcealment(unit)', 1, true))
     local finish = assert(source:find('function J.HasInvisCounterBuff(unit)', start, true))
     setfenv(assert(loadstring(source:sub(start, finish - 1))), {J = detection})()
+end
+do
+    local file = assert(io.open('bots/BotLib/hero_faceless_void.lua', 'r'))
+    local source = file:read('*a')
+    file:close()
+    local start = assert(source:find('local function ChronosphereHitsAlly', 1, true))
+    local finish = assert(source:find('local function FindTeamfightChronosphere', start, true))
+    chronosphereSafetySource = source:sub(start, finish - 1)
 end
 
 local function ability(name, flags, range, mana, values)
@@ -24,6 +33,7 @@ local function ability(name, flags, range, mana, values)
     h.GetSpecialValueFloat = h.GetSpecialValueInt
     h.IsNull, h.IsHidden, h.IsTrained, h.IsActivated = no, no, yes, yes
     h.GetCastPoint = function() return 0.2 end
+    h.GetAOERadius = zero
     function h:GetCooldownTimeRemaining() return self.cooldown end
     return h
 end
@@ -37,6 +47,7 @@ local function fixture(itemNames, heroName)
     local roster = {bot, ally, unpack(enemies)}
     for _, unit in ipairs(roster) do
         unit.GetLocation = function(self) return pos(self.x) end
+        unit.GetExtrapolatedLocation = function(self) return pos(self.projectedX or self.x) end
         unit.GetTeam = function(self) return self.side end
         unit.GetPlayerID = function(self) return self.id end
         unit.GetAttackTarget = function(self) return self.attacking end
@@ -146,13 +157,18 @@ local function fixture(itemNames, heroName)
         IsClosestToDustLocation = yes, CheckBitfieldFlag = function(a, b) return a == b end,
         Item = {IsSpecifiedItem = no},
         Chat = {GetNormName = function() return 'test hero' end},
-        Site = {GetXUnitsTowardsLocation = function(unit, goal, range) return pos(unit.x + (goal.x < unit.x and -range or range)) end},
+        Site = {
+            GetXUnitsTowardsLocation = function(unit, goal, range) return pos(unit.x + (goal.x < unit.x and -range or range)) end,
+            GetDistance = distance,
+        },
     }
+    local build = {sSkillList = {}}
+    setfenv(assert(loadstring(chronosphereSafetySource)), setmetatable({J = j, X = build, bot = bot}, {__index = _G}))()
     local env = setmetatable({
         GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
         GetTeam = function() return 2 end, Vector = empty, RandomInt = function(first) return first end,
         require = function(name) return name == 'bots/FunLib/jmz_func' and j or {} end,
-        dofile = function() return {sSkillList = {}} end,
+        dofile = function() return build end,
         DotaTime = function() return state.time end, IsHeroAlive = yes, IsLocationVisible = yes,
         IsLocationPassable = function(point) return not state.blocked or point.x >= 0 end,
         GetUnitToUnitDistance = distance, GetUnitToLocationDistance = distance,
@@ -219,6 +235,8 @@ do
     assert(#orders == 2 and orders[2][1] == 'faceless_void_chronosphere', 'counter-initiate through a known silence')
     ally.x = 520
     assert(#tick() == 0, 'hold BKB when the proposed counter-initiation traps a teammate')
+    ally.x, ally.projectedX = 55, 120
+    assert(#tick() == 0, 'hold BKB when a teammate is moving into the proposed sphere')
 end
 
 do
