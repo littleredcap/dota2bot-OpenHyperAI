@@ -111,17 +111,46 @@ local function fixture(opts)
     local farm
     if opts.farmBot then
         local bot = members[opts.farmBot]
-        local laneCreep = {x = bot.x + 100, GetTeam = function() return 3 end}
+        local laneCreepPoint = loc(bot.x + 100)
+        local laneCreep = {x = laneCreepPoint.x, GetTeam = function() return 3 end,
+            GetLocation = function() return laneCreepPoint end}
+        local lanes = {[Lan.Top] = loc(bot.x + 800), [Lan.Mid] = loc(bot.x + 1200), [Lan.Bot] = loc(bot.x + 1600)}
+        local closeCamp = {cattr = {location = loc(bot.x - (opts.closeCampDistance or 680))}}
+        local farCamp = {cattr = {location = loc(bot.x - 1500)}}
+        local neutral = {x = closeCamp.cattr.location.x, IsAncientCreep = no, GetTeam = function() return 4 end}
         local midas = {}
-        bot.GetNearbyLaneCreeps = function() return {laneCreep} end
+        bot.GetNearbyLaneCreeps = function() return (not opts.route or opts.farmWave) and {laneCreep} or {} end
         bot.HasModifier, bot.IsChanneling = no, no
         bot.GetNearbyTowers, bot.GetNearbyBarracks, bot.GetNearbyNeutralCreeps = empty, empty, empty
         bot.DistanceFromFountain = function() return 1000 end
         bot.GetAttackRange = function() return 600 end
+        bot.GetHealth = function() return 1500 end
+        bot.GetNetWorth = function() return 10000 end
         bot.GetTeam = function() return 2 end
         bot.GetAbilityByName = function() end
-        jmz.Role = {IsCampRefreshDone = yes, NotSayRate = no, IsPvNMode = no}
-        jmz.Site = {GetClosestNeutralSpwan = function() end, GetFarmLaneTarget = function() return laneCreep end}
+        bot.Action_MoveToLocation = function(_, point) orders[#orders + 1] = point end
+        bot.Action_ClearActions = function() orders[#orders + 1] = 'cancel' end
+        bot.GetNearbyNeutralCreeps = function()
+            local creeps = {}
+            for _ = 1, (opts.neutralCount or (opts.occupied and 1 or 0)) do
+                creeps[#creeps + 1] = neutral
+            end
+            return creeps
+        end
+        local ally = members[2]
+        ally.GetAttackTarget = function() return opts.occupied and neutral or nil end
+        jmz.Role = {IsCampRefreshDone = yes, NotSayRate = no, IsPvNMode = no,
+            availableCampTable = opts.route and {closeCamp, farCamp} or {}}
+        jmz.Site = {
+            GetClosestNeutralSpwan = function(_, camps) return camps[1] end,
+            GetFarmLaneTarget = function() return laneCreep end,
+            FindFarmNeutralTarget = function(units) return units[1] end,
+            IsTimeToFarm = yes, IsModeSuitableToFarm = yes,
+            UpdateAvailableCamp = function()
+                opts.removedCamp = true
+                return {farCamp}, nil
+            end,
+        }
         jmz.GetPosition = function() return 1 end
         jmz.GetProperTarget = function() end
         jmz.CheckLoneDruid, jmz.GetEnemyList, jmz.GetAllyList = empty, empty, empty
@@ -131,26 +160,40 @@ local function fixture(opts)
         jmz.GetTormentorLocation, jmz.GetCurrentRoshanLocation = empty, empty
         jmz.GetInventoryNetworth = function() return 20000, 20000 end
         jmz.IsRoshanAlive, jmz.IsGoingOnSomeone, jmz.IsRetreating, jmz.IsInRange = no, no, no, no
+        jmz.IsRoshan = no
         jmz.GetTeamFightLocation = function() end
         jmz.GetAllyCount, jmz.GetNumOfTeamTotalKills = function() return 1 end, function() return 0 end
         jmz.GetLastSeenEnemiesNearLoc = function(point)
             return point.x == ancient.x and opts.baseEnemyId and {opts.baseEnemyId} or {}
         end
-        jmz.IsItemAvailable = function() return midas end
+        jmz.IsItemAvailable = function() return not opts.route and midas or nil end
         jmz.IsInAllyArea = yes
         jmz.CanCastAbility = function(item) return item == midas end
+        jmz.GetAliveCoreCount = function() return 2 end
+        jmz.IsModeTurbo, jmz.IsLateGame, jmz.IsFarming = no, no, no
+        jmz.GetCenterOfUnits = function() return laneCreepPoint end
+        jmz.GetAlliesNearLoc = function(point)
+            return point == closeCamp.cattr.location and opts.occupied and {ally} or {}
+        end
         local farmEnv = setmetatable({
             GetBot = function() return bot end, Vector = loc, RandomInt = function(low) return low end,
             GetRoshanDesire = function() return 0 end,
             DotaTime = function() return now end,
+            GetLaneFrontLocation = function(_, lane) return lanes[lane] end,
+            GetHeroDeaths = function() return 0 end,
+            IsLocationVisible = yes, LANE_TOP = Lan.Top, LANE_MID = Lan.Mid, LANE_BOT = Lan.Bot,
+            TEAM_NEUTRAL = 4, GAMEMODE_MO = 99, Min = math.min,
             BOT_MODE_DESIRE_NONE = 0, BOT_MODE_DESIRE_MODERATE = 0.5, BOT_MODE_DESIRE_VERYHIGH = 0.9,
-            BOT_MODE_DESIRE_ABSOLUTE = 1, BOT_MODE_ITEM = 15,
+            BOT_MODE_DESIRE_ABSOLUTE = 1, BOT_MODE_DESIRE_HIGH = 0.7, BOT_MODE_DESIRE_LOW = 0.2, BOT_MODE_ITEM = 15,
         }, {__index = env})
-        jmz.GetEnemiesNearLoc = empty
+        jmz.GetEnemiesNearLoc = function(point)
+            return (opts.dangerInLanes and point.x > bot.x or opts.dangerAtFarCamp and point == farCamp.cattr.location) and {{}} or {}
+        end
         setfenv(assert(loadfile('bots/mode_farm_generic.lua')), farmEnv)()
         farm = {GetDesire = farmEnv.GetDesire, Think = farmEnv.Think}
         function farm.SetThreatVisible(visible) creeps[1].visible = visible end
         function farm.AdvanceTime(seconds) now = now + seconds end
+        farm.lanes, farm.camps = lanes, {closeCamp, farCamp}
     end
     return push,defend,members,orders,Lan,farm
 end
@@ -217,7 +260,7 @@ do
     assert(orders[1] == 'attack', 'farm can issue a normal lane attack')
     farm.SetThreatVisible(true)
     farm.Think()
-    assert(#orders == 1, 'a new base defense assignment prevents a stale farm order')
+    assert(#orders == 2 and orders[2] == 'cancel', 'a new base defense assignment cancels a stale farm order')
     same(farm.GetDesire(), 0, 'assigned creep responder yields even with Midas ready')
     same(defend.GetDefendDesire(members[1], lane.Mid), 0.97, 'assigned farmer has an active defense mode')
     farm.SetThreatVisible(false)
@@ -237,3 +280,42 @@ do
     same(farm.GetDesire(), 0, 'high-priority active defense outranks a ready Midas')
 end
 print('PASS: farm yields to an assigned or high-priority defense and resumes after the threat')
+
+do
+    local opts = {farmBot = 1, route = true, time = 1200}
+    local _, _, _, orders, lane, farm = fixture(opts)
+    assert(farm.GetDesire() > 0)
+    farm.Think()
+    assert(orders[1] == farm.lanes[lane.Top], 'follow the closest safe lane instead of moving to a camp')
+    opts.dangerInLanes = true
+    farm.Think()
+    assert(orders[2] == farm.camps[1].cattr.location, 'switch to a camp when a visible enemy threatens the lane')
+    opts.occupied = true
+    farm.Think()
+    assert(orders[3] == farm.camps[2].cattr.location, 'leave a camp that an ally is attacking and do not attack its neutrals')
+    opts.dangerAtFarCamp = true
+    farm.Think()
+    assert(#orders == 4 and orders[4] == 'cancel', 'cancel the last farm order when every destination is blocked')
+    opts.dangerInLanes = false
+    assert(farm.GetDesire() > 0)
+    farm.Think()
+    assert(orders[5] == farm.lanes[lane.Top], 'resume farming a safe lane when it reopens')
+end
+print('PASS: farm follows safe lane routes and replans around enemy threats and occupied camps')
+
+do
+    local opts = {farmBot = 1, route = true, time = 1200, dangerInLanes = true,
+        closeCampDistance = 400, neutralCount = 3}
+    local _, _, members, orders, _, farm = fixture(opts)
+    assert(farm.GetDesire() > 0)
+    farm.Think()
+    assert(orders[2] == 'attack')
+    members[1].x = farm.camps[1].cattr.location.x
+    opts.neutralCount = 1
+    farm.Think()
+    assert(orders[4] == 'attack' and not opts.removedCamp, 'finish the last neutral before removing the camp')
+    opts.neutralCount = 0
+    farm.Think()
+    assert(opts.removedCamp, 'clear the camp only after no eligible neutrals remain')
+end
+print('PASS: farm keeps a camp available through the final neutral creep')
