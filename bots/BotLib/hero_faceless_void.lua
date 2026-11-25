@@ -423,6 +423,91 @@ function X.ConsiderTimeDilation()
 	return BOT_ACTION_DESIRE_NONE
 end
 
+local function IsChronosphereTarget(enemy)
+	return J.IsValidHero(enemy)
+		and not J.IsSuspiciousIllusion(enemy)
+		and not enemy:IsAttackImmune()
+		and not enemy:HasModifier('modifier_abaddon_borrowed_time')
+		and not enemy:HasModifier('modifier_dazzle_shallow_grave')
+		and not enemy:HasModifier('modifier_necrolyte_reapers_scythe')
+		and not enemy:HasModifier('modifier_oracle_false_promise_timer')
+		and not enemy:HasModifier('modifier_templar_assassin_refraction_absorb')
+end
+
+local function GetChronosphereAllyCost(location, radius, allies)
+	local cost = 0
+	for _, ally in ipairs(allies) do
+		if J.Site.GetDistance(location, ally.current) <= radius
+			or J.Site.GetDistance(location, ally.predicted) <= radius
+		then
+			cost = cost + ally.cost
+		end
+	end
+	return cost
+end
+
+local function FindTeamfightChronosphere(castRange, radius, castPoint, allies, suggestedLocation)
+	local origin = bot:GetLocation()
+	local hitRadius = radius / 1.2
+	local enemies = {}
+	for _, enemy in ipairs(J.GetEnemiesNearLoc(origin, castRange + radius + 200)) do
+		if IsChronosphereTarget(enemy) then
+			table.insert(enemies, {hero = enemy, location = J.GetCorrectLoc(enemy, castPoint)})
+		end
+	end
+	if #enemies < 2 then return nil, nil end
+
+	local bestLocation, bestTarget
+	local bestAllyCost, bestEnemyCount = math.huge, 0
+	local function ConsiderLocation(location)
+		if location == nil then return end
+		if J.Site.GetDistance(origin, location) > castRange then
+			location = J.Site.GetXUnitsTowardsLocation(bot, location, castRange)
+		end
+
+		local enemyCount = 0
+		local target, targetHealth = nil, math.huge
+		for _, enemy in ipairs(enemies) do
+			if J.Site.GetDistance(location, enemy.location) <= hitRadius then
+				enemyCount = enemyCount + 1
+				local health = enemy.hero:GetHealth()
+				if health < targetHealth then
+					target, targetHealth = enemy.hero, health
+				end
+			end
+		end
+		if enemyCount < 2 then return end
+
+		local allyCost = GetChronosphereAllyCost(location, radius, allies)
+		if enemyCount - allyCost >= 2
+			and (allyCost < bestAllyCost or (allyCost == bestAllyCost and enemyCount > bestEnemyCount))
+		then
+			bestLocation, bestTarget = location, target
+			bestAllyCost, bestEnemyCount = allyCost, enemyCount
+		end
+	end
+
+	ConsiderLocation(suggestedLocation)
+	for i, enemy in ipairs(enemies) do
+		ConsiderLocation(enemy.location)
+		for j = i + 1, #enemies do
+			local other = enemies[j].location
+			local delta = other - enemy.location
+			local distance = J.Site.GetDistance(enemy.location, other)
+			if distance > 0 and distance < hitRadius * 2 then
+				local center = (enemy.location + other) * 0.5
+				-- Check both sides of the pair for a cast that catches both enemies while avoiding allies.
+				local offset = math.sqrt(hitRadius * hitRadius - distance * distance * 0.25) * 0.95
+				local side = Vector(-delta.y, delta.x, 0) * (offset / distance)
+				ConsiderLocation(center)
+				ConsiderLocation(center + side)
+				ConsiderLocation(center - side)
+			end
+		end
+	end
+	return bestLocation, bestTarget
+end
+
 function X.ConsiderChronosphere()
 	if not Chronosphere:IsFullyCastable()
 	then
@@ -435,42 +520,41 @@ function X.ConsiderChronosphere()
 	local nDuration = Chronosphere:GetSpecialValueInt('duration')
 	local nAttackDamage = bot:GetAttackDamage()
 	local nAttackSpeed = bot:GetAttackSpeed()
-	local nBotKills = GetHeroKills(bot:GetPlayerID())
-	local nBotDeaths = GetHeroDeaths(bot:GetPlayerID())
+	local bFreezesAllies = Chronosphere:GetName() == 'faceless_void_chronosphere'
+	local allies = {}
+	if bFreezesAllies then
+		for _, ally in ipairs(J.GetAlliesNearLoc(bot:GetLocation(), nCastRange + nRadius + 200)) do
+			if ally ~= bot then
+				table.insert(allies, {
+					current = ally:GetLocation(),
+					predicted = J.GetCorrectLoc(ally, nCastPoint),
+					cost = J.IsCore(ally) and 2 or 1,
+				})
+			end
+		end
+	end
 
 	if J.IsInTeamFight(bot, 1200)
 	then
 		local nLocationAoE = bot:FindAoELocation(true, true, bot:GetLocation(), nCastRange, nRadius / 1.2, nCastPoint, 0)
-		local nInRangeEnemy = J.GetEnemiesNearLoc(nLocationAoE.targetloc, nRadius / 1.2)
-
-		if nInRangeEnemy ~= nil and #nInRangeEnemy >= 2
-		then
-			local targetHero = nil
-			local currHeroHP = 10000
-
-			for _, enemyHero in pairs(nInRangeEnemy)
-			do
-				if J.IsValidHero(enemyHero)
-				and not J.IsSuspiciousIllusion(enemyHero)
-				and not enemyHero:IsAttackImmune()
-				and not enemyHero:HasModifier('modifier_abaddon_borrowed_time')
-				and not enemyHero:HasModifier('modifier_dazzle_shallow_grave')
-				and not enemyHero:HasModifier('modifier_necrolyte_reapers_scythe')
-				and not enemyHero:HasModifier('modifier_oracle_false_promise_timer')
-				and not enemyHero:HasModifier('modifier_templar_assassin_refraction_absorb')
-				and enemyHero:GetHealth() < currHeroHP
-				then
-					currHeroHP = enemyHero:GetHealth()
-					targetHero = enemyHero
+		local location = nLocationAoE.targetloc
+		local targetHero
+		if bFreezesAllies then
+			location, targetHero = FindTeamfightChronosphere(nCastRange, nRadius, nCastPoint, allies, location)
+		elseif location ~= nil then
+			local enemies = J.GetEnemiesNearLoc(location, nRadius / 1.2)
+			local targetHealth = math.huge
+			if #enemies >= 2 then
+				for _, enemy in ipairs(enemies) do
+					if IsChronosphereTarget(enemy) and enemy:GetHealth() < targetHealth then
+						targetHero, targetHealth = enemy, enemy:GetHealth()
+					end
 				end
 			end
-
-			if targetHero ~= nil
-			then
-				bot:SetTarget(targetHero)
-				return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
-			end
-
+		end
+		if targetHero ~= nil then
+			bot:SetTarget(targetHero)
+			return BOT_ACTION_DESIRE_HIGH, location
 		end
 	end
 
@@ -500,6 +584,7 @@ function X.ConsiderChronosphere()
 				and not J.IsLocationInChrono(loc)
 				and not J.IsLocationInBlackHole(loc)
 				and not J.IsLocationInArena(loc, nRadius)
+				and GetChronosphereAllyCost(loc, nRadius, allies) == 0
 				then
 					bot:SetTarget(botTarget)
 					return BOT_ACTION_DESIRE_HIGH, loc
@@ -548,6 +633,7 @@ function X.ConsiderChronosphere()
 					and not J.IsLocationInChrono(nLocationAoE.targetloc)
 					and not J.IsLocationInBlackHole(nLocationAoE.targetloc)
 					and not J.IsLocationInArena(nLocationAoE.targetloc, nRadius)
+					and GetChronosphereAllyCost(nLocationAoE.targetloc, nRadius, allies) == 0
 					then
 						return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
 					end
