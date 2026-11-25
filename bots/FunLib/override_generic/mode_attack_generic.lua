@@ -7,15 +7,36 @@ local X = {}
 local bot = GetBot()
 
 local botTarget = {unit = nil, location = 0, id = -1, fogChase = false}
-local helpAlly = {should = false, location = 0}
+local joinEnemy, joinAlly
 
 local botAttackRange, botHP, botMP, botHealth, botAttackDamage, botAttackSpeed, botActiveModeDesire, botLocation, botName
 
 local fLastAttackDesire = 0
 local bClearMode = false
+local canAttackThisTick = false
+local issuedCombatOrder = false
 
 local function IsValid(hUnit)
 	return hUnit ~= nil and not hUnit:IsNull() and hUnit:IsAlive()
+end
+
+local function CanJoinFight(enemy, ally)
+	if not J.IsValidHero(enemy) or not J.CanBeAttacked(enemy) or J.GetHP(bot) < 0.35
+	or (ally ~= nil and (not J.IsValidHero(ally) or J.IsRetreating(ally) or ally:GetAttackTarget() ~= enemy)) then
+		return false
+	end
+	local timeToReach = (GetUnitToUnitDistance(bot, enemy) - bot:GetAttackRange()) / math.max(bot:GetCurrentMovementSpeed(), 1)
+	if timeToReach > 6 then return false end
+	local location = enemy:GetLocation()
+	local backup = J.GetAvailableFightAllies(bot, location, 1400)
+	return backup >= 1 and backup + 1 >= #J.GetEnemiesNearLoc(location, 1400)
+end
+
+local function CancelCombatOrder()
+	if not issuedCombatOrder then return end
+	if not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
+	if botTarget.unit ~= nil and bot:GetTarget() == botTarget.unit then bot:SetTarget(nil) end
+	issuedCombatOrder = false
 end
 
 BotsInit = require("game/botsinit")
@@ -23,19 +44,22 @@ local Generic = BotsInit.CreateGeneric()
 
 function Generic.OnStart() end
 function Generic.OnEnd()
+	CancelCombatOrder()
 	botTarget.fogChase = false
-	helpAlly.should = false
+	joinEnemy, joinAlly = nil, nil
 end
 
 function Generic.GetDesire()
+	joinEnemy, joinAlly = nil, nil
+	botTarget.fogChase = false
 	if not bot:IsAlive()
 	or bot:IsIllusion()
 	or bot:HasModifier('modifier_fountain_fury_swipes_damage_increase')
 	then
-		return BOT_MODE_DESIRE_NONE
+		return GetActualDesire(BOT_MODE_DESIRE_NONE)
 	end
 
-	if bClearMode then bClearMode = false return 0 end
+	if bClearMode then bClearMode = false return GetActualDesire(BOT_MODE_DESIRE_NONE) end
 
 	botAttackRange = bot:GetAttackRange() + bot:GetBoundingRadius()
 	botHP = J.GetHP(bot)
@@ -80,6 +104,7 @@ function Generic.GetDesire()
 	local fAllyDamage = 0
 	local unitList_allies = GetUnitList(UNIT_LIST_ALLIED_HEROES)
 	local unitList_enemies = GetUnitList(UNIT_LIST_ENEMY_HEROES)
+	local vTeamFightLocation = J.GetTeamFightLocation(bot)
 
 	for _, enemyHero in ipairs(unitList_enemies) do
 		if J.IsValidHero(enemyHero)
@@ -92,7 +117,6 @@ function Generic.GetDesire()
 			fAllyDamage = 0
 			local nInRangeAlly = J.GetAlliesNearLoc(enemyHero:GetLocation(), 1200)
 			local nInRangeEnemy = J.GetEnemiesNearLoc(enemyHero:GetLocation(), 1200)
-			local vTeamFightLocation = J.GetTeamFightLocation(bot)
 
 			for _, allyHero in ipairs(unitList_allies) do
 				if J.IsValidHero(allyHero)
@@ -100,7 +124,8 @@ function Generic.GetDesire()
 				and not allyHero:HasModifier('modifier_necrolyte_reapers_scythe')
 				and not allyHero:HasModifier('modifier_skeleton_king_reincarnation_scepter_active')
 				and not allyHero:HasModifier('modifier_teleporting')
-				and (((GetUnitToUnitDistance(allyHero, enemyHero) - botAttackRange) / allyHero:GetCurrentMovementSpeed()) <= 6.0)
+				and not J.IsRetreating(allyHero)
+				and (((GetUnitToUnitDistance(allyHero, enemyHero) - allyHero:GetAttackRange()) / math.max(allyHero:GetCurrentMovementSpeed(), 1)) <= 6.0)
 				and (bot:GetPlayerID() == allyHero:GetPlayerID()
 					or allyHero:GetAttackTarget() == enemyHero
 					or J.IsInRange(allyHero, enemyHero, botAttackRange + 200))
@@ -140,7 +165,8 @@ function Generic.GetDesire()
 
 			local b1 = (bWeAreStronger and fAllyDamage >= enemyHero:GetHealth() * 0.2 and botHealth > fEnemyDamage * 1.15)
 			local b2 = (#nInRangeAlly >= #nInRangeEnemy and fAllyDamage >= enemyHero:GetHealth() * 0.3 and botHealth > fEnemyDamage * 1.15)
-			local b3 = (vTeamFightLocation ~= nil and (((GetUnitToLocationDistance(bot, vTeamFightLocation) - botAttackRange) / bot:GetCurrentMovementSpeed()) <= 10.0))
+			local b3 = vTeamFightLocation ~= nil and J.GetDistance(vTeamFightLocation, enemyHero:GetLocation()) <= 1400
+				and botHealth > fEnemyDamage * 1.15 and CanJoinFight(enemyHero)
 
 			if b1 or b2 or b3 then
 				local dist = GetUnitToUnitDistance(bot, enemyHero)
@@ -150,7 +176,10 @@ function Generic.GetDesire()
 							return GetActualDesire(BOT_MODE_DESIRE_VERYLOW)
 						end
 					end
-					if b3 then return GetActualDesire(BOT_MODE_DESIRE_ABSOLUTE) end
+					if b3 then
+						joinEnemy = enemyHero
+						return GetActualDesire(BOT_MODE_DESIRE_ABSOLUTE)
+					end
 					return GetActualDesire(BOT_MODE_DESIRE_VERYHIGH)
 				else
 					return GetActualDesire(BOT_MODE_DESIRE_MODERATE)
@@ -172,22 +201,14 @@ function Generic.GetDesire()
 			and not allyHero:HasModifier('modifier_teleporting')
 			then
 				local enemyHero = allyHero:GetAttackTarget()
-				local bWeAreStronger_Ally = J.WeAreStronger(allyHero, 1200)
-
 				if J.IsValidHero(enemyHero)
 				and J.IsInRange(allyHero, enemyHero, 1600)
 				and not J.IsSuspiciousIllusion(enemyHero)
 				and not enemyHero:HasModifier('modifier_necrolyte_reapers_scythe')
+				and CanJoinFight(enemyHero, allyHero)
 				then
-					local nInRangeAlly = J.GetAlliesNearLoc(enemyHero:GetLocation(), 1600)
-					local nInRangeEnemy = J.GetEnemiesNearLoc(enemyHero:GetLocation(), 1600)
-
-					if #nInRangeAlly >= #nInRangeEnemy or bWeAreStronger_Ally then
-						helpAlly = {should = true, location = allyHero:GetLocation()}
-						return GetActualDesire(BOT_MODE_DESIRE_VERYHIGH)
-					else
-						helpAlly.should = false
-					end
+					joinEnemy, joinAlly = enemyHero, allyHero
+					return GetActualDesire(BOT_MODE_DESIRE_VERYHIGH)
 				end
 			end
 		end
@@ -227,6 +248,10 @@ end
 --------------------------------------------------------------------
 function Generic.Think()
 	if J.CanNotUseAction(bot) then return end
+	if not canAttackThisTick or (joinEnemy ~= nil and not CanJoinFight(joinEnemy, joinAlly)) then
+		CancelCombatOrder()
+		return
+	end
 
 	local nEnemyHeroes = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
 	local nEnemyTowers = bot:GetNearbyTowers(1600, true)
@@ -237,6 +262,7 @@ function Generic.Think()
 		for _, enemy in ipairs(nEnemyHeroes) do
 			if J.IsValidHero(enemy) and J.IsInRange(bot, enemy, 750) and not J.IsSuspiciousIllusion(enemy)
 			and (enemy:GetUnitName() == 'npc_dota_hero_pugna' or enemy:GetUnitName() == 'npc_dota_hero_rubick') then
+				issuedCombatOrder = false
 				bot:Action_MoveToLocation(J.VectorAway(botLocation, enemy:GetLocation(), 800))
 				return
 			end
@@ -246,6 +272,7 @@ function Generic.Think()
 		for _, enemy in ipairs(nEnemyHeroes) do
 			if J.IsValidHero(enemy) and J.IsInRange(bot, enemy, 750) and not J.IsSuspiciousIllusion(enemy)
 			and enemy:GetUnitName() == 'npc_dota_hero_razor' then
+				issuedCombatOrder = false
 				bot:Action_MoveToLocation(J.VectorAway(botLocation, enemy:GetLocation(), 800))
 				return
 			end
@@ -258,6 +285,7 @@ function Generic.Think()
 				or enemy:HasModifier('modifier_skeleton_king_reincarnation_scepter_active'))
 			then
 				if J.IsInRange(bot, enemy, enemy:GetAttackRange() + 150) then
+					issuedCombatOrder = false
 					bot:Action_MoveToLocation(J.VectorAway(botLocation, enemy:GetLocation(), enemy:GetAttackRange() * 2))
 					return
 				end
@@ -273,6 +301,7 @@ function Generic.Think()
 				end
 			end
 			if unitDamage / (botHealth + bot:GetHealthRegen() * 3.0) >= 0.2 then
+				issuedCombatOrder = false
 				bot:Action_MoveToLocation(J.VectorAway(botLocation, nEnemyTowers[1]:GetLocation(), 800))
 				return
 			end
@@ -345,6 +374,7 @@ function Generic.Think()
 		botTarget.location = __target:GetExtrapolatedLocation(3.0)
 		botTarget.id = __target:GetPlayerID()
 		bot:SetTarget(__target)
+		issuedCombatOrder = true
 
 		-- Melee vs ranged positioning
 		if botAttackRange < 330 and botName ~= 'npc_dota_hero_templar_assassin' then
@@ -377,9 +407,10 @@ function Generic.Think()
 		end
 	end
 
-	-- Help ally movement
-	if helpAlly.should then
-		bot:Action_MoveToLocation(helpAlly.location)
+	if joinEnemy ~= nil then
+		local destination = joinAlly ~= nil and joinAlly:GetLocation() or joinEnemy:GetLocation()
+		bot:Action_MoveToLocation(destination)
+		issuedCombatOrder = true
 		return
 	end
 
@@ -403,15 +434,22 @@ function Generic.Think()
 		end
 		if vBest then
 			bot:Action_MoveToLocation(vBest)
+			issuedCombatOrder = true
 			return
 		end
 	end
 
+	CancelCombatOrder()
 	bClearMode = true
 end
 
 -- Desire smoothing (reference pattern)
 function GetActualDesire(nDesire)
+	canAttackThisTick = nDesire > BOT_MODE_DESIRE_NONE
+	if not canAttackThisTick then
+		fLastAttackDesire = BOT_MODE_DESIRE_NONE
+		return BOT_MODE_DESIRE_NONE
+	end
 	local alpha = 0.3
 	nDesire = fLastAttackDesire * (1 - alpha) + nDesire * alpha
 	fLastAttackDesire = nDesire

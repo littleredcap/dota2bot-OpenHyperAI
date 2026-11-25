@@ -1,6 +1,7 @@
 local bot = GetBot()
+if bot == nil then return end
 local botName = bot:GetUnitName()
-if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 
 local Utils = require(GetScriptDirectory()..'/FunLib/utils')
 local EnemyRoles = require(GetScriptDirectory()..'/FunLib/enemy_role_estimation')
@@ -26,7 +27,7 @@ local nTpSolt = 15
 local beInitDone, IsSupport, IsHeroCore, bePvNMode = false, false, false, false
 local ShouldAttackSpecialUnit = false
 local lastIdleStateCheck, isInIdleState = -1, false
-local ShouldHelpAlly, ShouldHelpWhenCoreIsTargeted = false, false
+local rescueAlly, rescueEnemy, issuedRescueTarget
 local nearbyAllies, nearbyEnemies
 
 -- Pickup / swap timers
@@ -46,19 +47,11 @@ local IsAvoidingAbilityZone = false
 
 local hTargetCreep = nil
 
--- Target stickiness + desire clamp
-local TARGET_LOCK_SEC = 1.2
-local targetLockUntil = -90
-
-local function SetStickyTarget(t)
-    if t == nil then return end
-    -- Don't switch targets too fast
-    if targetUnit ~= nil and targetUnit ~= t and DotaTime() < targetLockUntil then
-        return
-    end
-    targetUnit = t
-    bot:SetTarget(t)
-    targetLockUntil = DotaTime() + TARGET_LOCK_SEC
+local function CancelRescueOrder()
+    if issuedRescueTarget == nil then return end
+    if not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
+    if bot:GetTarget() == issuedRescueTarget then bot:SetTarget(nil) end
+    issuedRescueTarget = nil
 end
 
 local function CapForLanePush(desire)
@@ -81,6 +74,8 @@ function GetDesire()
     return res
 end
 function GetDesireHelper()
+    rescueAlly, rescueEnemy = nil, nil
+    hTargetCreep, ShouldAttackSpecialUnit = nil, false
     if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then
         return BOT_MODE_DESIRE_NONE
     end
@@ -107,21 +102,18 @@ function GetDesireHelper()
 
     local itemDesire, isBattleHorn = ItemOpsDesire()
 
-    local target
-    target, ShouldHelpWhenCoreIsTargeted = X.ConsiderHelpWhenCoreIsTargeted()
-    if ShouldHelpWhenCoreIsTargeted then
-        SetStickyTarget(target)
-        targetUnit = target
+    rescueEnemy, rescueAlly = X.ConsiderHelpWhenCoreIsTargeted()
+    if rescueEnemy ~= nil then
+        targetUnit = nil
         return RemapValClamped(J.GetHP(bot), 0, 0.5, BOT_MODE_DESIRE_NONE, 0.98)
     end
 
     nearbyAllies = J.GetAlliesNearLoc(bot:GetLocation(), 2200)
     nearbyEnemies = J.GetEnemiesNearLoc(bot:GetLocation(), 2000)
 
-    target, ShouldHelpAlly = ConsiderHelpAlly()
-    if ShouldHelpAlly then
-        SetStickyTarget(target)
-        targetUnit = target
+    rescueEnemy, rescueAlly = ConsiderHelpAlly()
+    if rescueEnemy ~= nil then
+        targetUnit = nil
         return RemapValClamped(J.GetHP(bot), 0, 0.6, BOT_MODE_DESIRE_NONE, 0.98)
     end
 
@@ -250,34 +242,34 @@ end
 -- ==============================
 -- Desire Helpers
 -- ==============================
-function ConsiderHelpAlly()
-    if J.GetHP(bot) < 0.3 then return nil, false end
+local function CanRescueAlly(ally)
+    return J.IsValidHero(ally) and J.GetHP(bot) >= 0.3
+        and (not J.IsCore(bot) or bot.isBear or not J.IsInLaningPhase() or J.IsInRange(bot, ally, 1600))
+        and not J.IsGoingOnSomeone(bot)
+        and not (J.IsRetreating(bot) and bot:GetActiveModeDesire() > 0.8)
+end
 
-    local nRadius = 3500
-    local nModeDesire = bot:GetActiveModeDesire()
-    local nClosestAlly = J.GetClosestAlly(bot, nRadius)
+local function CanPeelEnemy(ally, enemy)
+    return J.IsValidHero(enemy) and X.CanBeAttacked(enemy)
+        and J.IsInRange(bot, enemy, 1800) and J.IsInRange(ally, enemy, 1600)
+        and (enemy:GetAttackTarget() == ally or J.IsChasingTarget(enemy, ally))
+end
 
-    if  nClosestAlly ~= nil
-    and J.GetHP(bot) >= J.GetHP(nClosestAlly)
-    and (not J.IsCore(bot) or (J.IsCore(bot) and (not J.IsInLaningPhase() or J.IsInRange(bot, nClosestAlly, 1600))))
-    and not J.IsGoingOnSomeone(bot)
-    and not (J.IsRetreating(bot) and nModeDesire > 0.8) then
-        local nInRangeAlly = J.GetAlliesNearLoc(nClosestAlly:GetLocation(), 1200)
-        local nInRangeEnemy = J.GetEnemiesNearLoc(nClosestAlly:GetLocation(), 1600)
-
-        for _, enemyHero in pairs(nInRangeEnemy) do
-            if J.IsValidHero(enemyHero)
-            and GetUnitToUnitDistance(enemyHero, nClosestAlly) <= 1600
-            and (#nInRangeAlly + 1 >= #nInRangeEnemy) then
-                if (enemyHero:GetAttackTarget() == nClosestAlly or J.IsChasingTarget(enemyHero, nClosestAlly))
-                or nClosestAlly:WasRecentlyDamagedByHero(enemyHero, 2.5) then
-                    return enemyHero, true
-                end
-            end
-        end
+local function FindRescueEnemy(ally, expectedEnemy)
+    if not CanRescueAlly(ally) then return nil end
+    local location = ally:GetLocation()
+    local enemies = J.GetEnemiesNearLoc(location, 1600)
+    if #enemies > 1 + J.GetAvailableFightAllies(bot, location, 1200) then return nil end
+    for _, enemy in ipairs(enemies) do
+        if (expectedEnemy == nil or enemy == expectedEnemy) and CanPeelEnemy(ally, enemy) then return enemy end
     end
+end
 
-    return nil, false
+function ConsiderHelpAlly()
+    local ally = J.GetClosestAlly(bot, 1800)
+    if J.IsValidHero(ally) and J.GetHP(bot) >= J.GetHP(ally) then
+        return FindRescueEnemy(ally), ally
+    end
 end
 
 -- ==============================
@@ -286,6 +278,8 @@ end
 function OnStart() end
 
 function OnEnd()
+    CancelRescueOrder()
+    rescueAlly, rescueEnemy = nil, nil
     towerTime = 0
     towerCreepMode = false
     PickedItem = nil
@@ -298,6 +292,19 @@ function Think()
     if J.CanNotUseAction(bot) then return end
 	-- diabled think less to avoid failing to last hit
     -- if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "team_roam") then return end
+
+    if rescueEnemy ~= nil then
+        if FindRescueEnemy(rescueAlly, rescueEnemy) ~= nil then
+            bot:SetTarget(rescueEnemy)
+            bot:Action_AttackUnit(rescueEnemy, true)
+            issuedRescueTarget = rescueEnemy
+        else
+            CancelRescueOrder()
+            rescueEnemy, rescueAlly = nil, nil
+        end
+        return
+    end
+    CancelRescueOrder()
 
 	if J.IsValid(hTargetCreep) then
 		bot:Action_AttackUnit(hTargetCreep, true)
@@ -331,11 +338,6 @@ function Think()
 
     if isInIdleState then
         isInIdleState = J.CheckBotIdleState()
-    end
-
-    if ShouldHelpAlly and J.Utils.IsValidUnit(targetUnit) then
-        bot:Action_AttackUnit(targetUnit, false)
-        return
     end
 
     if not ShouldAttackSpecialUnit and ItemOpsThink() then return end
@@ -1244,34 +1246,13 @@ function X.UpdateCommonCamp(creep, AvailableCamp)
 end
 
 -- ==============================
--- Help when core targeted (unchanged)
+-- Help when a nearby core is targeted
 -- ==============================
 function X.ConsiderHelpWhenCoreIsTargeted()
-    local nRadius = 3500
-    local nModeDesire = bot:GetActiveModeDesire()
-    local nClosestCore = J.GetClosestCore(bot, nRadius)
-
-    if  nClosestCore ~= nil
-    and J.GetHP(nClosestCore) > 0.2
-    and (not J.IsCore(bot) or bot.isBear or (J.IsCore(bot) and (not J.IsInLaningPhase() or J.IsInRange(bot, nClosestCore, 1600))))
-    and not J.IsGoingOnSomeone(bot)
-    and not (J.IsRetreating(bot) and nModeDesire > 0.8) then
-        local nInRangeAlly = J.GetAlliesNearLoc(nClosestCore:GetLocation(), 1200)
-        local nInRangeEnemy = J.GetEnemiesNearLoc(nClosestCore:GetLocation(), 1600)
-
-        for _, enemyHero in pairs(nInRangeEnemy) do
-            if  J.IsValidHero(enemyHero)
-            and GetUnitToUnitDistance(enemyHero, nClosestCore) <= 1600
-            and (#nInRangeAlly + 1 >= #nInRangeEnemy) then
-                if (enemyHero:GetAttackTarget() == nClosestCore or J.IsChasingTarget(enemyHero, nClosestCore))
-                or nClosestCore:WasRecentlyDamagedByHero(enemyHero, 2.5) then
-                    return enemyHero, true
-                end
-            end
-        end
+    local core = J.GetClosestCore(bot, 1800)
+    if J.IsValidHero(core) and J.GetHP(core) > 0.2 then
+        return FindRescueEnemy(core), core
     end
-
-    return nil, false
 end
 
 function X.IsModeSuitToHitCreep(b)

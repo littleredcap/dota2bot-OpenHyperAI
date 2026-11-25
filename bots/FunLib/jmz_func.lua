@@ -3431,22 +3431,25 @@ function J.GetMostPushLaneDesire()
 
 end
 
-function J.GetClosestAlly(bot, nRadius)
+function J.GetClosestAlly(bot, nRadius, coreOnly)
+	local closest, closestDistance = nil, nRadius
 	for i = 1, #GetTeamPlayers( GetTeam() )
 	do
 		local member = GetTeamMember(i)
 
-		if member ~= nil
-		and member:IsAlive()
+		if J.IsValidHero(member)
 		and member ~= bot
-		and GetUnitToUnitDistance(bot, member) <= nRadius
+		and (not coreOnly or J.IsCore(member))
 		and not J.IsSuspiciousIllusion(member)
 		then
-			return member
+			local distance = GetUnitToUnitDistance(bot, member)
+			if distance <= closestDistance then
+				closest, closestDistance = member, distance
+			end
 		end
 	end
 
-	return nil
+	return closest
 end
 
 function J.GetNearestLaneFrontLocation( nUnitLoc, bEnemy, fDeltaFromFront )
@@ -5307,22 +5310,18 @@ function J.IsThereCoreNearby(nRadius)
 end
 
 function J.GetClosestCore(bot, nRadius)
-	for i = 1, #GetTeamPlayers( GetTeam() )
-	do
-		local member = GetTeamMember(i)
+	return J.GetClosestAlly(bot, nRadius, true)
+end
 
-		if  member ~= nil
-		and member:IsAlive()
-		and member ~= bot
-		and J.IsCore(bot)
-		and GetUnitToUnitDistance(bot, member) <= nRadius
-		and not J.IsSuspiciousIllusion(member)
-		then
-			return member
+function J.GetAvailableFightAllies(bot, location, radius)
+	local count = 0
+	for _, ally in ipairs(J.GetAlliesNearLoc(location, radius)) do
+		if ally ~= bot and J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally)
+		and not J.IsRetreating(ally) and not ally:HasModifier('modifier_teleporting') and J.GetHP(ally) > 0.3 then
+			count = count + 1
 		end
 	end
-
-	return nil
+	return count
 end
 
 function J.IsCreepBetweenMeAndTarget(hSource, hTarget, vLoc, nRadius)
