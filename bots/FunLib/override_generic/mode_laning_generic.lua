@@ -21,7 +21,7 @@ function X.GetDesire()
 		return BOT_MODE_DESIRE_ABSOLUTE
 	end
 
-	if not assignedLane then assignedLane = GetBotTargetLane() end
+	if not assignedLane then assignedLane = X.GetBotTargetLane() end
 
 	if GetGameMode() == GAMEMODE_1V1MID or GetGameMode() == GAMEMODE_MO then return 1 end
 
@@ -37,7 +37,7 @@ function X.GetDesire()
 	return BOT_MODE_DESIRE_VERYLOW
 end
 
-function GetBotTargetLane()
+function X.GetBotTargetLane()
 	if assignedLane then return assignedLane end
 
 	if GetTeam() == TEAM_RADIANT then
@@ -75,8 +75,7 @@ function X.Think()
 	end
 
 	-- Safety: retreat if being targeted by heroes, tower, or heavy creep damage (reference pattern)
-	if (bot:WasRecentlyDamagedByAnyHero(2.0) and #J.GetHeroesTargetingUnit(tEnemyHeroes, bot) >= 1)
-	or (J.IsValidBuilding(tEnemyTowers[1]) and tEnemyTowers[1]:GetAttackTarget() == bot)
+	if J.IsLaningUnderPressure(bot, tEnemyHeroes, tEnemyTowers[1])
 	or (bot:WasRecentlyDamagedByCreep(2.0) and not (bot:HasModifier('modifier_tower_aura') or bot:HasModifier('modifier_tower_aura_bonus')) and #nAllyCreeps > 0) then
 		local safeLoc = GetLaneFrontLocation(GetTeam(), botAssignedLane, -1200)
 		bot:Action_MoveToLocation(safeLoc)
@@ -201,7 +200,7 @@ end
 function GetHarassTarget(hEnemyList)
 	for _, enemyHero in pairs(hEnemyList) do
 		if J.IsValidHero(enemyHero)
-		and J.IsInRange(bot, enemyHero, bot:GetAttackRange() + 150)
+		and J.IsInRange(bot, enemyHero, bot:GetAttackRange())
 		and J.CanBeAttacked(enemyHero)
 		and not J.IsSuspiciousIllusion(enemyHero)
 		then

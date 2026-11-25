@@ -6,8 +6,9 @@ local Localization = require(GetScriptDirectory()..'/FunLib/localization')
 
 
 local bot = GetBot()
+if bot == nil then return end
 local botName = bot:GetUnitName()
-if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 
 local local_mode_laning_generic = nil
 local nAllyCreeps = nil
@@ -17,6 +18,7 @@ local nInRangeEnemy = nil
 local botAssignedLane = nil
 local botAttackRange = bot:GetAttackRange()
 local attackDamage = bot:GetAttackDamage()
+local GetBestLastHitCreep, GetBestDenyCreep, GetFurthestEnemyAttackRange
 local nH, enemyBots = J.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam())
 local teamHumans, teamBots = J.Utils.NumHumanBotPlayersInTeam(GetTeam())
 
@@ -96,9 +98,9 @@ function GetDesire()
 
 	if local_mode_laning_generic or (J.GetPosition(bot) == 1 and J.IsPosxHuman(5)) then
 		-- last hit
-		if J.IsInLaningPhase() then
-			local hitCreep, _ = GetBestLastHitCreep(nEnemyCreeps)
-			if J.IsValid(hitCreep) then
+		if J.IsInLaningPhase() and not J.IsLaningUnderPressure(bot, nInRangeEnemy, bot:GetNearbyTowers(1200, true)[1]) then
+			local hitCreep, moveToCreep = GetBestLastHitCreep(nEnemyCreeps)
+			if J.IsValid(hitCreep) and not moveToCreep then
 				if J.GetPosition(bot) <= 2 or not J.IsThereNonSelfCoreNearby(700) -- this is for e.g lone druid bear as pos1-2 with core LD nearby to do last hit.
 				then
 					return 0.9
@@ -163,7 +165,7 @@ function GetBestDenyCreep(hCreepList)
 		if J.IsValid(creep)
 		and J.GetHP(creep) < 0.49
 		and J.CanBeAttacked(creep)
-		and creep:GetHealth() <= attackDamage
+		and creep:GetHealth() <= bot:GetAttackDamage()
 		then
 			return creep
 		end
@@ -174,6 +176,20 @@ end
 
 if local_mode_laning_generic or (J.GetPosition(bot) == 1 and J.IsPosxHuman(5)) then
 	function Think()
+		if local_mode_laning_generic then
+			local_mode_laning_generic.Think()
+			return
+		end
+		if not bot:IsAlive() or J.CanNotUseAction(bot) or bot:IsDisarmed() then return end
+		nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
+		if J.IsLaningUnderPressure(bot, nInRangeEnemy, bot:GetNearbyTowers(1200, true)[1]) then
+			bot:Action_MoveToLocation(GetLaneFrontLocation(GetTeam(), botAssignedLane or bot:GetAssignedLane(), -1200))
+			return
+		end
+		nFurthestEnemyAttackRange = GetFurthestEnemyAttackRange(nInRangeEnemy)
+		nEnemyCreeps = bot:GetNearbyLaneCreeps(800, true)
+		nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
+		botAssignedLane = bot:GetAssignedLane()
 		local hitCreep, moveToCreep = GetBestLastHitCreep(nEnemyCreeps)
 		if J.IsValid(hitCreep) then
 			if J.GetPosition(bot) <= 2 or not J.IsThereNonSelfCoreNearby(700)
@@ -182,11 +198,12 @@ if local_mode_laning_generic or (J.GetPosition(bot) == 1 and J.IsPosxHuman(5)) t
 				or (moveToCreep and GetUnitToUnitDistance(bot, hitCreep) > botAttackRange * 0.8) then
 					bot:Action_MoveToUnit(hitCreep)
 					return
-				else
+				elseif not moveToCreep then
 					bot:SetTarget(hitCreep)
 					bot:Action_AttackUnit(hitCreep, true)
 					return
 				end
+				return
 			end
 		end
 
@@ -195,10 +212,6 @@ if local_mode_laning_generic or (J.GetPosition(bot) == 1 and J.IsPosxHuman(5)) t
 			bot:SetTarget(denyCreep)
 			bot:Action_AttackUnit(denyCreep, true)
 			return
-		end
-
-		if local_mode_laning_generic then
-			local_mode_laning_generic.Think()
 		end
 
 		local fLaneFrontAmount = GetLaneFrontAmount(GetTeam(), botAssignedLane, false)

@@ -1219,6 +1219,14 @@ function J.GetHeroesTargetingUnit(tUnits, hUnit)
     return tAttackingUnits
 end
 
+function J.IsLaningUnderPressure(bot, enemies, tower)
+    if J.IsValidBuilding(tower) and tower:GetAttackTarget() == bot then return true end
+
+    local attackers = J.GetHeroesTargetingUnit(enemies, bot)
+    return #attackers >= 2 or (#attackers == 1
+        and (J.GetHP(bot) <= 0.55 or bot:WasRecentlyDamagedByAnyHero(2)))
+end
+
 function J.GetSameUnitType(hUnit, nRadius, sUnitName, bAttacking)
     local tAttackingUnits = {}
     local unitList = GetUnitList(UNIT_LIST_ALL)
