@@ -130,6 +130,7 @@ local function fixture(itemNames, heroName)
         IsValidHero = function(unit) return unit ~= nil and unit.id ~= nil and not unit.hidden end,
         IsSuspiciousIllusion = no, IsDisabled = function(unit) return unit:IsRooted() end,
         IsRetreating = function(unit) return unit.retreating == true end,
+        ShouldRetreatFromEnemyReinforcements = function(unit) return unit == bot and state.reinforcements == true end,
         IsGoingOnSomeone = function(unit) return unit == bot and state.fighting end,
         GetAvailableFightAllies = function() return state.backup and 1 or 0 end,
         GetEscapeLoc = function() return pos(-1400) end,
@@ -311,6 +312,14 @@ do
     enemy.hidden, state.fighting, state.time = true, true, state.time + 1
     assert(#tick() == 0, 'forget stale invisibility evidence')
 end
+do
+    local state, bot, _, _, tick = fixture({'item_invis_sword'}, 'npc_dota_hero_drow_ranger')
+    bot.retreating = true
+    assert(#tick() == 0, 'do not use Shadow Blade merely because retreat mode is active')
+    state.reinforcements = true
+    assert(tick()[1][1] == 'item_invis_sword', 'use Shadow Blade to leave a visible reinforcement ambush before contact')
+end
+
 do
     local state, bot, _, enemies, tick, chase, _, _, _, _, items =
         fixture({'item_hurricane_pike', 'item_invis_sword', 'item_silver_edge'}, 'npc_dota_hero_drow_ranger')

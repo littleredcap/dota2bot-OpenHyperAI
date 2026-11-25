@@ -5324,6 +5324,50 @@ function J.GetAvailableFightAllies(bot, location, radius)
 	return count
 end
 
+function J.ShouldRetreatFromEnemyReinforcements(bot)
+	local now = DotaTime()
+	if now < 0 or not bot:IsAlive() or bot:HasModifier('modifier_fountain_invulnerability') then return false end
+
+	local enemyTeam = GetOpposingTeam()
+	local threats = {}
+	local incoming = 0
+	for _, tp in ipairs(GetIncomingTeleports()) do
+		if tp.playerid ~= nil and tp.location ~= nil and tp.time_remaining ~= nil
+			and tp.time_remaining >= 0 and tp.time_remaining <= 4
+			and GetTeamForPlayer(tp.playerid) == enemyTeam
+			and GetUnitToLocationDistance(bot, tp.location) <= 1250 and IsLocationVisible(tp.location)
+			and not threats[tp.playerid]
+		then
+			threats[tp.playerid] = true
+			incoming = incoming + 1
+		end
+	end
+
+	local location = bot:GetLocation()
+	local total, close = incoming, 0
+	local closePlayers = {}
+	for _, enemy in ipairs(J.GetEnemiesNearLoc(location, 1400)) do
+		local id = enemy:GetPlayerID()
+		if not closePlayers[id] and GetUnitToUnitDistance(bot, enemy) <= 1000 then
+			closePlayers[id] = true
+			close = close + 1
+		end
+		if not threats[id] then
+			threats[id] = true
+			total = total + 1
+		end
+	end
+	if total >= 4 and (incoming >= 2 or close >= 3)
+		and total >= J.GetAvailableFightAllies(bot, location, 1400) + 3 then
+		bot.ohaReinforcementRetreatAt = now
+		return true
+	end
+
+	-- Finish disengaging if arrivals drop out of the TP list or briefly leave vision.
+	local started = bot.ohaReinforcementRetreatAt
+	return started ~= nil and now >= started and now - started < 1.25
+end
+
 function J.IsCreepBetweenMeAndTarget(hSource, hTarget, vLoc, nRadius)
 	local vStart = hSource:GetLocation()
 	local vEnd = vLoc

@@ -130,6 +130,10 @@ end
 function GetDesireHelper()
     botActiveMode = bot:GetActiveMode()
 
+    if J.ShouldRetreatFromEnemyReinforcements(bot) then
+        return BOT_MODE_DESIRE_ABSOLUTE * 1.15
+    end
+
     if not bot:IsAlive()
     or bot:HasModifier('modifier_dazzle_nothl_projection_soul_clone')
     or bot:HasModifier('modifier_skeleton_king_reincarnation_scepter_active')

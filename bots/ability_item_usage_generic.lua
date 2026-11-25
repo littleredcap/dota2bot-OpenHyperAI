@@ -3060,7 +3060,7 @@ X.ConsiderItemDesire["item_invis_sword"] = function( hItem )
 
 	if J.IsRetreating( bot )
 		and bot:GetActiveModeDesire() > BOT_MODE_DESIRE_MODERATE
-		and #GetCombatPursuers(bot, 1050) > 0
+		and (#GetCombatPursuers(bot, 1050) > 0 or J.ShouldRetreatFromEnemyReinforcements(bot))
 	then
 		hEffectTarget = bot
 		sCastMotive = '撤退了'

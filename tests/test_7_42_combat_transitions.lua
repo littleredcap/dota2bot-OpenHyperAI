@@ -14,7 +14,7 @@ local allyFirst = assert(source:find('function J.GetClosestAlly(', 1, true))
 local allyLast = assert(source:find('function J.GetNearestLaneFrontLocation(', allyFirst, true))
 
 local function fixture(rescue)
-    local state = {time = 120, orders = {}, hp = 0.9}
+    local state = {time = 120, orders = {}, hp = 0.9, teleports = {}}
     local bot = {x = 0, side = 2, id = 1}
     local core = {x = 700, side = 2, id = 4, core = true}
     local fartherCore = {x = 1350, side = 2, id = 2, core = true, retreating = true}
@@ -94,6 +94,9 @@ local function fixture(rescue)
     local env = setmetatable({
         J = j, GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
         GetTeam = function() return 2 end, GetOpposingTeam = function() return 3 end,
+        GetTeamForPlayer = function(id) return id <= 4 and 2 or 3 end,
+        GetIncomingTeleports = function() return state.teleports end,
+        IsLocationVisible = function(location) return not location.hidden end,
         GetTeamPlayers = function() return {1, 2, 3, 4} end, GetTeamMember = function(i) return members[i] end,
         GetUnitList = function(kind) return kind == 1 and members or opponents end,
         require = function(name) return assert(modules[name], name) end,
@@ -154,4 +157,40 @@ do
     mode.Think()
     assert(state.orders[3] == enemy and state.orders[4] == 'cancel', 'stop committed attacks when the nearby ally dies')
 end
-print('PASS: team fights and rescue stop when backup is lost, reinforcements arrive, or the pursuer disengages')
+
+do
+    local state, mode, bot, core, backup, enemy, _, j = fixture(true)
+    core.retreating = true
+    assert(mode.GetDesire() > 0.9)
+    mode.Think()
+    assert(state.orders[1] == enemy, 'begin a justified rescue before the first hostile teleport')
+
+    local function teleport(id, x, seconds)
+        return {playerid = id, location = pos(x), time_remaining = seconds}
+    end
+    local destination = teleport(8, 700, 2.5)
+    destination.location.hidden = true
+    state.teleports = {teleport(2, 700, 2), teleport(5, 700, 2), teleport(6, 700, 3),
+        teleport(6, 700, 3), teleport(7, 700, 4.5), destination}
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot),
+        'ignore friendly, duplicate, distant in time and out-of-vision teleport arrivals')
+
+    destination.location.hidden = false
+    state.teleports[#state.teleports + 1] = teleport(7, 750, 1.5)
+    assert(mode.GetDesire() == 0, 'cancel team roam before the four enemies arrive')
+    mode.Think()
+    assert(state.orders[2] == 'cancel' and state.target == nil, 'clear the already-issued rescue order')
+    setfenv(assert(loadfile('bots/mode_retreat_generic.lua')), mode)()
+    assert(mode.GetDesire() > mode.BOT_MODE_DESIRE_ABSOLUTE, 'give withdrawal priority at high health')
+
+    state.teleports = {}
+    state.time = state.time + 0.5
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'hold withdrawal briefly through the teleport handoff')
+    state.time = state.time + 1.5
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'stop holding withdrawal if the reinforcements disappear')
+
+    core.retreating, backup.retreating = false, false
+    state.teleports = {teleport(6, 700, 2), teleport(7, 750, 1.5), destination}
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'nearby available backup prevents an automatic retreat')
+end
+print('PASS: stop unsafe fights and rescue orders, including before visible hostile teleports finish')

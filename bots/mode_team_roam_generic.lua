@@ -80,6 +80,8 @@ function GetDesireHelper()
         return BOT_MODE_DESIRE_NONE
     end
 
+    if J.ShouldRetreatFromEnemyReinforcements(bot) then return BOT_MODE_DESIRE_NONE end
+
     Utils.SetFrameProcessTime(bot)
     EnemyRoles.UpdateEnemyHeroPositions()
 
@@ -290,6 +292,10 @@ end
 -- ==============================
 function Think()
     if J.CanNotUseAction(bot) then return end
+    if J.ShouldRetreatFromEnemyReinforcements(bot) then
+        CancelRescueOrder()
+        return
+    end
 	-- diabled think less to avoid failing to last hit
     -- if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "team_roam") then return end
 
