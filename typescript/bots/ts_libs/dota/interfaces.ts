@@ -117,6 +117,7 @@ export interface Unit {
     Action_UseAbility(ability: Ability): void;
     Action_MoveToLocation(location: Vector): void;
     Action_AttackUnit(unit: Unit, once: boolean): void;
+    Action_ClearActions(stop: boolean): void;
 
     GetAttackTarget(): Unit | null;
     GetTarget(): Unit | null;

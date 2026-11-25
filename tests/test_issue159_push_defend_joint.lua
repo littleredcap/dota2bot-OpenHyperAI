@@ -13,7 +13,18 @@ local function fixture(opts)
     local Lan = {Top=1, Mid=2, Bot=3}
     local want = {None=0, ExtraLow=0.02, VeryLow=0.12}
     local ancient, enemy = building(0, opts.ancientHP or 1000), building(9900, 1000)
+    enemy.HasModifier = function(_, name) return opts.ancientProtected and name == 'modifier_backdoor_protection_active' end
+    enemy.GetHealth = function() return opts.enemyAncientHP or 1000 end
     local t4 = building(120, 1000)
+    local melee, ranged = building(8650, 1000), building(8690, 1000)
+    melee.GetUnitName = function() return 'npc_dota_badguys_melee_rax_mid' end
+    ranged.GetUnitName = function() return 'npc_dota_badguys_range_rax_mid' end
+    melee.IsAlive = function() return not opts.meleeDestroyed end
+    melee.HasModifier = function(_, name)
+        return name == 'modifier_backdoor_protection_in_base'
+            or (opts.meleeProtected and name == 'modifier_backdoor_protection_active')
+    end
+    ranged.IsAlive = function() return not opts.rangedDestroyed end
     local orders, members, creeps = {}, {}, {}
     local now = opts.time or 1800
     for i=1,4 do
@@ -25,10 +36,12 @@ local function fixture(opts)
             GetActiveMode=function() return 0 end, GetActiveModeDesire=function() return opts.defending and 0.95 or 0 end,
             GetAssignedLane=function() return Lan.Mid end, GetLocation=function() return loc(x) end,
             GetAttackTarget=function() return nil end, WasRecentlyDamagedByAnyHero=no,
+            GetAttackRange=function() return 650 end, GetNearbyTowers=empty, GetNearbyCreeps=empty,
             GetNearbyLaneCreeps=function() return opts.wave and {{},{}} or {} end,
-            Action_AttackUnit=function() orders[#orders+1]='attack' end,
+            Action_AttackUnit=function(_, unit) orders[#orders+1]=opts.captureTargets and unit or 'attack' end,
+            Action_ClearActions=function() orders[#orders+1]='cancel' end,
             SetTarget=function() orders[#orders+1]='target' end,
-            Action_MoveToLocation=function() orders[#orders+1]='move' end,
+            Action_MoveToLocation=function(_, point) orders[#orders+1]=opts.captureTargets and point or 'move' end,
             Action_AttackMove=function() orders[#orders+1]='attack move' end,
         }
     end
@@ -45,10 +58,15 @@ local function fixture(opts)
     }
     local jmz = {
         IsValid=function(u) return u ~= nil and u.visible ~= false end,
-        IsValidHero=function(u) return u.IsHero and u:IsHero() end,
-        CanBeAttacked=yes, IsValidBuilding=no, IsCore=yes, IsLateGame=yes,
+        IsValidHero=function(u) return u and u.IsHero and u:IsHero() end,
+        CanBeAttacked=yes, IsValidBuilding=function(u) return opts.direct and u ~= nil and u.IsBuilding ~= nil and u:IsAlive() end,
+        IsCore=yes, IsLateGame=yes, IsTormentor=no, IsRoshan=no,
         IsDoingRoshan=no, IsDoingTormentor=no, CanNotUseAction=no,
-        GetHP=function() return opts.hp or 1 end,
+        GetHP=function(u) return u == enemy and enemy:GetHealth() / 1000 or opts.hp or 1 end,
+        GetMP=function() return 1 end,
+        IsInRange=function(u, v, radius) return math.abs(u.x-v.x) <= radius end,
+        VectorTowards=function(point, _, offset) return loc(point.x-offset) end,
+        GetRandomLocationWithinDist=function(point) return point end,
         GetHumanPing=function()
             if opts.ping then return {}, {time=now,normal_ping=false} end
         end,
@@ -57,7 +75,20 @@ local function fixture(opts)
         GetAlliesNearLoc=function() return opts.baseAlly and {members[1]} or {} end,
         GetEnemiesAroundLoc=function() return opts.outer and 1 or 0 end,
         GetAverageLevel=function() return 20 end,
-        GetNumOfAliveHeroes=function() return 4 end,
+        GetAliveCoreCount=function(enemies) return enemies and 1 or 2 end,
+        GetInventoryNetworth=function() return 60000,40000 end,
+        DoesTeamHaveAegis=no, GetCurrentRoshanLocation=empty, GetTormentorLocation=empty,
+        GetTormentorWaitingLocation=empty, IsSuspiciousIllusion=no, IsMeepoClone=no,
+        GetNumOfAliveHeroes=function(enemies) return enemies and (opts.aliveEnemies or 2) or 4 end,
+        GetAvailableFightAllies=function()
+            return opts.backupLost and 0 or (opts.localAllies and 2 or 0)
+        end,
+        GetEnemiesNearLoc=function(point)
+            local nearby = {}
+            local count = point.x == enemy.x and opts.defendersAtAncient or opts.visibleDefenders or 0
+            for _=1,count do nearby[#nearby+1] = {} end
+            return nearby
+        end,
         IsInLaningPhase=no, IsEarlyGame=no, IsMidGame=no,
         GetTeamFountain=function() return loc(0) end,
         AdjustLocationWithOffsetTowardsFountain=function(point) return point end,
@@ -65,19 +96,20 @@ local function fixture(opts)
             GetTeamFountainTpPoint=function() return loc(0) end,
             CountEnemyHeroesNear=function(_, radius) return radius == 2200 and opts.heroPanic and 1 or 0 end,
             GetAllyIdsInTpToLocation=empty, NumHumanBotPlayersInTeam=function() return 0 end,
-            IsBotThinkingMeaningfulAction=no, GameStates={defendPings={pingedTime=0}},
+            IsBotThinkingMeaningfulAction=no, GameStates={defendPings={pingedTime=0}}, IsAnyBarracksOnLaneAlive=yes,
         },
     }
     local distance=function(u,v) return math.abs(u.x-v.x) end
     local modules = {
         ['bots/FunLib/jmz_func']=jmz,
-        ['bots/ts_libs/dota/index']={Lane=Lan, BotModeDesire=want, BotMode={}, Barracks={},
+        ['bots/ts_libs/dota/index']={Lane=Lan, BotModeDesire=want, BotMode={}, Barracks={TopMelee=1, MidMelee=2, MidRanged=3},
             UnitType={Enemies=1, AlliedHeroes=2, AlliedCreeps=3, EnemyBuildings=4},
             Tower={Base1=1,Base2=2}, Team={Radiant=2,Dire=3}},
         ['bots/FunLib/global_cache']={
-            getGlobalGameState=function() return state end, getGlobalLocationState=empty,
+            getGlobalGameState=function() return state end, getGlobalLocationState=function() return {teamFountain=loc(0)} end,
             getCachedAlliesNearLoc=function() return opts.localAllies and {members[1],members[2],members[3]} or {members[1]} end,
             getCachedEnemiesNearLoc=empty, autoCleanupCache=function() end,
+            getCachedData=function(_, _, read) return read() end,
         },
         ['bots/ts_libs/utils/native-operators']={},
         ['bots/FunLib/utils']={GetLocationToLocationDistance=distance,
@@ -93,10 +125,21 @@ local function fixture(opts)
         GameTime=function() return now end, DotaTime=function() return now end,
         GetAncient=function(team) return team == 2 and ancient or enemy end,
         GetTower=function(_, tower) return tower == 1 and t4 or nil end,
-        GetBarracks=function() return nil end,
+        GetBarracks=function(team, barrack)
+            if team == 3 and opts.rotate and barrack == 1 then return melee end
+            if team == 3 and opts.objectives then
+                if barrack == 2 and melee:IsAlive() then return melee end
+                if barrack == 3 and ranged:IsAlive() then return ranged end
+            end
+        end,
         GetTeamPlayers=function() return {1,2,3,4} end, GetTeamMember=function(i) return members[i] end,
-        GetUnitList=function(kind) return kind == 1 and creeps or {} end,
+        GetUnitList=function(kind)
+            if kind == 1 then return creeps end
+            if kind == 4 and opts.objectives then return {melee,ranged} end
+            return {}
+        end,
         GetUnitToLocationDistance=distance, GetUnitToUnitDistance=distance,
+        IsHeroAlive=no, GetIncomingTeleports=empty, RandomFloat=function(first) return first end,
         GetLaneFrontLocation=function() return loc(8000) end,
         RemapValClamped=function(value, lo, hi, first, last)
             return first + (last-first) * math.max(0, math.min(1, (value-lo)/(hi-lo)))
@@ -106,7 +149,7 @@ local function fixture(opts)
     local defend = setfenv(assert(loadfile('bots/FunLib/aba_defend.lua')), env)()
     modules['bots/FunLib/aba_defend']=defend
     local push = setfenv(assert(loadfile('bots/FunLib/aba_push.lua')), env)()
-    push.WhichLaneToPush=function() return Lan.Mid end
+    if not opts.rotate then push.WhichLaneToPush=function() return Lan.Mid end end
     push.ShouldWaitForImportantItemsSpells=no
     local farm
     if opts.farmBot then
@@ -195,7 +238,7 @@ local function fixture(opts)
         function farm.AdvanceTime(seconds) now = now + seconds end
         farm.lanes, farm.camps = lanes, {closeCamp, farCamp}
     end
-    return push,defend,members,orders,Lan,farm
+    return push,defend,members,orders,Lan,farm, {ancient=enemy, melee=melee, ranged=ranged}
 end
 
 local function same(actual, expected, label)
@@ -223,12 +266,12 @@ check({attackers=1,ping=true}, 4, 0.9, 'single creep does not supersede push pin
 check({heroPanic=true}, 1, 0.02, 'enemy heroes threatening Ancient suppress push')
 check({time=959}, 1, 0.08, 'before opening timer')
 check({defending=true}, 1, 0.08, 'active defense cannot raise isolation cap')
-check({x=9500,direct=true,localAllies=true}, 1, 0.98, 'direct finish only scored, not executed in desire')
-check({x=9500,direct=true,localAllies=true,defending=true}, 1, 0.75, 'active defense prevents direct finish shortcut')
-check({x=9500,direct=true,localAllies=true,outer=true}, 1, 0.65, 'wider defense prevents direct finish shortcut')
+check({x=9500,direct=true,localAllies=true,wave=true}, 1, 0.98, 'direct finish only scored, not executed in desire')
+check({x=9500,direct=true,localAllies=true,wave=true,defending=true}, 1, 0.75, 'active defense prevents direct finish shortcut')
+check({x=9500,direct=true,localAllies=true,wave=true,outer=true}, 1, 0.65, 'wider defense prevents direct finish shortcut')
 
 do
-    local push,_,members,orders,lane=fixture({x=9500,direct=true,localAllies=true})
+    local push,_,members,orders,lane=fixture({x=9500,direct=true,localAllies=true,wave=true})
     same(push.GetPushDesire(members[1],lane.Top),0.12,'unselected top gets no finish boost')
     same(push.GetPushDesire(members[1],lane.Bot),0.12,'unselected bot gets no finish boost')
     assert(#orders==0)
@@ -251,6 +294,56 @@ do
     assert(#orders==0)
 end
 print('PASS: 22 joint #159/#176 generated push and defense scenarios')
+
+do
+    local opts = {x=9500,direct=true,localAllies=true,wave=true,captureTargets=true}
+    local push,_,members,orders,lane,_,buildings = fixture(opts)
+    local bot = members[1]
+    push.PushThink(bot, lane.Mid)
+    assert(orders[1] == buildings.ancient, 'finish the exposed Ancient with the wave and available allies')
+    opts.wave = false
+    same(push.GetPushDesire(bot, lane.Mid), 0.12, 'drop the finish desire after the wave is cleared')
+    push.PushThink(bot, lane.Mid)
+    assert(orders[2] == 'cancel' and orders[3].x < bot.x, 'cancel the attack and move toward safety')
+    opts.wave = true
+    push.PushThink(bot, lane.Mid)
+    assert(orders[4] == buildings.ancient)
+    opts.visibleDefenders = 3
+    push.PushThink(bot, lane.Mid)
+    assert(orders[5] == 'cancel' and orders[6].x < bot.x, 'enemy reinforcements cancel the finish despite cached advantage')
+    opts.visibleDefenders, opts.wave, opts.aliveEnemies, opts.enemyAncientHP = 0, false, 1, 300
+    push.PushThink(bot, lane.Mid)
+    assert(orders[7] == buildings.ancient, 'healthy allies can close a low-health Ancient when the defense is gone')
+    opts.hp = 0.2
+    same(push.GetPushDesire(bot, lane.Mid), 0.12, 'yield the finish when low on health')
+    push.PushThink(bot, lane.Mid)
+    assert(orders[8] == 'cancel' and orders[9].x < bot.x, 'back off for recovery instead of trading into the base')
+end
+
+do
+    local opts = {x=8300,direct=true,localAllies=true,wave=true,objectives=true,captureTargets=true}
+    local push,_,members,orders,lane,_,buildings = fixture(opts)
+    push.PushThink(members[1],lane.Mid)
+    assert(orders[1] == buildings.melee, 'the passive backdoor modifier alone does not block a supported attack')
+    opts.meleeProtected = true
+    push.PushThink(members[1],lane.Mid)
+    assert(orders[2] == buildings.ranged, 'protection cancels the objective lock before it expires')
+    opts.defendersAtAncient = 3
+    push.PushThink(members[1],lane.Mid)
+    assert(orders[3] == 'cancel' and orders[4].x < members[1].x, 'defenders visible at the Ancient stop an approach early')
+    opts.defendersAtAncient = 0
+    push.PushThink(members[1],lane.Mid)
+    assert(orders[5] == buildings.ranged)
+    opts.rangedDestroyed = true
+    push.PushThink(members[1],lane.Mid)
+    assert(orders[6] == 'cancel' and orders[7].x ~= nil, 'the destroyed last objective should fall back to a hold position')
+end
+
+do
+    local push,_,members,_,lane=fixture({rotate=true})
+    assert(push.WhichLaneToPush(members[1],lane.Mid) == lane.Top, 'rotate away from a cleared lane when barracks remain elsewhere')
+end
+print('PASS: high-ground cover, live aborts, protected targets and rotation off cleared lanes')
 
 do
     local opts = {farmBot = 1, attackers = 1, visible = false}

@@ -39,6 +39,7 @@ declare function GetMostDefendLaneDesire(): LuaMultiReturn<[Lane, number]>;
 declare function GetLastSeenEnemiesNearLoc(location: Vector, radius: number): Unit[];
 
 declare function AdjustLocationWithOffsetTowardsFountain(vector: Vector, distance: number): Vector;
+declare function VectorTowards(start: Vector, destination: Vector, distance: number): Vector;
 
 declare function GetNearbyLocationToTp(location: Vector): Vector;
 
@@ -73,6 +74,7 @@ declare function IsEarlyGame(): boolean;
 declare function IsMidGame(): boolean;
 declare function IsLateGame(): boolean;
 declare function GetEnemiesNearLoc(location: Vector, radius: number): Unit[];
+declare function GetAvailableFightAllies(bot: Unit, location: Vector, radius: number): number;
 declare function GetAlliesNearLoc(location: Vector, radius: number): Unit[];
 declare function IsCore(bot: Unit): boolean;
 declare function IsSupport(bot: Unit): boolean;

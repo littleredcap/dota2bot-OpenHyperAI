@@ -126,6 +126,7 @@ function updateUnitStateCache()
     }
     return unitStateCache
 end
+local HasHighGroundCover, CanFinishAncient
 function ____exports.GetPushDesireHelper(bot, lane)
     local gameState = getGlobalGameState()
     local ourAncient = gameState.ourAncient
@@ -142,7 +143,6 @@ function ____exports.GetPushDesireHelper(bot, lane)
     autoCleanupCache()
     local locationState = getGlobalLocationState()
     local nMaxDesire = 0.82
-    local nSearchRange = 2000
     local botActiveMode = bot:GetActiveMode()
     local nModeDesire = bot:GetActiveModeDesire()
     local bMyLane = bot:GetAssignedLane() == lane
@@ -162,6 +162,7 @@ function ____exports.GetPushDesireHelper(bot, lane)
     if enemiesAtAncient >= 1 then
         return BotModeDesire.ExtraLow
     end
+    if hEnemyAncient and not HasHighGroundCover(bot, hEnemyAncient) then return BotModeDesire.VeryLow end
     local nEffAlliesNearAncient = #jmz.GetAlliesNearLoc(teamAncientLoc, 4500) + #jmz.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500)
     local baseDefenseLimited = jmz.GetEnemiesAroundLoc(teamAncientLoc, 4500) > 0 and nEffAlliesNearAncient < 1
     local activeDefense = jmz.IsDefending(bot) and nModeDesire >= 0.8
@@ -287,7 +288,8 @@ function ____exports.GetPushDesireHelper(bot, lane)
     if decisivePushWindow and not isCurrentLanePushLane then
         return BotModeDesire.VeryLow
     end
-    if not criticalBaseCreeps and not baseDefenseLimited and not activeDefense and (not decisivePushWindow or safeClosingWindow) and hEnemyAncient and GetUnitToUnitDistance(bot, hEnemyAncient) < nSearchRange * 0.5 and jmz.CanBeAttacked(hEnemyAncient) and not bot:WasRecentlyDamagedByAnyHero(1) and jmz.GetHP(bot) > 0.5 and not ____exports.HasBackdoorProtect(hEnemyAncient) then
+    if not criticalBaseCreeps and not baseDefenseLimited and not activeDefense and (not decisivePushWindow or safeClosingWindow)
+    and hEnemyAncient and CanFinishAncient(bot, hEnemyAncient) and not bot:WasRecentlyDamagedByAnyHero(1) and jmz.GetHP(bot) > 0.5 then
         return RemapValClamped(
             jmz.GetHP(bot),
             0,
@@ -418,6 +420,11 @@ function ____exports.WhichLaneToPush(_bot, _lane)
     local topTier = ____exports.GetLaneBuildingTier(Lane.Top)
     local midTier = ____exports.GetLaneBuildingTier(Lane.Mid)
     local botTier = ____exports.GetLaneBuildingTier(Lane.Bot)
+    if math.min(topTier, midTier, botTier) < 4 then
+        if topTier == 4 then topLaneScore = math.huge end
+        if midTier == 4 then midLaneScore = math.huge end
+        if botTier == 4 then botLaneScore = math.huge end
+    end
     if midTier < topTier and midTier < botTier then
         midLaneScore = midLaneScore * 0.5
         if not jmz.Utils.IsAnyBarracksOnLaneAlive(false, Lane.Mid) then
@@ -446,7 +453,8 @@ function ____exports.WhichLaneToPush(_bot, _lane)
     if botLaneScore < topLaneScore and botLaneScore < midLaneScore then
         return Lane.Bot
     end
-    return Lane.Mid
+    if midLaneScore <= topLaneScore and midLaneScore <= botLaneScore then return Lane.Mid end
+    return topLaneScore <= botLaneScore and Lane.Top or Lane.Bot
 end
 function ____exports.IsEnemyTP(nID)
     local gameState = updateGameStateCache()
@@ -541,7 +549,7 @@ function ____exports.ShouldWaitForImportantItemsSpells(vLocation)
     return false
 end
 function ____exports.HasBackdoorProtect(target)
-    return target:HasModifier("modifier_fountain_glyph") or target:HasModifier("modifier_backdoor_protection") or target:HasModifier("modifier_backdoor_protection_in_base") or target:HasModifier("modifier_backdoor_protection_active")
+    return target:HasModifier("modifier_fountain_glyph") or target:HasModifier("modifier_backdoor_protection_active")
 end
 --- Returns true if the *nearest* intended target around the enemy lane-front
 -- is currently backdoored/glyphed.
@@ -634,7 +642,25 @@ function ____exports.GetPushDesire(bot, lane)
     return res
 end
 local function UnitIsValidObjective(u)
-    return not not u and jmz.IsValidBuilding(u) and jmz.CanBeAttacked(u)
+    return not not u and jmz.IsValidBuilding(u) and jmz.CanBeAttacked(u) and not ____exports.HasBackdoorProtect(u)
+end
+function HasHighGroundCover(bot, ancient)
+    if GetUnitToUnitDistance(bot, ancient) >= 3000 then return true end
+    local location = bot:GetLocation()
+    local allies = jmz.GetAvailableFightAllies(bot, location, 1600)
+    local enemies = math.max(#jmz.GetEnemiesNearLoc(location, 1600), #jmz.GetEnemiesNearLoc(ancient:GetLocation(), 1600))
+    if allies < 1 or jmz.GetHP(bot) < 0.35 or enemies >= allies + 1 then return false end
+    local wave = 0
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(1200, false)) do
+        if jmz.IsValid(creep) then wave = wave + 1 end
+    end
+    return wave >= 2 or (enemies == 0 and allies >= 2 and jmz.GetNumOfAliveHeroes(true) <= 1
+        and CanFinishAncient(bot, ancient) and jmz.GetHP(ancient) <= 0.35)
+end
+function CanFinishAncient(bot, ancient)
+    return GetUnitToUnitDistance(bot, ancient) < 1000 and UnitIsValidObjective(ancient)
+        and (#____exports.GetAllyHeroesAttackingUnit(ancient) >= 2 or #____exports.GetAllyCreepsAttackingUnit(ancient) >= 2
+            or jmz.GetAvailableFightAllies(bot, ancient:GetLocation(), 1600) >= 2 or jmz.GetHP(ancient) <= 0.35)
 end
 local function UnitIsBarracks(u)
     local n = u ~= nil and u:GetUnitName() or ""
@@ -699,10 +725,10 @@ local function SelectOrStickHGTarget(bot, lane, targetLoc)
     local state = ObjectiveState[pid][lane]
     local now = GameTime()
     local current = state.target or nil
-    if current and now < (state.lockUntil or 0) then
+    local currentScore = current and ObjectiveScore(bot, current, targetLoc) or math.huge
+    if current and currentScore < math.huge and now < (state.lockUntil or 0) then
         return current
     end
-    local currentScore = current and ObjectiveScore(bot, current, targetLoc) or math.huge
     local unitState = updateUnitStateCache()
     local best = nil
     local bestScore = math.huge
@@ -713,7 +739,7 @@ local function SelectOrStickHGTarget(bot, lane, targetLoc)
             bestScore = sc
         end
     end
-    if current and UnitIsValidObjective(current) then
+    if current and currentScore < math.huge then
         if best and bestScore + SWITCH_SCORE_MARGIN < currentScore then
             state.target = best
             state.lockUntil = now + OBJECTIVE_STICKY_TIME
@@ -733,6 +759,11 @@ local function SelectOrStickHGTarget(bot, lane, targetLoc)
     return nil
 end
 local fNextMovementTime = 0
+function ____exports.CancelPushOrder(bot)
+    if not bot._ohaIssuedPushOrder then return end
+    if not jmz.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
+    bot._ohaIssuedPushOrder = false
+end
 function ____exports.PushThink(bot, lane)
     local now = DotaTime()
     if jmz.CanNotUseAction(bot) then
@@ -747,11 +778,18 @@ function ____exports.PushThink(bot, lane)
         ourAncient:GetLocation(),
         BASE_ANC_RADIUS
     ) > 0 then
+        ____exports.CancelPushOrder(bot)
         return
     end
     autoCleanupCache()
     local gameState = getGlobalGameState()
     local locationState = getGlobalLocationState()
+    hEnemyAncient = gameState.enemyAncient
+    if hEnemyAncient and not HasHighGroundCover(bot, hEnemyAncient) then
+        ____exports.CancelPushOrder(bot)
+        bot:Action_MoveToLocation(jmz.VectorTowards(bot:GetLocation(), locationState.teamFountain, 850))
+        return
+    end
     local botState = updateBotStateCache(bot)
     local botLocation = botState.location
     local alliesHere = getCachedAlliesNearLoc(botLocation, 1600)
@@ -771,7 +809,8 @@ function ____exports.PushThink(bot, lane)
     )
     local nEnemyTowers = botState.nearbyTowers
     local nAllyCreeps = botState.nearbyLaneCreeps
-    if #alliesHere < #enemiesHere or ____exports.IsAnyTargetBackdooredAt(bot, lane) then
+    local protectedObjective = ____exports.IsAnyTargetBackdooredAt(bot, lane)
+    if #alliesHere < #enemiesHere or protectedObjective then
         local longestRange = 0
         for ____, enemyHero in ipairs(enemiesHere) do
             if jmz.IsValidHero(enemyHero) and not jmz.IsSuspiciousIllusion(enemyHero) then
@@ -809,16 +848,13 @@ function ____exports.PushThink(bot, lane)
         if bot:GetActualIncomingDamage(nDamage, DamageType.Physical) / bot:GetHealth() > 0.15 or #nAllyCreeps > 2 then
             local retreat = math.min(fDeltaFromFront - 200, -300)
             local retreatLoc = GetLaneFrontLocation(gameState.team, lane, retreat)
+            bot._ohaIssuedPushOrder = false
             bot:Action_MoveToLocation(retreatLoc)
             return
         end
     end
-    hEnemyAncient = gameState.enemyAncient
-    local alliesNearAncient = hEnemyAncient and jmz.GetAlliesNearLoc(
-        hEnemyAncient:GetLocation(),
-        1600
-    )
-    if not criticalBaseCreeps and hEnemyAncient and botState.distanceToAncient < 1000 and jmz.CanBeAttacked(hEnemyAncient) and not ____exports.HasBackdoorProtect(hEnemyAncient) and (#____exports.GetAllyHeroesAttackingUnit(hEnemyAncient) >= 3 or #____exports.GetAllyCreepsAttackingUnit(hEnemyAncient) >= 4 or hEnemyAncient:GetHealthRegen() < 20 or (alliesNearAncient and #alliesNearAncient or 0) >= 4) then
+    if not criticalBaseCreeps and hEnemyAncient and CanFinishAncient(bot, hEnemyAncient) then
+        bot._ohaIssuedPushOrder = true
         bot:Action_AttackUnit(hEnemyAncient, true)
         return
     end
@@ -852,6 +888,7 @@ function ____exports.PushThink(bot, lane)
                     __continue125 = true
                     break
                 end
+                bot._ohaIssuedPushOrder = true
                 bot:Action_AttackUnit(creep, true)
                 return
             until true
@@ -862,6 +899,7 @@ function ____exports.PushThink(bot, lane)
     end
     local hgTarget = SelectOrStickHGTarget(bot, lane, targetLoc)
     if hgTarget then
+        bot._ohaIssuedPushOrder = true
         if jmz.IsInRange(bot, hgTarget, botAttackRange + 150) then
             bot:Action_AttackUnit(hgTarget, true)
         else
@@ -869,12 +907,19 @@ function ____exports.PushThink(bot, lane)
         end
         return
     end
+    if protectedObjective then
+        ____exports.CancelPushOrder(bot)
+        bot:Action_MoveToLocation(targetLoc)
+        return
+    end
     if botState.distanceToTargetLoc > 500 then
+        bot._ohaIssuedPushOrder = true
         bot:Action_MoveToLocation(targetLoc)
         return
     else
         if DotaTime() >= fNextMovementTime then
             local attackMoveLoc = jmz.GetRandomLocationWithinDist(targetLoc, 0, 400)
+            bot._ohaIssuedPushOrder = true
             bot:Action_AttackMove(attackMoveLoc)
             fNextMovementTime = DotaTime() + RandomFloat(0.05, 0.3)
             return

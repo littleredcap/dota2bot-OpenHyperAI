@@ -272,7 +272,6 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     // const unitState = updateUnitStateCache(); // Not used in this function
 
     let nMaxDesire = 0.82;
-    const nSearchRange = 2000;
     const botActiveMode = bot.GetActiveMode();
     const nModeDesire = bot.GetActiveModeDesire();
     const bMyLane = bot.GetAssignedLane() === lane;
@@ -290,6 +289,7 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     const enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(teamAncientLoc, BASE_ANC_RADIUS);
     // If Ancient under direct pressure → strongly deprioritize pushes
     if (enemiesAtAncient >= 1) return BotModeDesire.ExtraLow;
+    if (hEnemyAncient && !HasHighGroundCover(bot, hEnemyAncient)) return BotModeDesire.VeryLow;
 
     const nEffAlliesNearAncient = jmz.GetAlliesNearLoc(teamAncientLoc, 4500).length
         + jmz.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500).length;
@@ -461,12 +461,9 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     // Score a finish here; issue attack orders only from the active Think.
     if (
         !criticalBaseCreeps && !baseDefenseLimited && !activeDefense
-        && (!decisivePushWindow || safeClosingWindow) && hEnemyAncient &&
-        GetUnitToUnitDistance(bot, hEnemyAncient) < nSearchRange * 0.5 &&
-        jmz.CanBeAttacked(hEnemyAncient) &&
+        && (!decisivePushWindow || safeClosingWindow) && hEnemyAncient && CanFinishAncient(bot, hEnemyAncient) &&
         !bot.WasRecentlyDamagedByAnyHero(1) &&
-        jmz.GetHP(bot) > 0.5 &&
-        !HasBackdoorProtect(hEnemyAncient)
+        jmz.GetHP(bot) > 0.5
     ) {
         return RemapValClamped(jmz.GetHP(bot), 0, 0.5, BotModeDesire.None, 0.98) as BotModeDesire;
     }
@@ -531,7 +528,25 @@ function presence_adjust(score: number, loc: Vector): number {
 }
 
 function UnitIsValidObjective(u: Unit | null): u is Unit {
-    return !!u && jmz.IsValidBuilding(u) && jmz.CanBeAttacked(u);
+    return !!u && jmz.IsValidBuilding(u) && jmz.CanBeAttacked(u) && !HasBackdoorProtect(u);
+}
+
+function HasHighGroundCover(bot: Unit, ancient: Unit): boolean {
+    if (GetUnitToUnitDistance(bot, ancient) >= 3000) return true;
+    const location = bot.GetLocation();
+    const allies = jmz.GetAvailableFightAllies(bot, location, 1600);
+    const enemies = Math.max(jmz.GetEnemiesNearLoc(location, 1600).length,
+        jmz.GetEnemiesNearLoc(ancient.GetLocation(), 1600).length);
+    if (allies < 1 || jmz.GetHP(bot) < 0.35 || enemies >= allies + 1) return false;
+    const wave = bot.GetNearbyLaneCreeps(1200, false).filter(creep => jmz.IsValid(creep));
+    return wave.length >= 2 || (enemies === 0 && allies >= 2 && jmz.GetNumOfAliveHeroes(true) <= 1
+        && CanFinishAncient(bot, ancient) && jmz.GetHP(ancient) <= 0.35);
+}
+
+function CanFinishAncient(bot: Unit, ancient: Unit): boolean {
+    return GetUnitToUnitDistance(bot, ancient) < 1000 && UnitIsValidObjective(ancient)
+        && (GetAllyHeroesAttackingUnit(ancient).length >= 2 || GetAllyCreepsAttackingUnit(ancient).length >= 2
+            || jmz.GetAvailableFightAllies(bot, ancient.GetLocation(), 1600) >= 2 || jmz.GetHP(ancient) <= 0.35);
 }
 
 function UnitIsBarracks(u: Unit): boolean {
@@ -592,15 +607,10 @@ function SelectOrStickHGTarget(bot: Unit, lane: Lane, targetLoc?: Vector | null)
     const now = GameTime();
     const current = state.target || null;
 
-    // Respect stickiness if current is valid
-    if (current && now < (state.lockUntil ?? 0)) {
+    const currentScore = current ? ObjectiveScore(bot, current, targetLoc) : Number.POSITIVE_INFINITY;
+    if (current && currentScore < Number.POSITIVE_INFINITY && now < (state.lockUntil ?? 0)) {
         return current;
     }
-    // if (current && UnitIsValidObjective(current) && now < (state.lockUntil ?? 0)) {
-    //     return current;
-    // }
-
-    const currentScore = current ? ObjectiveScore(bot, current, targetLoc) : Number.POSITIVE_INFINITY;
 
     // Scan candidates
     const unitState = updateUnitStateCache();
@@ -615,7 +625,7 @@ function SelectOrStickHGTarget(bot: Unit, lane: Lane, targetLoc?: Vector | null)
     }
 
     // Only switch if clearly better
-    if (current && UnitIsValidObjective(current)) {
+    if (current && currentScore < Number.POSITIVE_INFINITY) {
         if (best && bestScore + SWITCH_SCORE_MARGIN < currentScore) {
             state.target = best;
             state.lockUntil = now + OBJECTIVE_STICKY_TIME;
@@ -715,6 +725,12 @@ export function WhichLaneToPush(_bot: Unit, _lane: Lane): Lane {
     const midTier = GetLaneBuildingTier(Lane.Mid);
     const botTier = GetLaneBuildingTier(Lane.Bot);
 
+    if (Math.min(topTier, midTier, botTier) < 4) {
+        if (topTier === 4) topLaneScore = Number.POSITIVE_INFINITY;
+        if (midTier === 4) midLaneScore = Number.POSITIVE_INFINITY;
+        if (botTier === 4) botLaneScore = Number.POSITIVE_INFINITY;
+    }
+
     if (midTier < topTier && midTier < botTier) {
         midLaneScore *= 0.5;
         if (!jmz.Utils.IsAnyBarracksOnLaneAlive(false, Lane.Mid)) midLaneScore *= 0.5;
@@ -735,13 +751,20 @@ export function WhichLaneToPush(_bot: Unit, _lane: Lane): Lane {
     if (midLaneScore < topLaneScore && midLaneScore < botLaneScore) return Lane.Mid;
     if (botLaneScore < topLaneScore && botLaneScore < midLaneScore) return Lane.Bot;
 
-    return Lane.Mid;
+    if (midLaneScore <= topLaneScore && midLaneScore <= botLaneScore) return Lane.Mid;
+    return topLaneScore <= botLaneScore ? Lane.Top : Lane.Bot;
 }
 
 /* -----------------------------------------------------------------------------
  * Think loop
  * ---------------------------------------------------------------------------*/
 let fNextMovementTime = 0;
+
+export function CancelPushOrder(bot: Unit): void {
+    if (!(bot as any)._ohaIssuedPushOrder) return;
+    if (!jmz.CanNotUseAction(bot)) bot.Action_ClearActions(true);
+    (bot as any)._ohaIssuedPushOrder = false;
+}
 
 export function PushThink(bot: Unit, lane: Lane): void {
     const now = DotaTime();
@@ -753,12 +776,21 @@ export function PushThink(bot: Unit, lane: Lane): void {
     // An active push mode can still think before the next desire arbitration.
     const ourAncient = GetAncient(GetTeam());
     const [baseResponder, criticalBaseCreeps] = GetBaseCreepResponse(bot, ourAncient);
-    if (baseResponder || (ourAncient && jmz.Utils.CountEnemyHeroesNear(ourAncient.GetLocation(), BASE_ANC_RADIUS) > 0)) return;
+    if (baseResponder || (ourAncient && jmz.Utils.CountEnemyHeroesNear(ourAncient.GetLocation(), BASE_ANC_RADIUS) > 0)) {
+        CancelPushOrder(bot);
+        return;
+    }
 
     // Update global caches
     autoCleanupCache();
     const gameState = getGlobalGameState();
     const locationState = getGlobalLocationState();
+    hEnemyAncient = gameState.enemyAncient;
+    if (hEnemyAncient && !HasHighGroundCover(bot, hEnemyAncient)) {
+        CancelPushOrder(bot);
+        bot.Action_MoveToLocation(jmz.VectorTowards(bot.GetLocation(), locationState.teamFountain, 850));
+        return;
+    }
 
     // 2) Use cached bot state instead of fresh calculations
     const botState = updateBotStateCache(bot);
@@ -782,7 +814,8 @@ export function PushThink(bot: Unit, lane: Lane): void {
     const nAllyCreeps = botState.nearbyLaneCreeps;
 
     // 4) Enhanced retreat logic - less conservative when team has advantages
-    if (alliesHere.length < enemiesHere.length || IsAnyTargetBackdooredAt(bot, lane)) {
+    const protectedObjective = IsAnyTargetBackdooredAt(bot, lane);
+    if (alliesHere.length < enemiesHere.length || protectedObjective) {
         let longestRange = 0;
         for (const enemyHero of enemiesHere) {
             if (jmz.IsValidHero(enemyHero) && !jmz.IsSuspiciousIllusion(enemyHero)) {
@@ -833,24 +866,15 @@ export function PushThink(bot: Unit, lane: Lane): void {
         if (bot.GetActualIncomingDamage(nDamage, DamageType.Physical) / bot.GetHealth() > 0.15 || nAllyCreeps.length > 2) {
             const retreat = Math.min(fDeltaFromFront - 200, -300);
             const retreatLoc = GetLaneFrontLocation(gameState.team, lane, retreat);
+            (bot as any)._ohaIssuedPushOrder = false;
             bot.Action_MoveToLocation(retreatLoc);
             return;
         }
     }
 
     // 7) Ancient-endgame logic: if we're in range and it's hittable, do it
-    hEnemyAncient = gameState.enemyAncient;
-    const alliesNearAncient = hEnemyAncient && jmz.GetAlliesNearLoc(hEnemyAncient.GetLocation(), 1600);
-    if (
-        !criticalBaseCreeps && hEnemyAncient &&
-        botState.distanceToAncient < 1000 &&
-        jmz.CanBeAttacked(hEnemyAncient) &&
-        !HasBackdoorProtect(hEnemyAncient) &&
-        (GetAllyHeroesAttackingUnit(hEnemyAncient).length >= 3 ||
-            GetAllyCreepsAttackingUnit(hEnemyAncient).length >= 4 ||
-            hEnemyAncient.GetHealthRegen() < 20 ||
-            (alliesNearAncient?.length ?? 0) >= 4)
-    ) {
+    if (!criticalBaseCreeps && hEnemyAncient && CanFinishAncient(bot, hEnemyAncient)) {
+        (bot as any)._ohaIssuedPushOrder = true;
         bot.Action_AttackUnit(hEnemyAncient, true);
         return;
     }
@@ -877,6 +901,7 @@ export function PushThink(bot: Unit, lane: Lane): void {
 
         if (bTowerNearby && GetUnitToLocationDistance(creep, vTeamFountain) >= towerDistanceToFountain) continue;
 
+        (bot as any)._ohaIssuedPushOrder = true;
         bot.Action_AttackUnit(creep, true);
         return;
     }
@@ -885,6 +910,7 @@ export function PushThink(bot: Unit, lane: Lane): void {
     // Unified high-ground objective selection with stickiness (prevents thrash)
     const hgTarget = SelectOrStickHGTarget(bot, lane, targetLoc);
     if (hgTarget) {
+        (bot as any)._ohaIssuedPushOrder = true;
         if (jmz.IsInRange(bot, hgTarget, botAttackRange + 150)) {
             bot.Action_AttackUnit(hgTarget, true);
         } else {
@@ -893,13 +919,21 @@ export function PushThink(bot: Unit, lane: Lane): void {
         return;
     }
 
+    if (protectedObjective) {
+        CancelPushOrder(bot);
+        bot.Action_MoveToLocation(targetLoc);
+        return;
+    }
+
     // 10) Movement fallback: path to approach point, then do small attack-move jitter to hold space
     if (botState.distanceToTargetLoc > 500) {
+        (bot as any)._ohaIssuedPushOrder = true;
         bot.Action_MoveToLocation(targetLoc);
         return;
     } else {
         if (DotaTime() >= fNextMovementTime) {
             const attackMoveLoc = jmz.GetRandomLocationWithinDist(targetLoc, 0, 400);
+            (bot as any)._ohaIssuedPushOrder = true;
             bot.Action_AttackMove(attackMoveLoc);
             fNextMovementTime = DotaTime() + RandomFloat(0.05, 0.3);
             return;
@@ -1087,8 +1121,6 @@ export function ShouldWaitForImportantItemsSpells(vLocation: Vector): boolean {
 export function HasBackdoorProtect(target: Unit): boolean {
     return (
         target.HasModifier("modifier_fountain_glyph") ||
-        target.HasModifier("modifier_backdoor_protection") ||
-        target.HasModifier("modifier_backdoor_protection_in_base") ||
         target.HasModifier("modifier_backdoor_protection_active")
     );
 }
