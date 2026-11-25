@@ -14,6 +14,7 @@ local switch = 'kez_switch_weapons'
 local parryCancel = 'kez_shodo_sai_parry_cancel'
 local talent = 'special_bonus_test'
 local visible, unavailable, abilities = {}, {}, {}
+local ranks = {}
 
 local function addAbility(name)
     abilities[name] = {
@@ -22,7 +23,7 @@ local function addAbility(name)
         IsHidden = function() return not visible[name] end,
         GetHeroLevelRequiredToUpgrade = one,
         CanAbilityBeUpgraded = yes,
-        GetLevel = one,
+        GetLevel = function() return ranks[name] or 1 end,
         GetMaxLevel = function() return 4 end,
         GetManaCost = one,
     }
@@ -66,7 +67,10 @@ local bot = {
     GetAttackDamage = function() return 200 end, IsFacingLocation = yes,
     GetHealth = one, GetMaxHealth = one, GetMana = one, GetMaxMana = one,
     Action_UseAbility = function(_, ability) table.insert(casts, ability:GetName()) end,
-    ActionImmediate_LevelAbility = function(_, name) table.insert(leveled, name) end,
+    ActionImmediate_LevelAbility = function(_, name)
+        table.insert(leveled, name)
+        ranks[name] = (ranks[name] or 1) + 1
+    end,
     Action_ClearActions = function() queue = {} end,
     ActionQueue_Delay = function() table.insert(queue, 'delay') end,
     ActionQueue_UseAbility = function(_, ability) table.insert(queue, ability:GetName()) end,
@@ -74,6 +78,7 @@ local bot = {
 }
 
 local J = {
+    GetUserHeroConfig = function() end,
     GetProperTarget = function() return enemy end,
     GetNearbyHeroes = empty, GetAlliesNearLoc = empty,
     CanNotUseAbility = no, IsTryingtoUseAbility = no, IsNoAbilityIllution = no,
@@ -129,6 +134,7 @@ local usage = loadModule('bots/ability_item_usage_generic.lua')
 local function tryLevel(name)
     local build = {name}
     leveled = {}
+    ranks = {}
     usage.SetAbilityItemList(false, false, build)
     usage.AbilityLevelUpThink()
     return build

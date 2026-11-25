@@ -1,7 +1,8 @@
 local X = {}
 local bot = GetBot()
+if bot == nil then return end
 local botName = bot:GetUnitName()
-if bot == nil or bot:IsInvulnerable() or not bot:IsHero() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+if bot:IsInvulnerable() or not bot:IsHero() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 if not bot.frameProcessTime then bot.frameProcessTime = 0.1 end
 
 local team = GetTeam()
@@ -21,13 +22,69 @@ if BotBuild == nil then return end
 
 local bDeafaultAbilityHero = BotBuild['bDeafaultAbility']
 local bDeafaultItemHero = BotBuild['bDeafaultItem']
-local sAbilityLevelUpList = BotBuild['sSkillList']
+
+local function CopyLevelPlan(plan)
+	local copy, indices = {}, {}
+	for index, name in pairs(plan or {}) do
+		if type(index) == 'number' and type(name) == 'string' then indices[#indices + 1] = index end
+	end
+	table.sort(indices)
+	for _, index in ipairs(indices) do copy[#copy + 1] = plan[index] end
+	return copy
+end
+
+local sAbilityLevelUpList = CopyLevelPlan(BotBuild['sSkillList'])
+local pendingLevelUp
+local config = J.GetUserHeroConfig(bot)
+local customLevelPlan = config ~= nil and (config.AbilityUpgrade ~= nil or config.Talent ~= nil)
 
 local RadiantFountain = Vector(-6619, -6336, 384)
 local DireFountain = Vector(6928, 6372, 392)
 
 local bNeedARDMReload = false
 local nLastKnownPosition = nil  -- tracks bot's position for !pos swap detection
+
+local function FindLevelAbility(name)
+	local ability, paired
+	if botName == 'npc_dota_hero_kez' then
+		ability, paired = J.Skill.GetKezLevelUpAbility(bot, name)
+	else
+		ability = bot:GetAbilityByName(name)
+	end
+	if ability ~= nil and not ability:IsNull() then return ability, paired end
+	return nil, paired
+end
+
+local function BuildRemainingLevelPlan(plan)
+	local remaining, learned = {}, {}
+	for _, name in ipairs(CopyLevelPlan(plan)) do
+		if learned[name] == nil then
+			local ability = FindLevelAbility(name)
+			learned[name] = ability ~= nil and ability:GetLevel() or 0
+		end
+		if learned[name] > 0 then
+			learned[name] = learned[name] - 1
+		else
+			remaining[#remaining + 1] = name
+		end
+	end
+	return remaining
+end
+
+local function IsLegalLevelUp(ability, heroLevel)
+	return not ability:IsHidden() and ability:GetLevel() < ability:GetMaxLevel()
+		and heroLevel >= ability:GetHeroLevelRequiredToUpgrade() and ability:CanAbilityBeUpgraded()
+end
+
+local function GetFallbackLevelPlan(heroLevel)
+	local abilities = J.Utils.CombineTablesUnique(J.Skill.GetTalentList(bot), J.Skill.GetAbilityList(bot))
+	local legal = {}
+	for _, name in ipairs(abilities) do
+		local ability = FindLevelAbility(name)
+		if ability ~= nil and IsLegalLevelUp(ability, heroLevel) then legal[#legal + 1] = name end
+	end
+	return legal
+end
 
 -- Reload BotBuild for the current hero+role (shared by ARDM swap and !pos swap)
 local function ReloadBotBuild(reason)
@@ -38,31 +95,10 @@ local function ReloadBotBuild(reason)
 		BotBuild = newBuild
 		bDeafaultAbilityHero = BotBuild['bDeafaultAbility']
 		bDeafaultItemHero = BotBuild['bDeafaultItem']
-		if newBuild['sSkillList'] ~= nil and #newBuild['sSkillList'] > 0 then
-			local fullList = newBuild['sSkillList']
-
-			-- Strip entries from the front that the bot has already learned.
-			-- The bot may have leveled abilities in a different order (old role),
-			-- so entries at the front of the new list may reference abilities that
-			-- are already at max level or can't be upgraded further.
-			local botLevel = bot:GetLevel()
-			local nPointsSpent = botLevel - bot:GetAbilityPoints()
-			-- Remove the first N entries where N = ability points already spent
-			-- This aligns the list with the bot's current level progression
-			local trimmed = {}
-			for i = nPointsSpent + 1, #fullList do
-				table.insert(trimmed, fullList[i])
-			end
-
-			if #trimmed > 0 then
-				sAbilityLevelUpList = trimmed
-			else
-				-- All entries consumed, fall back to generic
-				sAbilityLevelUpList = J.Utils.CombineTablesUnique(
-					J.Skill.GetTalentList(bot), J.Skill.GetAbilityList(bot))
-			end
-			print("[Reload] Skill list: "..#sAbilityLevelUpList.." entries remaining (spent "..nPointsSpent.." points)")
-		end
+		local user = J.GetUserHeroConfig(bot)
+		customLevelPlan = user ~= nil and (user.AbilityUpgrade ~= nil or user.Talent ~= nil)
+		sAbilityLevelUpList = BuildRemainingLevelPlan(newBuild['sSkillList'])
+		pendingLevelUp = nil
 	else
 		print("[Reload] dofile FAILED for "..heroFile..": "..tostring(newBuild))
 	end
@@ -83,6 +119,9 @@ local function RefreshBotHandle()
 		bot = freshBot
 		botName = freshName
 		bNeedARDMReload = true
+		pendingLevelUp = nil
+		local user = J.GetUserHeroConfig(bot)
+		customLevelPlan = user ~= nil and (user.AbilityUpgrade ~= nil or user.Talent ~= nil)
 	elseif freshBot ~= bot then
 		bot = freshBot
 	end
@@ -100,7 +139,7 @@ local function RefreshBotHandle()
 			BotBuild = newBuild
 			bDeafaultAbilityHero = BotBuild['bDeafaultAbility']
 			bDeafaultItemHero = BotBuild['bDeafaultItem']
-			sAbilityLevelUpList = BotBuild['sSkillList']
+			sAbilityLevelUpList = BuildRemainingLevelPlan(BotBuild['sSkillList'])
 			print("[ARDM] Loaded BotLib for "..botName.." with "..#sAbilityLevelUpList.." skill entries, first: "..tostring(sAbilityLevelUpList[1]))
 		else
 			local abilityList = J.Skill.GetAbilityList(bot)
@@ -110,7 +149,7 @@ local function RefreshBotHandle()
 				BotBuild = nil
 				bDeafaultAbilityHero = false
 				bDeafaultItemHero = false
-				sAbilityLevelUpList = J.Utils.CombineTablesUnique(talentList, abilityList)
+				sAbilityLevelUpList = GetFallbackLevelPlan(bot:GetLevel())
 				print("[ARDM] Using generic build for "..botName.." with "..#sAbilityLevelUpList.." entries")
 			else
 				print("[ARDM] Abilities not ready for "..botName..", retrying next frame")
@@ -178,122 +217,66 @@ local function AbilityLevelUpComplement()
 		bot.stuckLoc = nil
 	end
 
-	if bot.needRefreshAbilitiesFor737 ~= nil and BotBuild ~= nil then
-		sAbilityLevelUpList = BotBuild['sSkillList']
-		if not bot.needRefreshAbilitiesFor737 then bot.needRefreshAbilitiesFor737 = nil end
+	if bot.needRefreshAbilitiesFor737 == false and BotBuild ~= nil then
+		sAbilityLevelUpList = BuildRemainingLevelPlan(BotBuild['sSkillList'])
+		pendingLevelUp = nil
+		bot.needRefreshAbilitiesFor737 = nil
 	end
 
-	local botLevel = bot:GetLevel()
-
-	if GetGameMode() == GAMEMODE_ARDM and bot:GetAbilityPoints() > 0 then
-		print("[ARDM] "..botName.." Lv"..botLevel.." has "..bot:GetAbilityPoints().." ability points, skill list has "..#sAbilityLevelUpList.." entries"
-			..(#sAbilityLevelUpList > 0 and (", next: "..tostring(sAbilityLevelUpList[1])) or ""))
-	end
-
-	if #sAbilityLevelUpList >= 1
-	and bot:GetAbilityPoints() > 0
-	then
-		if J.IsTryingtoUseAbility(bot) then return end
-		local abilityName = sAbilityLevelUpList[1]
-
-		-- Skip nil entries in skill list (can happen with broken talent mappings)
-		if abilityName == nil then
-			print("[WARN] Nil entry in sAbilityLevelUpList for "..botName..", removing")
+	if pendingLevelUp ~= nil then
+		local ability = FindLevelAbility(pendingLevelUp.name)
+		if ability == nil then return end
+		if ability:GetLevel() > pendingLevelUp.level then
 			table.remove(sAbilityLevelUpList, 1)
+		elseif DotaTime() - pendingLevelUp.time < 0.4 then
 			return
 		end
+		pendingLevelUp = nil
+	end
 
-		local abilityToLevelup
-		if botName == 'npc_dota_hero_kez' then
-			local isPaired
-			abilityToLevelup, isPaired = J.Skill.GetKezLevelUpAbility(bot, abilityName)
-			if isPaired then
-				if abilityToLevelup == nil then return end
-				abilityName = abilityToLevelup:GetName()
-			end
+	if bot:GetAbilityPoints() <= 0 or J.IsTryingtoUseAbility(bot) then return end
+	local botLevel = bot:GetLevel()
+	local ardm = GetGameMode() == GAMEMODE_ARDM
+	if #sAbilityLevelUpList == 0 and not customLevelPlan and (ardm or (botLevel > 25 and botLevel < 30)) then
+		sAbilityLevelUpList = GetFallbackLevelPlan(botLevel)
+	end
+
+	while #sAbilityLevelUpList > 0 do
+		local name = sAbilityLevelUpList[1]
+		if name == 'generic_hidden' then
+			table.remove(sAbilityLevelUpList, 1)
 		else
-			abilityToLevelup = bot:GetAbilityByName( abilityName )
-		end
+			local ability, paired = FindLevelAbility(name)
+			if ability == nil then
+				if ardm and not paired and not customLevelPlan then
+					local fallback = GetFallbackLevelPlan(botLevel)
+					if #fallback > 0 then sAbilityLevelUpList = fallback end
+				end
+				return
+			end
 
-		-- ARDM: if the ability doesn't exist on this hero, the skill list may have been
-		-- built when the hero was still sleeping/uninitialized. Try to rebuild it.
-		if abilityToLevelup == nil and GetGameMode() == GAMEMODE_ARDM then
-			local abilityList = J.Skill.GetAbilityList(bot)
-			local talentList = J.Skill.GetTalentList(bot)
-			if #abilityList >= 3 then
-				print("[ARDM] Ability '"..abilityName.."' not found on "..botName..", rebuilding skill list (abilities: "..#abilityList..", talents: "..#talentList..")")
-				sAbilityLevelUpList = J.Utils.CombineTablesUnique(talentList, abilityList)
-				return -- retry with fresh list next frame
+			local alternateName = (name == 'phoenix_fire_spirits' and 'phoenix_launch_fire_spirit')
+				or (name == 'alchemist_unstable_concoction' and 'alchemist_unstable_concoction_throw')
+			if alternateName then
+				local alternate = bot:GetAbilityByName(alternateName)
+				if alternate ~= nil and not alternate:IsNull() and not alternate:IsHidden() then return end
+			end
+
+			local previousLevel = ability:GetLevel()
+			if previousLevel >= ability:GetMaxLevel() then
+				table.remove(sAbilityLevelUpList, 1)
+			elseif IsLegalLevelUp(ability, botLevel) then
+				bot:ActionImmediate_LevelAbility(ability:GetName())
+				if ability:GetLevel() > previousLevel then
+					table.remove(sAbilityLevelUpList, 1)
+				else
+					pendingLevelUp = {name = name, level = previousLevel, time = DotaTime()}
+				end
+				return
 			else
-				print("[ARDM] Abilities not ready for "..botName.." ("..#abilityList.."), waiting")
 				return
 			end
 		end
-
-		if abilityName == 'npc_dota_hero_kez'
-		and (abilityToLevelup == nil or abilityToLevelup:IsHidden()) then
-			return
-		end
-
-		-- fix phoenix_fire_spirits can't upgrade bug.
-		if abilityName == 'phoenix_fire_spirits' then
-			local hLaunchSpirit = bot:GetAbilityByName('phoenix_launch_fire_spirit')
-			if hLaunchSpirit ~= nil and not hLaunchSpirit:IsHidden() then
-				return
-			end
-		end
-
-		-- fix 'alchemist_unstable_concoction can't upgrade bug.
-		if abilityName == 'alchemist_unstable_concoction' then
-			local hConcThrow = bot:GetAbilityByName('alchemist_unstable_concoction_throw')
-			if hConcThrow ~= nil and not hConcThrow:IsHidden() then
-				return
-			end
-		end
-
-		-- ARDM: ability doesn't exist on this hero — skip it
-		if abilityToLevelup == nil then
-			print("[ARDM] Ability "..abilityName.." not found on "..botName..", skipping")
-			table.remove( sAbilityLevelUpList, 1 )
-			return
-		end
-
-		if not abilityToLevelup:IsHidden()
-		    and botLevel >= abilityToLevelup:GetHeroLevelRequiredToUpgrade()
-			and abilityToLevelup:CanAbilityBeUpgraded()
-			and abilityToLevelup:GetLevel() < abilityToLevelup:GetMaxLevel()
-		then
-			bot:ActionImmediate_LevelAbility(abilityToLevelup:GetName())
-			table.remove( sAbilityLevelUpList, 1 )
-		elseif abilityName == 'generic_hidden' then
-			local nextAbility = sAbilityLevelUpList[2]
-			print("[WARN] Level up ability "..abilityName.." for "..botName.." does not make sense. try to upgrade the next ability: "..tostring(nextAbility))
-			table.remove( sAbilityLevelUpList, 1 )
-			if nextAbility then
-				bot:ActionImmediate_LevelAbility(nextAbility)
-			end
-		elseif not abilityToLevelup:IsHidden() and botLevel >= abilityToLevelup:GetHeroLevelRequiredToUpgrade() then
-			-- still try it
-			print("[WARN] Level up ability "..abilityName.." for "..botName.." may fail because it was called on ability that's not available or can't get upgraded anymore.")
-			bot:ActionImmediate_LevelAbility(abilityName)
-			table.remove( sAbilityLevelUpList, 1 )
-		else
-			print("[WARN] Skipped to level up ability "..abilityName.." for "..botName.." for this time because it may fail.")
-			if botLevel > 25 then
-				print("[WARN] Ignore ability "..abilityName.." for "..botName.." because it may always fail.")
-				table.remove( sAbilityLevelUpList, 1 )
-			end
-		end
-	end
-
-	if botLevel > 25 and botLevel < 30 and bot:GetAbilityPoints() >= 1 and #sAbilityLevelUpList <= 3 then
-		sAbilityLevelUpList = J.Utils.CombineTablesUnique(J.Skill.GetTalentList( bot ), J.Skill.GetAbilityList( bot ))
-	end
-
-	-- ARDM fallback: if skill list is empty but we still have points, rebuild from current abilities
-	if GetGameMode() == GAMEMODE_ARDM and #sAbilityLevelUpList == 0 and bot:GetAbilityPoints() > 0 then
-		print("[ARDM] Skill list exhausted for "..botName.." at Lv"..botLevel.." with "..bot:GetAbilityPoints().." points, rebuilding")
-		sAbilityLevelUpList = J.Utils.CombineTablesUnique(J.Skill.GetTalentList(bot), J.Skill.GetAbilityList(bot))
 	end
 end
 
@@ -8367,6 +8350,7 @@ function X.SetAbilityItemList(heroAbility, items, abilityLvlup)
 	bDeafaultAbilityHero = heroAbility
 	bDeafaultItemHero = items
 	sAbilityLevelUpList = abilityLvlup
+	pendingLevelUp = nil
 end
 
 X.AbilityLevelUpThink = AbilityLevelUpThink
