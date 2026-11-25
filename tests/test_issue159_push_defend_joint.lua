@@ -81,7 +81,9 @@ local function fixture(opts)
         },
         ['bots/ts_libs/utils/native-operators']={},
         ['bots/FunLib/utils']={GetLocationToLocationDistance=distance,
-            DireFountainTpPoint=loc(10000), RadiantFountainTpPoint=loc(0)},
+            DireFountainTpPoint=loc(10000), RadiantFountainTpPoint=loc(0),
+            CachedVarsCleanTime=60, CleanupCachedVars=function() end},
+        ['bots/FunLib/version']={},
         ['bots/Customize/general']={Enable=false},
         ['bots/FunLib/localization']={},
     }
@@ -106,7 +108,51 @@ local function fixture(opts)
     local push = setfenv(assert(loadfile('bots/FunLib/aba_push.lua')), env)()
     push.WhichLaneToPush=function() return Lan.Mid end
     push.ShouldWaitForImportantItemsSpells=no
-    return push,defend,members,orders,Lan
+    local farm
+    if opts.farmBot then
+        local bot = members[opts.farmBot]
+        local laneCreep = {x = bot.x + 100, GetTeam = function() return 3 end}
+        local midas = {}
+        bot.GetNearbyLaneCreeps = function() return {laneCreep} end
+        bot.HasModifier, bot.IsChanneling = no, no
+        bot.GetNearbyTowers, bot.GetNearbyBarracks, bot.GetNearbyNeutralCreeps = empty, empty, empty
+        bot.DistanceFromFountain = function() return 1000 end
+        bot.GetAttackRange = function() return 600 end
+        bot.GetTeam = function() return 2 end
+        bot.GetAbilityByName = function() end
+        jmz.Role = {IsCampRefreshDone = yes, NotSayRate = no, IsPvNMode = no}
+        jmz.Site = {GetClosestNeutralSpwan = function() end, GetFarmLaneTarget = function() return laneCreep end}
+        jmz.GetPosition = function() return 1 end
+        jmz.GetProperTarget = function() end
+        jmz.CheckLoneDruid, jmz.GetEnemyList, jmz.GetAllyList = empty, empty, empty
+        jmz.GetDistanceFromEnemyFountain = function() return 6000 end
+        jmz.IsMeepoClone, jmz.DoesTeamHaveAegis = no, no
+        jmz.WeAreStronger = yes
+        jmz.GetTormentorLocation, jmz.GetCurrentRoshanLocation = empty, empty
+        jmz.GetInventoryNetworth = function() return 20000, 20000 end
+        jmz.IsRoshanAlive, jmz.IsGoingOnSomeone, jmz.IsRetreating, jmz.IsInRange = no, no, no, no
+        jmz.GetTeamFightLocation = function() end
+        jmz.GetAllyCount, jmz.GetNumOfTeamTotalKills = function() return 1 end, function() return 0 end
+        jmz.GetLastSeenEnemiesNearLoc = function(point)
+            return point.x == ancient.x and opts.baseEnemyId and {opts.baseEnemyId} or {}
+        end
+        jmz.IsItemAvailable = function() return midas end
+        jmz.IsInAllyArea = yes
+        jmz.CanCastAbility = function(item) return item == midas end
+        local farmEnv = setmetatable({
+            GetBot = function() return bot end, Vector = loc, RandomInt = function(low) return low end,
+            GetRoshanDesire = function() return 0 end,
+            DotaTime = function() return now end,
+            BOT_MODE_DESIRE_NONE = 0, BOT_MODE_DESIRE_MODERATE = 0.5, BOT_MODE_DESIRE_VERYHIGH = 0.9,
+            BOT_MODE_DESIRE_ABSOLUTE = 1, BOT_MODE_ITEM = 15,
+        }, {__index = env})
+        jmz.GetEnemiesNearLoc = empty
+        setfenv(assert(loadfile('bots/mode_farm_generic.lua')), farmEnv)()
+        farm = {GetDesire = farmEnv.GetDesire, Think = farmEnv.Think}
+        function farm.SetThreatVisible(visible) creeps[1].visible = visible end
+        function farm.AdvanceTime(seconds) now = now + seconds end
+    end
+    return push,defend,members,orders,Lan,farm
 end
 
 local function same(actual, expected, label)
@@ -162,3 +208,32 @@ do
     assert(#orders==0)
 end
 print('PASS: 22 joint #159/#176 generated push and defense scenarios')
+
+do
+    local opts = {farmBot = 1, attackers = 1, visible = false}
+    local _, defend, members, orders, lane, farm = fixture(opts)
+    assert(farm.GetDesire() > 0, 'farm is available in a quiet lane with a ready Midas')
+    farm.Think()
+    assert(orders[1] == 'attack', 'farm can issue a normal lane attack')
+    farm.SetThreatVisible(true)
+    farm.Think()
+    assert(#orders == 1, 'a new base defense assignment prevents a stale farm order')
+    same(farm.GetDesire(), 0, 'assigned creep responder yields even with Midas ready')
+    same(defend.GetDefendDesire(members[1], lane.Mid), 0.97, 'assigned farmer has an active defense mode')
+    farm.SetThreatVisible(false)
+    farm.AdvanceTime(4)
+    assert(farm.GetDesire() > 0, 'farming becomes available after the defense window ends')
+    opts.baseEnemyId = 9
+    same(farm.GetDesire(), 0, 'last-seen enemy support at the Ancient also blocks farming')
+end
+
+do
+    local _, _, _, _, _, farm = fixture({farmBot = 4, attackers = 1})
+    assert(farm.GetDesire() > 0, 'a single creep does not pull unassigned farmers off the map')
+end
+
+do
+    local _, _, _, _, _, farm = fixture({farmBot = 1, defending = true})
+    same(farm.GetDesire(), 0, 'high-priority active defense outranks a ready Midas')
+end
+print('PASS: farm yields to an assigned or high-priority defense and resumes after the threat')

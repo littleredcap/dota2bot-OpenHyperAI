@@ -6,6 +6,7 @@ local Utils = require( GetScriptDirectory()..'/FunLib/utils' )
 local Version = require(GetScriptDirectory()..'/FunLib/version')
 local Localization = require( GetScriptDirectory()..'/FunLib/localization' )
 local Customize = require( GetScriptDirectory()..'/Customize/general' )
+local Defend = require( GetScriptDirectory()..'/FunLib/aba_defend' )
 
 local bot = GetBot();
 local X = {}
@@ -37,7 +38,6 @@ local nWinCount = RandomInt(24,34);
 local bInitDone = false;
 local beNormalFarmer = false;
 local beHighFarmer = false;
-local beVeryHighFarmer = false;
 local team = GetTeam()
 local isChangePosMessageDone = false
 local nH, nB = J.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam())
@@ -53,6 +53,15 @@ local runMode = false;
 
 
 if bot.farmLocation == nil then bot.farmLocation = bot:GetLocation() end
+
+local function ShouldYieldForBaseDefense()
+	if J.IsDefending(bot) and bot:GetActiveModeDesire() >= 0.75 then return true end
+	local ancient = GetAncient(team)
+	if ancient == nil then return false end
+	if #J.GetLastSeenEnemiesNearLoc(ancient:GetLocation(), 3000) > 0 then return true end
+	local assigned = Defend.GetBaseCreepResponse(bot, ancient)
+	return assigned
+end
 
 function GetDesire()
 	-- local cacheKey = 'GetFarmDesire'..tostring(bot:GetPlayerID())
@@ -106,7 +115,6 @@ function GetDesireHelper()
 		bInitDone = true
 		beNormalFarmer = J.GetPosition(bot) == 3
 		beHighFarmer = J.GetPosition(bot) == 2
-		beVeryHighFarmer = J.GetPosition(bot) == 1
 	end
 
 	local LoneDruid = J.CheckLoneDruid()
@@ -129,6 +137,10 @@ function GetDesireHelper()
     then
         return BOT_MODE_DESIRE_NONE
     end
+	if ShouldYieldForBaseDefense() then
+		teamTime = DotaTime()
+		return BOT_MODE_DESIRE_NONE
+	end
 
 	-- Expensive queries (only after early exits)
     local botLevel = bot:GetLevel()
@@ -155,12 +167,6 @@ function GetDesireHelper()
 
 	if DotaTime() < 50 or botActiveMode == BOT_MODE_RUNE then
 		return 0.0
-	end
-	
-	if X.IsUnitAroundLocation(GetAncient(GetTeam()):GetLocation(), 3000) 
-	-- and aliveAllyCount >= aliveEnemyCount
-	then
-		return BOT_MODE_DESIRE_NONE;
 	end
 	
 	sec = math.floor(DotaTime()) % 60;
@@ -329,18 +335,6 @@ function GetDesireHelper()
         if preferedCamp == nil then preferedCamp = J.Site.GetClosestNeutralSpwan(bot, availableCamp) end;
         return RemapValClamped(J.GetHP(bot), 0.2, 0.7, BOT_MODE_DESIRE_MODERATE, BOT_MODE_DESIRE_VERYHIGH)
     end
-
-	if J.IsDefending(bot) and botActiveModeDesire >= 0.75 then
-		local nDefendLane, nDefendDesire = J.GetMostDefendLaneDesire()
-		local vDefendLocation  = GetLaneFrontLocation(GetTeam(), nDefendLane, -600)
-		local nDefendAllies = J.GetAlliesNearLoc(vDefendLocation, 2200)
-
-		local nNeutrals = bot:GetNearbyNeutralCreeps(Min(bot:GetAttackRange(), 1600))
-
-		if #nNeutrals == 0 and #nDefendAllies >= 2 and (not beVeryHighFarmer or bot:GetLevel() >= 15 or J.IsLateGame()) then
-		    teamTime = DotaTime()
-		end
-	end
 
 	if teamTime > DotaTime() - 3.0 then return BOT_MODE_DESIRE_NONE end
 
@@ -532,6 +526,8 @@ function Think()
 			end
 		end
 	end
+
+	if ShouldYieldForBaseDefense() then return end
 
 	-- Ability-specific farm range detection
 	local nEffectiveRange = bot:GetAttackRange()
@@ -738,21 +734,6 @@ function X.IsNearLaneFront( bot )
 	return false;
 end
 
-
-function X.IsUnitAroundLocation(vLoc, nRadius)
-	for i, id in pairs(GetTeamPlayers(GetOpposingTeam())) do
-		if IsHeroAlive(id) and i <= 3 then
-			local info = GetHeroLastSeenInfo(id)
-			if info ~= nil then
-				local dInfo = info[1]
-				if dInfo ~= nil and J.GetDistance(vLoc, dInfo.location) <= nRadius and dInfo.time_since_seen < 1.0 then
-					return true
-				end
-			end
-		end
-	end
-	return false;
-end
 
 function X.CouldBlade(bot,nLocation) 
 	local blade = J.IsItemAvailable("item_quelling_blade");
