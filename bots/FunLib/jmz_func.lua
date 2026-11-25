@@ -6081,6 +6081,14 @@ function J.GetXUnitsTowardsLocation2(iLoc, tLoc, nUnits)
     return iLoc + dir * nUnits
 end
 
+function J.HasItemConcealment(unit)
+	return unit:HasModifier('modifier_item_invisibility_edge_windwalk')
+		or unit:HasModifier('modifier_item_silver_edge_windwalk')
+		or unit:HasModifier('modifier_item_glimmer_cape_fade')
+		or unit:HasModifier('modifier_item_shadow_amulet_fade')
+		or unit:HasModifier('modifier_item_trickster_cloak_invis')
+end
+
 function J.IsUnitWillGoInvisible(unit, ignoreSandStorm)
 	return (not ignoreSandStorm and unit:HasModifier('modifier_sandking_sand_storm'))
 		or unit:HasModifier('modifier_bounty_hunter_wind_walk')
@@ -6088,15 +6096,7 @@ function J.IsUnitWillGoInvisible(unit, ignoreSandStorm)
 		or unit:HasModifier('modifier_weaver_shukuchi')
 		or (unit:HasModifier('modifier_oracle_false_promise') and unit:HasModifier('modifier_oracle_false_promise_invis'))
 		or (unit:HasModifier('modifier_windrunner_windrun') and unit:HasModifier('modifier_windrunner_windrun_invis'))
-		or unit:HasModifier('modifier_item_invisibility_edge')
-		or unit:HasModifier('modifier_item_invisibility_edge_windwalk')
-		or unit:HasModifier('modifier_item_silver_edge')
-		or unit:HasModifier('modifier_item_silver_edge_windwalk')
-		or unit:HasModifier('modifier_item_glimmer_cape_fade')
-		or unit:HasModifier('modifier_item_glimmer_cape')
-		or unit:HasModifier('modifier_item_shadow_amulet')
-		or unit:HasModifier('modifier_item_shadow_amulet_fade')
-		or unit:HasModifier('modifier_item_trickster_cloak_invis')
+		or J.HasItemConcealment(unit)
 end
 
 function J.HasInvisCounterBuff(unit)

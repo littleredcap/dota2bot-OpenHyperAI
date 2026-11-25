@@ -96,6 +96,7 @@ env.bot, env.X = carrier, x
 env.BOT_ACTION_DESIRE_NONE, env.BOT_ACTION_DESIRE_HIGH = 0, 0.8
 env.J = {
     CanCastAbility = function(item) return item ~= nil end,
+    HasItemConcealment = no,
     GetNearbyHeroes = empty, GetProperTarget = function() end, IsItemAvailable = function() end,
     IsPushing = function() return pushing end,
     Utils = {IsTeamPushingSecondTierOrHighGround = function() return supported end},
