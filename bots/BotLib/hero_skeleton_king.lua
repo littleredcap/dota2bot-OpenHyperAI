@@ -25,8 +25,11 @@ local tTalentTreeList = {
 
 
 local tAllAbilityBuildList = {
-							{2,1,2,3,2,6,2,3,3,3,6,1,1,1,6},--pos1,3
+							{2,1,2,3,2,6,2,1,3,3,6,3,1,1,6},--pos1,3
 }
+if sRole == 'pos_1' then
+	tAllAbilityBuildList = {{2,3,1,3,3,6,3,2,2,2,1,6,1,1,6}}
+end
 
 local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 
@@ -42,10 +45,12 @@ sRoleItemsBuyList['pos_1'] = {
 	"item_quelling_blade",
 
 	"item_magic_wand",
+	"item_boots",
+	"item_helm_of_iron_will",
 	"item_phase_boots",
 	"item_armlet",
-	"item_radiance",--
 	"item_blink",
+	"item_black_king_bar",
 	"item_aghanims_shard",
 	"item_assault",--
 	"item_ultimate_scepter",
@@ -209,7 +214,8 @@ function X.ConsiderQ()
 	local nCastPoint = abilityQ:GetCastPoint()
 	local nManaCost = abilityQ:GetManaCost()
 	local nSkillLV = abilityQ:GetLevel()
-	local nDamage = 40 * ( nSkillLV - 1 ) + 100
+	local nDamage = abilityQ:GetSpecialValueInt('damage')
+	local blastSpeed = math.max(1, abilityQ:GetSpecialValueInt('blast_speed'))
 	local nDamageType = DAMAGE_TYPE_MAGICAL
 
 	local allyList =  J.GetNearbyHeroes(bot, 1200, false, BOT_MODE_NONE )
@@ -241,8 +247,9 @@ function X.ConsiderQ()
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy
 			end
 
-			if GetUnitToUnitDistance( bot, npcEnemy ) <= nCastRange + 80
-				and J.CanKillTarget( npcEnemy, nDamage * 1.68, nDamageType )
+			if J.IsInRange(bot, npcEnemy, abilityQ:GetCastRange())
+				and J.WillKillTarget(npcEnemy, nDamage, nDamageType,
+					nCastPoint + GetUnitToUnitDistance(bot, npcEnemy) / blastSpeed)
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy
 			end
@@ -282,13 +289,27 @@ function X.ConsiderQ()
 	--对线期间对敌方英雄使用
 	if bot:GetActiveMode() == BOT_MODE_LANING or nLV <= 5
 	then
+		if not J.IsRetreating(bot) and (nMP >= 0.55 or #nEnemysHerosInView > 0) then
+			for _, creep in ipairs(bot:GetNearbyLaneCreeps(abilityQ:GetCastRange(), true)) do
+				if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsKeyWordUnit('ranged', creep)
+					and J.IsInRange(bot, creep, abilityQ:GetCastRange())
+					and not J.IsInRange(bot, creep, bot:GetAttackRange())
+					and J.WillKillTarget(creep, nDamage, nDamageType,
+						nCastPoint + GetUnitToUnitDistance(bot, creep) / blastSpeed) then
+					return BOT_ACTION_DESIRE_HIGH, creep
+				end
+			end
+		end
 		for _, npcEnemy in pairs( nEnemysHerosInBonus )
 		do
 			if J.IsValid( npcEnemy )
 				and J.CanCastOnNonMagicImmune( npcEnemy )
 				and J.CanCastOnTargetAdvanced( npcEnemy )
 				and not J.IsDisabled( npcEnemy )
+				and J.IsInRange(bot, npcEnemy, nCastRange)
 				and J.GetAttackEnemysAllyCreepCount( npcEnemy, 1400 ) >= 4
+				and (J.IsInRange(bot, npcEnemy, bot:GetAttackRange() + 160)
+					or J.GetAvailableFightAllies(bot, npcEnemy:GetLocation(), 650) >= 1)
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy
 			end
@@ -415,7 +436,7 @@ function X.ConsiderQ()
 end
 
 function X.ConsiderW()
-	if not abilityW:IsFullyCastable()
+	if abilityW == nil or not abilityW:IsFullyCastable()
 		or not bot:HasModifier( "modifier_skeleton_king_bone_guard" )
 		or X.ShouldSaveMana( abilityW )
 		or abilityW:GetName() ~= "skeleton_king_bone_guard"
@@ -427,6 +448,8 @@ function X.ConsiderW()
 		nStack = bot:GetModifierStackCount( modIdx )
 	end
 	local maxStack = abilityW:GetSpecialValueInt( "max_skeleton_charges" )
+	if nStack <= 0 or maxStack <= 0 then return BOT_ACTION_DESIRE_NONE end
+	local fastRecharge = talent6 ~= nil and talent6:IsTrained()
 
 	local nEnemysHerosInView = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE )
 	local npcTarget = J.GetProperTarget( bot )
@@ -435,15 +458,16 @@ function X.ConsiderW()
 	if J.IsValidHero( npcTarget )
 		and #nEnemysHerosInView == 1
 		and J.IsInRange( npcTarget, bot, 650 )
-		and ( nStack / maxStack >= 0.6 or talent6:IsTrained() )
+		and ( nStack / maxStack >= 0.6 or fastRecharge )
 	then
 		return BOT_ACTION_DESIRE_HIGH
 	end
 
 	--buff叠满了靠近兵线的时候
-	if ( nStack == maxStack or talent6:IsTrained() )
-		and nLV >= 4
-		and ( X.IsNearLaneFront( bot ) or J.IsFarming( bot ) )
+	local farmingCamp = J.IsFarming(bot) and #bot:GetNearbyNeutralCreeps(550) >= 2
+	if nLV >= 4 and #nEnemysHerosInView == 0
+		and (nStack >= maxStack or fastRecharge or (nStack >= 2 and (J.IsPushing(bot) or farmingCamp)))
+		and (J.IsPushing(bot) or J.IsFarming(bot) or X.IsNearLaneFront(bot))
 	then
 		return BOT_ACTION_DESIRE_HIGH
 	end

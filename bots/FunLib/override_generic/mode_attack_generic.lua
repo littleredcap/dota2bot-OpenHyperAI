@@ -55,6 +55,7 @@ function Generic.GetDesire()
 	if not bot:IsAlive()
 	or bot:IsIllusion()
 	or bot:HasModifier('modifier_fountain_fury_swipes_damage_increase')
+	or J.ShouldRetreatFromEnemyReinforcements(bot)
 	then
 		return GetActualDesire(BOT_MODE_DESIRE_NONE)
 	end
@@ -248,7 +249,8 @@ end
 --------------------------------------------------------------------
 function Generic.Think()
 	if J.CanNotUseAction(bot) then return end
-	if not canAttackThisTick or (joinEnemy ~= nil and not CanJoinFight(joinEnemy, joinAlly)) then
+	if not canAttackThisTick or J.ShouldRetreatFromEnemyReinforcements(bot)
+		or (joinEnemy ~= nil and not CanJoinFight(joinEnemy, joinAlly)) then
 		CancelCombatOrder()
 		return
 	end

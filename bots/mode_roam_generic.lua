@@ -41,6 +41,7 @@ local cachedTombstoneZombieSlowState = 0
 local nInRangeEnemy, nInRangeAlly, allyTowers, enemyTowers, trySeduce, shouldTempRetreat, botTarget, shouldGoBackToFountain, nInCloseRangeEnemy, nInCloseRangeAlly
 
 local tangoDesire, tangoTarget, tangoSlot
+local chronoAvoidanceLocation, shrapnelEscapeLocation
 
 local laneAndT1s = {
 	{LANE_TOP, TOWER_TOP_1},
@@ -59,6 +60,10 @@ end
 function GetDesireHelper()
 	botName = bot:GetUnitName()
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return BOT_MODE_DESIRE_NONE end
+	chronoAvoidanceLocation = J.GetChronosphereAvoidanceLocation(bot)
+	if chronoAvoidanceLocation ~= nil then return BOT_MODE_DESIRE_ABSOLUTE end
+	shrapnelEscapeLocation = J.GetShrapnelEscapeLocation(bot)
+	if shrapnelEscapeLocation ~= nil then return BOT_MODE_DESIRE_ABSOLUTE end
 
 	trySeduce = false
 	shouldTempRetreat = false
@@ -140,6 +145,22 @@ end
 
 function Think()
     if J.CanNotUseAction(bot) then return end
+	if chronoAvoidanceLocation ~= nil then
+		local safe = J.GetChronosphereAvoidanceLocation(bot)
+		if safe ~= nil then
+			if GetUnitToLocationDistance(bot, safe) > 20 then
+				bot:Action_MoveToLocation(safe)
+			else
+				bot:Action_ClearActions(true)
+			end
+		end
+		return
+	end
+	if shrapnelEscapeLocation ~= nil then
+		local safe = J.GetShrapnelEscapeLocation(bot)
+		if safe ~= nil then bot:Action_MoveToLocation(safe) end
+		return
+	end
 	if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "roam") then return end
 
 	nInRangeEnemy = bot:GetNearbyHeroes(1200, true, BOT_MODE_NONE)

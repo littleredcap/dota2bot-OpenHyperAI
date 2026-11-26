@@ -4,7 +4,16 @@ local U = require(GetScriptDirectory()..'/FunLib/minion_lib/utils')
 local X = {}
 
 function X.Think(bot, hMinionUnit)
-	local thisMinionAttackRange = bot:GetAttackRange()
+	local thisMinionAttackRange = hMinionUnit:GetAttackRange()
+	local siege = bot.ohaSerpentWardSiegeTarget
+	if J.IsValidBuilding(siege) and J.CanBeAttacked(siege)
+		and not siege:HasModifier('modifier_fountain_glyph')
+		and not siege:HasModifier('modifier_backdoor_protection_active')
+		and not siege:HasModifier('modifier_backdoor_protection_in_base')
+		and GetUnitToUnitDistance(hMinionUnit, siege) <= thisMinionAttackRange then
+		hMinionUnit:Action_AttackUnit(siege, true)
+		return
+	end
 
 	local target = U.GetWeakestHero(thisMinionAttackRange, hMinionUnit)
 	if target == nil

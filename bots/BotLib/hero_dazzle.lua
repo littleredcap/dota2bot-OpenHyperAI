@@ -405,6 +405,7 @@ function X.ConsiderQ()
 	local nInBonusEnemyList = J.GetAroundEnemyHeroList( nCastRange + 200 )
 	local hCastTarget = nil
 	local sCastMotive = nil
+	local reserveLane = J.IsInLaningPhase() and not J.IsCore(bot) and J.IsThereNonSelfCoreNearby(1100)
 
 	--击杀
 	for _, npcEnemy in pairs( nInBonusEnemyList )
@@ -425,6 +426,7 @@ function X.ConsiderQ()
 	if ( J.IsLaning(bot) or J.IsPushing(bot) )
 		and nMP > 0.4
 		and #hEnemyList == 0
+		and not reserveLane
 	then
 		local nLaneCreeps = bot:GetNearbyLaneCreeps( nCastRange, true )
 		if #nLaneCreeps >= 3 then
@@ -506,6 +508,27 @@ function X.ConsiderQ()
 		end
 	end
 
+	-- Trade with the opposing lane without spending the mana needed for a save.
+	local graveMana = abilityW:IsTrained() and abilityW:GetManaCost() or 0
+	if reserveLane and nHP >= 0.55 and bot:GetMana() >= nManaCost + graveMana then
+		for _, ally in ipairs(hAllyList) do
+			if ally ~= bot and J.IsValidHero(ally) and J.IsCore(ally) and J.IsInRange(bot, ally, 900) then
+				for _, enemy in ipairs(J.GetHeroesTargetingUnit(nInRangeEnemyList, ally)) do
+					if not enemy:HasModifier('modifier_dazzle_poison_touch')
+						and J.CanCastOnNonMagicImmune(enemy) and J.CanCastOnTargetAdvanced(enemy)
+					then return BOT_ACTION_DESIRE_HIGH, enemy, 'Q-保护补刀队友' end
+				end
+			end
+		end
+		if nMP >= 0.55 then
+			local tower = bot:GetNearbyTowers(1200, true)[1]
+			local enemy = J.GetLaningHarassTarget(bot, nInRangeEnemyList, tower, #bot:GetNearbyLaneCreeps(600, true))
+			if enemy ~= nil and not enemy:HasModifier('modifier_dazzle_poison_touch')
+				and J.CanCastOnNonMagicImmune(enemy) and J.CanCastOnTargetAdvanced(enemy)
+			then return BOT_ACTION_DESIRE_HIGH, enemy, 'Q-对线消耗' end
+		end
+	end
+
 	--打野
 	if J.IsFarming( bot )
 		and nSkillLV >= 3
@@ -535,6 +558,7 @@ function X.ConsiderQ()
 		and J.IsAllowedToSpam( bot, nManaCost )
 		and nSkillLV >= 3 and DotaTime() > 6 * 60
 		and #hAllyList <= 2 and #hEnemyList == 0
+		and (not reserveLane or J.IsDefending(bot))
 	then
 		local nLaneCreeps = bot:GetNearbyLaneCreeps( nCastRange + 300, true )
 		local targetCreep = nLaneCreeps[3]
@@ -712,8 +736,19 @@ function X.ConsiderE()
 	local nInRangeAllyList = J.GetAlliesNearLoc( bot:GetLocation(), nCastRange + 300 )
 	local hCastTarget = nil
 	local sCastMotive = nil
+	local reserveLane = J.IsInLaningPhase() and not J.IsCore(bot) and J.IsThereNonSelfCoreNearby(1100)
 
 	local nWeakestAlly = J.GetLeastHpUnit( nInRangeAllyList )
+
+	if reserveLane then
+		for _, ally in ipairs(nInRangeAllyList) do
+			if ally ~= bot and J.IsValidHero(ally) and J.IsCore(ally)
+				and J.IsInRange(bot, ally, nCastRange) and J.GetHP(ally) <= 0.75
+				and ally:WasRecentlyDamagedByAnyHero(3)
+				and ally:GetMaxHealth() - ally:GetHealth() >= nDamage
+			then return BOT_ACTION_DESIRE_HIGH, ally, 'E-治疗对线核心' end
+		end
+	end
 
 
 	--治疗队友
@@ -756,10 +791,30 @@ function X.ConsiderE()
 	end
 
 
+	if J.IsDefending(bot) and J.IsValidBuilding(bot:GetNearbyTowers(500, false)[1]) and nMP >= 0.5
+		and bot:GetMana() >= nManaCost + (abilityW:IsTrained() and abilityW:GetManaCost() or 0) then
+		local wave = bot:GetNearbyLaneCreeps(math.min(1600, nCastRange + nRadius), true)
+		if #wave >= 3 then
+			local anchors = bot:GetNearbyLaneCreeps(nCastRange, false)
+			anchors[#anchors + 1] = bot
+			for _, anchor in ipairs(anchors) do
+				if J.IsValid(anchor) then
+					local hits = 0
+					for _, creep in ipairs(wave) do
+						if J.IsValid(creep) and not creep:HasModifier('modifier_fountain_glyph')
+							and J.IsInRange(anchor, creep, nRadius) then hits = hits + 1 end
+					end
+					if hits >= 3 then return BOT_ACTION_DESIRE_HIGH, anchor, 'E-塔下清线' end
+				end
+			end
+		end
+	end
+
 	--治疗小兵
 	if #hAllyList <= 2
 		and #hEnemyList == 0
 		and nSkillLV >= 3
+		and not reserveLane
 		and J.IsAllowedToSpam( bot, 90 )
 	then
 		local allyCreepList = bot:GetNearbyLaneCreeps( 1400, false )

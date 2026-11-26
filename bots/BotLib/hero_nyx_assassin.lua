@@ -306,6 +306,32 @@ function X.ConsiderImpale()
         end
     end
 
+    if J.IsDefending(bot) and J.GetMP(bot) >= 0.5 then
+        local tower = bot:GetNearbyTowers(1250, false)[1]
+        if J.IsValidBuilding(tower) then
+            local locations = {}
+            for _, creep in ipairs(bot:GetNearbyLaneCreeps(math.min(nCastRange, 1600), true)) do
+                if J.IsValid(creep) and J.IsInRange(creep, tower, 900) then
+                    locations[#locations + 1] = creep:GetExtrapolatedLocation(nCastPoint)
+                end
+            end
+
+            local startLocation = bot:GetLocation()
+            local width = math.max(100, Impale:GetAOERadius() or 0)
+            local bestLocation, bestCount = nil, 2
+            for _, location in ipairs(locations) do
+                local endLocation = J.Site.GetXUnitsTowardsLocation(bot, location, nCastRange)
+                local hitCount = 0
+                for _, creepLocation in ipairs(locations) do
+                    local line = PointToLineDistance(startLocation, endLocation, creepLocation)
+                    if line ~= nil and line.within and line.distance <= width then hitCount = hitCount + 1 end
+                end
+                if hitCount > bestCount then bestLocation, bestCount = endLocation, hitCount end
+            end
+            if bestLocation ~= nil then return BOT_ACTION_DESIRE_HIGH, bestLocation end
+        end
+    end
+
     if J.IsLaning(bot)
     and not J.IsThereNonSelfCoreNearby(1200)
 	then
@@ -520,7 +546,7 @@ function X.ConsiderVendetta()
     end
 
     if J.IsRetreating(bot)
-    and not J.IsRealInvisible(bot)
+    and (#nEnemyHeroes > 0 or bot:WasRecentlyDamagedByAnyHero(2.5))
     then
         return BOT_ACTION_DESIRE_HIGH
     end

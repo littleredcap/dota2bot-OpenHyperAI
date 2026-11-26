@@ -293,6 +293,14 @@ function X.ConsiderQ()
 	end
 	
 	
+	if J.IsDefending(bot) and J.IsValidBuilding(bot:GetNearbyTowers(500, false)[1])
+		and J.IsAllowedToSpam(bot, nManaCost) then
+		local wave = bot:GetNearbyLaneCreeps(nCastRange - 50, true)
+		if #wave >= 3 and J.IsValid(wave[1]) and not wave[1]:HasModifier('modifier_fountain_glyph') then
+			return BOT_ACTION_DESIRE_HIGH, bot, 'Q-塔下清线'
+		end
+	end
+
 	--对线期间补刀
 	if bot:GetActiveMode() == BOT_MODE_LANING or ( nLV <= 7 and #hAllyList <= 2 )
 	then
@@ -303,6 +311,7 @@ function X.ConsiderQ()
 		do
 			if J.IsValid( creep )
 				and not creep:HasModifier( "modifier_fountain_glyph" )
+				and J.CanSupportTakeLaneLastHit(bot, creep)
 				and not J.IsOtherAllysTarget( creep )
 			then
 				local lastHitDamage = nDamage

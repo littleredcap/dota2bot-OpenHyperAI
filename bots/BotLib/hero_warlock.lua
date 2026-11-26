@@ -25,7 +25,7 @@ local tTalentTreeList = {
 
 
 local tAllAbilityBuildList = {
-						{1,3,3,1,3,6,3,1,1,2,6,2,2,2,6},
+						{1,2,1,3,2,6,1,1,2,2,3,6,3,3,6},
 }
 
 local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
@@ -43,9 +43,9 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_magic_wand",
 	"item_arcane_boots",
 	"item_glimmer_cape",--
+	"item_force_staff",--
 	"item_guardian_greaves",--
 	"item_aghanims_shard",
-	"item_force_staff",--
 	"item_ultimate_scepter",
 	"item_shivas_guard",--
 	"item_refresher",--
@@ -63,9 +63,9 @@ sRoleItemsBuyList['pos_5'] = {
 	"item_magic_wand",
 	"item_tranquil_boots",
 	"item_glimmer_cape",--
+	"item_force_staff",--
 	"item_pipe",
 	"item_aghanims_shard",
-	"item_force_staff",--
 	"item_ultimate_scepter",
 	"item_shivas_guard",--
 	"item_boots_of_bearing",--
@@ -144,7 +144,6 @@ local abilityW = bot:GetAbilityByName( sAbilityList[2] )
 local abilityE = bot:GetAbilityByName( sAbilityList[3] )
 local abilityR = bot:GetAbilityByName( sAbilityList[6] )
 local talent2 = bot:GetAbilityByName( sTalentList[2] )
-local talent6 = bot:GetAbilityByName( sTalentList[6] )
 
 
 local castQDesire, castQTarget
@@ -248,7 +247,7 @@ function X.SkillsComplement()
 	abilityRef = J.IsItemAvailable( "item_refresher" )
 
 	local aether = J.IsItemAvailable( "item_aether_lens" )
-	if aether ~= nil then aetherRange = 250 end
+	if aether then aetherRange = aether:GetSpecialValueInt('cast_range_bonus') end
 
 
 	castRFRDesire, castRFRLocation = X.ConsiderRFR()
@@ -277,7 +276,11 @@ function X.SkillsComplement()
 	end
 
 
-	castQDesire, castQTarget = X.ConsiderQ()
+	castWDesire, castWTarget = X.ConsiderW()
+	castQDesire = BOT_ACTION_DESIRE_NONE
+	if castWDesire <= 0 or castWTarget:GetTeam() ~= bot:GetTeam() then
+		castQDesire, castQTarget = X.ConsiderQ()
+	end
 	if ( castQDesire > 0 )
 	then
 
@@ -288,7 +291,6 @@ function X.SkillsComplement()
 	end
 
 
-	castWDesire, castWTarget = X.ConsiderW()
 	if ( castWDesire > 0 )
 	then
 
@@ -458,78 +460,42 @@ function X.ConsiderE()
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 
-local lastCheck = -90
 function X.ConsiderW()
-
 	if not abilityW:IsFullyCastable() then	return BOT_ACTION_DESIRE_NONE, nil	end
 
-	local nCastRange = abilityW:GetCastRange() + 50 + aetherRange
-	local nCastPoint = abilityW:GetCastPoint()
-	local manaCost = abilityW:GetManaCost()
-	local nRadius = 0
-
-	if talent6:IsTrained() then nRadius = 250 end
-
-	if DotaTime() >= lastCheck + 0.5 then
-		local weakest = nil
-		local minHP = 100000
-		local allies = J.GetNearbyHeroes(bot, nCastRange, false, BOT_MODE_NONE )
-		if #allies > 0 then
-			for i=1, #allies do
-				if not allies[i]:HasModifier( "modifier_warlock_shadow_word" )
-					and J.CanCastOnNonMagicImmune( allies[i] )
-					and allies[i]:GetHealth() <= minHP
-	 				and allies[i]:GetHealth() <= 0.65 * allies[i]:GetMaxHealth()
-				then
-					weakest = allies[i]
-					minHP = allies[i]:GetHealth()
-				end
-			end
+	local nCastRange = abilityW:GetCastRange() + aetherRange
+	local laning = J.IsInLaningPhase()
+	local healTarget, bestScore = nil, 0
+	local function ConsiderHeal(ally)
+		if not J.IsValidHero(ally) or ally:IsIllusion() or ally:IsInvulnerable()
+			or ally:HasModifier('modifier_warlock_shadow_word')
+		then return end
+		local hp = J.GetHP(ally)
+		local core = J.IsCore(ally)
+		local underFire = ally:WasRecentlyDamagedByAnyHero(3)
+		if hp <= 0.65 or (laning and core and underFire and hp <= 0.8) then
+			local score = 1 - hp + (core and 0.15 or 0) + (underFire and 0.1 or 0)
+			if score > bestScore then healTarget, bestScore = ally, score end
 		end
-		if weakest ~= nil 
-		then
-			return BOT_ACTION_DESIRE_HIGH, weakest
-		end
-		lastCheck = DotaTime()
 	end
+	ConsiderHeal(bot)
+	for _, ally in ipairs(J.GetNearbyHeroes(bot, nCastRange, false, BOT_MODE_NONE)) do
+		ConsiderHeal(ally)
+	end
+	if healTarget ~= nil then return BOT_ACTION_DESIRE_HIGH, healTarget end
 
 	if J.IsInTeamFight( bot, 1200 )
 	then
-
-		if talent6:IsTrained() and false
-		then
-			local locationAoE = bot:FindAoELocation( true, true, bot:GetLocation(), nCastRange, nRadius, 0, 0 )
-			if ( locationAoE.count >= 2 )
-			then
-				return BOT_ACTION_DESIRE_LOW, locationAoE.targetloc
+		local npcWeakestEnemy, npcWeakestEnemyHealth = nil, math.huge
+		for _, npcEnemy in ipairs(J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE)) do
+			if J.IsValidHero(npcEnemy) and not J.IsSuspiciousIllusion(npcEnemy)
+				and J.CanCastOnNonMagicImmune(npcEnemy) and J.CanCastOnTargetAdvanced(npcEnemy)
+				and not npcEnemy:HasModifier('modifier_warlock_shadow_word')
+				and npcEnemy:GetHealth() < npcWeakestEnemyHealth then
+				npcWeakestEnemy, npcWeakestEnemyHealth = npcEnemy, npcEnemy:GetHealth()
 			end
-		else
-
-			local npcWeakestEnemy = nil
-			local npcWeakestEnemyHealth = 10000
-			local nEnemysHeroesInRange = J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE )
-			for _, npcEnemy in pairs( nEnemysHeroesInRange )
-			do
-				if J.IsValid( npcEnemy )
-					and J.CanCastOnNonMagicImmune( npcEnemy )
-					and J.CanCastOnTargetAdvanced( npcEnemy )
-					and not npcEnemy:HasModifier( "modifier_warlock_shadow_word" )
-				then
-					local npcEnemyHealth = npcEnemy:GetHealth()
-					if ( npcEnemyHealth < npcWeakestEnemyHealth )
-					then
-						npcWeakestEnemyHealth = npcEnemyHealth
-						npcWeakestEnemy = npcEnemy
-					end
-				end
-			end
-
-			if ( npcWeakestEnemy ~= nil )
-			then
-				return BOT_ACTION_DESIRE_HIGH, npcWeakestEnemy
-			end
-
 		end
+		if npcWeakestEnemy ~= nil then return BOT_ACTION_DESIRE_HIGH, npcWeakestEnemy end
 	end
 
 	if J.IsGoingOnSomeone( bot )

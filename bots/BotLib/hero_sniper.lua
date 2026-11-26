@@ -24,8 +24,11 @@ local tTalentTreeList = {
 }
 
 local tAllAbilityBuildList = {
-						{2,3,2,3,1,6,1,1,1,2,2,3,6,3,6},--pos1,2
+						{2,1,3,2,1,6,1,1,2,2,3,6,3,3,6},
 }
+if sRole == 'pos_2' then
+	tAllAbilityBuildList = {{2,3,2,1,2,6,2,1,1,1,3,6,3,3,6}}
+end
 
 local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
 
@@ -36,11 +39,10 @@ local sRoleItemsBuyList = {}
 sRoleItemsBuyList['pos_1'] = {
 	"item_ranged_carry_outfit",
 	"item_dragon_lance",
+	"item_maelstrom",
+	"item_hurricane_pike",--
 	"item_mask_of_madness",
 	"item_aghanims_shard",
-	"item_maelstrom",
-    "item_force_staff",
-	"item_hurricane_pike",--
 	"item_ultimate_scepter",
 	"item_travel_boots",
 	"item_monkey_king_bar",--
@@ -56,11 +58,10 @@ sRoleItemsBuyList['pos_1'] = {
 sRoleItemsBuyList['pos_2'] = {
 	"item_mid_outfit",
 	"item_dragon_lance",
+	"item_maelstrom",
+	"item_hurricane_pike",--
 	"item_mask_of_madness",
 	"item_aghanims_shard",
-	"item_maelstrom",
-    "item_force_staff",
-	"item_hurricane_pike",--
 	"item_ultimate_scepter",
 	"item_travel_boots",
 	"item_monkey_king_bar",--
@@ -151,12 +152,50 @@ local castASDesire, castASTarget
 
 
 local nKeepMana, nMP, nHP, nLV, hEnemyHeroList
-local lastAbilityQTime = 0
-local lastAbilityQLocation = Vector( 0, 0 )
+local lastAbilityQTime = -90
+local shrapnelZones = {}
+local pendingShrapnel
+local shrapnelSpent = 0
+local nextShrapnelCharge
 local botTarget
+
+local function GetShrapnelCharges()
+	-- The bot API exposes item charges, but does not expose Shrapnel's charge count.
+	local maximum = abilityQ:GetSpecialValueInt('AbilityCharges')
+	return (maximum > 0 and maximum or 3) - shrapnelSpent
+end
+
+
+local function UpdateShrapnel(now)
+	if nextShrapnelCharge == nil and pendingShrapnel == nil then return end
+	local recharge = abilityQ:GetSpecialValueFloat('AbilityChargeRestoreTime')
+	if recharge <= 0 then recharge = 35 end
+	while nextShrapnelCharge ~= nil and now >= nextShrapnelCharge do
+		shrapnelSpent = shrapnelSpent - 1
+		nextShrapnelCharge = shrapnelSpent > 0 and nextShrapnelCharge + recharge or nil
+	end
+	if pendingShrapnel == nil then return end
+	local manaCost = abilityQ:GetManaCost()
+	local expectedMana = pendingShrapnel.mana * bot:GetMaxMana() / pendingShrapnel.maxMana
+	if abilityQ:IsInAbilityPhase() then
+		pendingShrapnel.mana, pendingShrapnel.maxMana = bot:GetMana(), bot:GetMaxMana()
+	elseif expectedMana - bot:GetMana() >= manaCost - 5 then
+		shrapnelSpent = shrapnelSpent + 1
+		nextShrapnelCharge = nextShrapnelCharge or now + recharge
+		shrapnelZones[#shrapnelZones + 1] = {
+			location = pendingShrapnel.location,
+			expires = now + abilityQ:GetSpecialValueFloat('damage_delay') + abilityQ:GetSpecialValueFloat('duration'),
+		}
+		pendingShrapnel = nil
+	elseif now - lastAbilityQTime >= 1.5 then
+		pendingShrapnel = nil
+	end
+end
 
 function X.SkillsComplement()
 
+	UpdateShrapnel(DotaTime())
+	if pendingShrapnel ~= nil then return end
 
 	X.ConsiderTarget()
 	J.ConsiderForMkbDisassembleMask( bot )
@@ -171,37 +210,37 @@ function X.SkillsComplement()
 	nLV = bot:GetLevel()
 	hEnemyHeroList = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE )
 
-	castRDesire, castRTarget = X.ConsiderR()
-	if ( castRDesire > 0 )
-	then
+	local holdingTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) ~= nil
+	if holdingTower then castQDesire, castQLocation = X.ConsiderQ() end
+	if not holdingTower or castQDesire <= 0 then
+		castRDesire, castRTarget = X.ConsiderR()
+		if castRDesire > 0 then
+			J.SetQueuePtToINT(bot, true)
+			bot:ActionQueue_UseAbilityOnEntity(abilityR, castRTarget)
+			return
+		end
 
-		J.SetQueuePtToINT( bot, true )
-
-		bot:ActionQueue_UseAbilityOnEntity( abilityR, castRTarget )
-		return
-
+		castEDesire = X.ConsiderE()
+		if castEDesire > 0 then
+			bot:Action_ClearActions(false)
+			bot:ActionQueue_UseAbility(abilityE)
+			return
+		end
 	end
 
-	castEDesire = X.ConsiderE()
-	if ( castEDesire > 0 )
-	then
-
-		bot:Action_ClearActions( false )
-
-		bot:ActionQueue_UseAbility( abilityE )
-		return
-
-	end
-
-	castQDesire, castQLocation = X.ConsiderQ()
-	if ( castQDesire > 0 )
+	if not holdingTower then castQDesire, castQLocation = X.ConsiderQ() end
+	if castQDesire > 0 and GetUnitToLocationDistance(bot, castQLocation) <= abilityQ:GetCastRange()
 	then
 
 		J.SetQueuePtToINT( bot, false )
 
-		bot:ActionQueue_UseAbilityOnLocation( abilityQ, castQLocation )
 		lastAbilityQTime = DotaTime()
-		lastAbilityQLocation = castQLocation
+		pendingShrapnel = {
+			location = castQLocation,
+			mana = bot:GetMana(),
+			maxMana = bot:GetMaxMana(),
+		}
+		bot:ActionQueue_UseAbilityOnLocation( abilityQ, castQLocation )
 		return
 	end
 	
@@ -241,34 +280,89 @@ function X.ConsiderTarget()
 
 end
 
+function X.HasLaningCreepShot(creeps, enemies, tower)
+	local lastHit, approach, reserve = J.GetLaningLastHitTarget(bot, creeps, tower, J.GetLaningAttackDamage(bot), enemies)
+	if reserve or (lastHit ~= nil and not approach) then return true end
+	local deny, reserveDeny = J.GetLaningDenyTarget(bot, bot:GetNearbyLaneCreeps(1200, false), tower, enemies)
+	return deny ~= nil or reserveDeny
+end
+
 function X.ConsiderQ()
 
 	if not abilityQ:IsFullyCastable()
 		or DotaTime() - lastAbilityQTime < 1.5
 	then return 0 end
 
-	local nCastRange = 1600	--abilityQ:GetCastRange()
+	local nCastRange = abilityQ:GetCastRange()
 	local nSkillLV = abilityQ:GetLevel()
-	local nDamage = ( 15 + 20 * ( nSkillLV -1 ) ) * 11
-	local nRadius = abilityQ:GetAOERadius()
+	local nRadius = math.max(abilityQ:GetAOERadius() or 0, abilityQ:GetSpecialValueInt('radius'))
 	local nCastPoint = abilityQ:GetCastPoint()
+	local impactDelay = nCastPoint + abilityQ:GetSpecialValueFloat('damage_delay')
 	local botLocation = bot:GetLocation()
 
 	local nEnemysLaneCreepsInSkillRange = bot:GetNearbyLaneCreeps( 1600, true )
 	local nEnemysHeroesInSkillRange = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE )
 
-	local nCanHurtCreepsLocationAoE = bot:FindAoELocation( true, false, botLocation, nCastRange, nRadius, 0.8, 0 )
-	local nCanHurtCreepCount = nCanHurtCreepsLocationAoE.count
-	if nCanHurtCreepsLocationAoE == nil
-		or J.GetInLocLaneCreepCount( bot, 1600, nRadius, nCanHurtCreepsLocationAoE.targetloc ) <= 2	--检查半径内是否真的有小兵
-	then
-		 nCanHurtCreepCount = 0
+	local nCanHurtCreepsLocationAoE = bot:FindAoELocation(true, false, botLocation, nCastRange, nRadius, impactDelay, 0)
+	local waveLocation = nCanHurtCreepsLocationAoE and nCanHurtCreepsLocationAoE.targetloc
+	local nCanHurtCreepCount = waveLocation and J.GetInLocLaneCreepCount(bot, 1600, nRadius, waveLocation) or 0
+	local nCanHurtHeroLocationAoE = bot:FindAoELocation(true, true, botLocation, nCastRange, nRadius - 30, impactDelay, 0)
+	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
+	if holdTower ~= nil and waveLocation ~= nil and nCanHurtCreepCount >= 2
+		and GetUnitToLocationDistance(holdTower, waveLocation) <= 1050
+		and not X.IsAbiltyQCastedHere(waveLocation, nRadius) then
+		return BOT_ACTION_DESIRE_HIGH, waveLocation
 	end
-	local nCanHurtHeroLocationAoE = bot:FindAoELocation( true, true, botLocation, nCastRange, nRadius-30, 0.8, 0 )
+
+	if J.IsInLaningPhase() and (J.IsLaning(bot) or J.IsGoingOnSomeone(bot) or J.IsRetreating(bot)) then
+		local attackRange = bot:GetAttackRange()
+		if not J.IsRetreating(bot) and (J.IsAttacking(bot) or X.HasLaningCreepShot(nEnemysLaneCreepsInSkillRange,
+			nEnemysHeroesInSkillRange, bot:GetNearbyTowers(1200, true)[1])) then return BOT_ACTION_DESIRE_NONE end
+		local manaReserve = abilityR:IsTrained() and abilityR:GetManaCost() or abilityQ:GetManaCost()
+		if GetShrapnelCharges() >= 2 and bot:GetMana() - abilityQ:GetManaCost() >= manaReserve then
+			for _, enemy in ipairs(nEnemysHeroesInSkillRange) do
+				if J.IsValidHero(enemy) and J.CanCastOnNonMagicImmune(enemy) and not J.IsSuspiciousIllusion(enemy)
+					and (not J.IsRetreating(bot) or J.IsInRange(bot, enemy, attackRange + 150))
+					and not enemy:HasModifier('modifier_sniper_shrapnel_slow') then
+					local enemyLocation = J.GetCorrectLoc(enemy, impactDelay)
+					local location = enemyLocation
+					if J.GetInLocLaneCreepCount(bot, 1600, nRadius, enemyLocation) == 0 then
+						local closest = nRadius * 1.6
+						location = nil
+						for _, creep in ipairs(nEnemysLaneCreepsInSkillRange) do
+							if J.IsValid(creep) then
+								local creepLocation = J.GetCorrectLoc(creep, impactDelay)
+								local gap = J.GetLocationToLocationDistance(enemyLocation, creepLocation)
+								if gap < closest then
+									location, closest = (enemyLocation + creepLocation) / 2, gap
+								end
+							end
+						end
+					end
+					if location ~= nil and GetUnitToLocationDistance(bot, location) <= nCastRange
+						and not X.IsAbiltyQCastedHere(location, nRadius)
+					then return BOT_ACTION_DESIRE_HIGH, location end
+				end
+			end
+			if waveLocation ~= nil and #nEnemysHeroesInSkillRange > 0 and nCanHurtCreepCount >= 3
+				and GetUnitToLocationDistance(bot, waveLocation) <= nCastRange
+				and (J.IsRetreating(bot) or GetUnitToLocationDistance(bot, waveLocation) > attackRange)
+				and not X.IsAbiltyQCastedHere(waveLocation, nRadius)
+			then return BOT_ACTION_DESIRE_HIGH, waveLocation end
+		end
+		if not J.IsRetreating(bot) then return BOT_ACTION_DESIRE_NONE end
+	end
+
+	if J.IsDefending(bot) and waveLocation ~= nil and nCanHurtCreepCount >= 3
+		and not X.IsAbiltyQCastedHere(waveLocation, nRadius)
+	then
+		return BOT_ACTION_DESIRE_HIGH, waveLocation
+	end
 
 	--对多个敌方英雄使用
 	if #nEnemysHeroesInSkillRange >= 2
-		and ( nCanHurtHeroLocationAoE.cout ~= nil and nCanHurtHeroLocationAoE.cout >= 2 )
+		and nCanHurtHeroLocationAoE ~= nil and (nCanHurtHeroLocationAoE.count or 0) >= 2
+		and nCanHurtHeroLocationAoE.targetloc ~= nil
 		and bot:GetActiveMode() ~= BOT_MODE_LANING
 		and ( bot:GetActiveMode() ~= BOT_MODE_RETREAT or ( bot:GetActiveMode() == BOT_MODE_RETREAT and bot:GetActiveModeDesire() < 0.6 ) )
 		and not X.IsAbiltyQCastedHere( nCanHurtHeroLocationAoE.targetloc, nRadius )
@@ -280,7 +374,7 @@ function X.ConsiderQ()
 	if J.IsValidHero( botTarget )
 		and not botTarget:HasModifier( "modifier_sniper_shrapnel_slow" )
 		and J.CanCastOnNonMagicImmune( botTarget )
-		and J.IsInRange( botTarget, bot, nCastRange + 300 )
+		and J.IsInRange( botTarget, bot, nCastRange )
 		and ( nSkillLV >= 3 or bot:GetMana() >= nKeepMana )
 		and not X.IsAbiltyQCastedHere( botTarget:GetLocation(), nRadius )
 	then
@@ -293,7 +387,7 @@ function X.ConsiderQ()
 			for i=0, 800, 200
 			do
 				local nCastLocation = J.GetLocationTowardDistanceLocation( botTarget, J.GetEnemyFountain(), nRadius + 800 - i )
-				if GetUnitToLocationDistance( bot, nCastLocation ) <= nCastRange + 200
+				if GetUnitToLocationDistance( bot, nCastLocation ) <= nCastRange
 				then
 					return BOT_ACTION_DESIRE_HIGH, nCastLocation
 				end
@@ -301,9 +395,10 @@ function X.ConsiderQ()
 		end
 
 		--对当前目标使用技能
-		local npcTargetLocInFuture = J.GetCorrectLoc( botTarget, nCastPoint + 1.8 )
+		local npcTargetLocInFuture = J.GetCorrectLoc(botTarget, impactDelay)
 		if J.GetLocationToLocationDistance( botTarget:GetLocation(), npcTargetLocInFuture ) > 300
 			and botTarget:GetMovementDirectionStability() > 0.4
+			and GetUnitToLocationDistance(bot, npcTargetLocInFuture) <= nCastRange
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcTargetLocInFuture
 		end
@@ -322,17 +417,14 @@ function X.ConsiderQ()
 		--远处预测将到远处去的目标
 		if bot:IsFacingLocation( botTarget:GetLocation(), 30 )
 		then
-			if castDistance <= nCastRange - 200
-			then
-				castDistance = castDistance + 400
-			else
-				castDistance = nCastRange + 300
-			end
+			castDistance = math.min(castDistance + 400, nCastRange)
 			return BOT_ACTION_DESIRE_HIGH, J.GetUnitTowardDistanceLocation( bot, botTarget, castDistance )
 		end
 
 		--目标位置无规律
-		return BOT_ACTION_DESIRE_HIGH, J.GetLocationTowardDistanceLocation( botTarget, J.GetEnemyFountain(), nRadius/2 )
+		local location = J.GetLocationTowardDistanceLocation(botTarget, J.GetEnemyFountain(), nRadius / 2)
+		if GetUnitToLocationDistance(bot, location) > nCastRange then location = botTarget:GetLocation() end
+		return BOT_ACTION_DESIRE_HIGH, location
 
 	end
 
@@ -341,7 +433,8 @@ function X.ConsiderQ()
 		and not bot:IsInvisible()
 	then
 		local nCanHurtHeroLocationAoENearby = bot:FindAoELocation( true, true, botLocation, nCastRange - 400, nRadius, 1.5, 0 )
-		if nCanHurtHeroLocationAoENearby.count >= 2
+		if nCanHurtHeroLocationAoENearby and nCanHurtHeroLocationAoENearby.targetloc
+			and (nCanHurtHeroLocationAoENearby.count or 0) >= 2
 			and not X.IsAbiltyQCastedHere( nCanHurtHeroLocationAoENearby.targetloc, nRadius )
 		then
 			return BOT_ACTION_DESIRE_HIGH, nCanHurtHeroLocationAoENearby.targetloc
@@ -389,7 +482,8 @@ function X.ConsiderQ()
 			and not J.CanKillTarget( botTarget, bot:GetAttackDamage() * 3.88 , DAMAGE_TYPE_PHYSICAL )
 		then
 			local nAoE = bot:FindAoELocation( true, false, botLocation, nCastRange, nRadius, 0.8, 0 )
-			if nAoE.count >= 5
+			if nAoE and nAoE.targetloc and (nAoE.count or 0) >= 5
+				and not X.IsAbiltyQCastedHere(nAoE.targetloc, nRadius)
 			then
 				return BOT_ACTION_DESIRE_HIGH, nAoE.targetloc
 			end
@@ -425,13 +519,13 @@ function X.ConsiderQ()
 	if J.IsFarming( bot )
 		and #hEnemyHeroList == 0
 		and J.GetManaAfter( abilityQ:GetManaCost() ) > 0.4
-		and abilityQ:GetCurrentCharges() >= 2
+		and GetShrapnelCharges() >= 2
 	then
 		local nNeutralCreeps = bot:GetNearbyNeutralCreeps( nCastRange )
 		if #nNeutralCreeps >= 3
 		then
 			local nFarmAoE = bot:FindAoELocation( true, false, botLocation, nCastRange, nRadius, 0.8, 0 )
-			if nFarmAoE.count >= 3
+			if nFarmAoE and nFarmAoE.targetloc and (nFarmAoE.count or 0) >= 3
 				and not X.IsAbiltyQCastedHere( nFarmAoE.targetloc, nRadius )
 			then
 				return BOT_ACTION_DESIRE_HIGH, nFarmAoE.targetloc
@@ -448,17 +542,25 @@ function X.ConsiderE()
 
 	if not abilityE:IsFullyCastable()
 		or bot:IsDisarmed()
+		or J.IsAttacking(bot)
 	then return 0 end
 
 	local nAttackRange = bot:GetAttackRange()
-	local nSkillLV = abilityE:GetLevel()
-	local nDamage = bot:GetAttackDamage()
-
 	local npcTarget = bot:GetAttackTarget()
+	if J.IsInLaningPhase() and J.IsLaning(bot) then
+		local tower = bot:GetNearbyTowers(1200, true)[1]
+		local creeps = bot:GetNearbyLaneCreeps(math.min(1600, nAttackRange + 120), true)
+		if J.GetLaningHarassTarget(bot, hEnemyHeroList, tower, #bot:GetNearbyLaneCreeps(600, true)) ~= npcTarget
+			or not J.IsValidHero(npcTarget) then return BOT_ACTION_DESIRE_NONE end
+		if X.HasLaningCreepShot(creeps, hEnemyHeroList, tower) then return BOT_ACTION_DESIRE_NONE end
+		local _, release = J.GetAttackProDelayTime(bot, npcTarget)
+		if release > 0.55 then return BOT_ACTION_DESIRE_NONE end
+	end
 	
 	if J.IsValidHero( npcTarget )
 		and not npcTarget:IsAttackImmune()
 		and J.IsInRange( bot, npcTarget, nAttackRange )
+		and not J.IsRetreating(bot)
 	then
 		--低地打高地
 		if GetHeightLevel( bot:GetLocation() ) < GetHeightLevel( npcTarget:GetLocation() )
@@ -467,8 +569,7 @@ function X.ConsiderE()
 		end
 		
 		--增加爆头几率
-		if J.IsInRange( bot, npcTarget, nAttackRange - 100 )
-			and J.IsAttacking( bot )
+		if J.IsInRange( bot, npcTarget, nAttackRange - 75 )
 		then
 			return BOT_ACTION_DESIRE_HIGH
 		end
@@ -578,13 +679,16 @@ function X.GetCastPoint( bot, unit )
 end
 
 function X.IsAbiltyQCastedHere( nLoc, nRadius )
-
-	if J.GetLocationToLocationDistance( lastAbilityQLocation, nLoc ) > nRadius * 1.14
-	then
-		return false
+	local covered = false
+	for i = #shrapnelZones, 1, -1 do
+		local zone = shrapnelZones[i]
+		if DotaTime() >= zone.expires then
+			table.remove(shrapnelZones, i)
+		elseif J.GetLocationToLocationDistance(zone.location, nLoc) <= nRadius * 1.14 then
+			covered = true
+		end
 	end
-
-	return true
+	return covered
 end
 
 --判定是否在不能击杀目标的情况下对目标使用大招

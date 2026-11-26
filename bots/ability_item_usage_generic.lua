@@ -1322,7 +1322,9 @@ X.ConsiderItemDesire["item_armlet"] = function( hItem )
 
 	if bActive
 		and DotaTime() > nLastActiveArmletTime + 0.9
-		and ( #nInRangeEnmyList == 0 or bot:OriginalGetHealth() > 990 )
+		and #nInRangeEnmyList == 0
+		and not bot:WasRecentlyDamagedByAnyHero(2)
+		and not J.IsAttackProjectileIncoming(bot, 1600)
 	then
 		hEffectTarget = bot
 		sCastMotive = '关闭臂章'
@@ -1498,7 +1500,7 @@ X.ConsiderItemDesire['item_black_king_bar'] = function(item)
 
     local enemies = J.GetEnemiesNearLoc(bot:GetLocation(), 1300)
     local pursuers = J.GetHeroesTargetingUnit(enemies, bot)
-    local retreating = J.IsRetreating(bot)
+    local retreating = J.IsRetreating(bot) or J.ShouldRetreatFromEnemyReinforcements(bot)
     local fighting = J.IsGoingOnSomeone(bot) and J.IsValidHero(botTarget)
     local alreadyIncoming = HasIncomingCombatSpell(bot, 400, 'disable')
     local imminent = alreadyIncoming or HasIncomingTargetedDisable(bot, enemies)
@@ -1517,7 +1519,8 @@ X.ConsiderItemDesire['item_black_king_bar'] = function(item)
         if counter ~= nil then return 0.98, bot, 'none', '驱散后反打', counter end
     end
 
-    if imminent and (fighting or (retreating and HasBkbWalkingExit(pursuers))) then
+    local exposed = #pursuers >= 2 and (bot:WasRecentlyDamagedByAnyHero(2) or (alreadyIncoming and contact < 0.5))
+    if imminent and (fighting or exposed or (retreating and HasBkbWalkingExit(pursuers))) then
         return 0.99, bot, 'none', '预防即将命中的硬控', nil, alreadyIncoming and 'always' or 'revealed'
     end
     if J.GetHP(bot) < 0.35 and contact < 0.6 and HasIncomingCombatSpell(bot, 500, 'magic') then
@@ -1702,6 +1705,22 @@ X.ConsiderItemDesire["item_blink"] = function( hItem )
 		and not botTarget:HasModifier('modifier_faceless_void_chronosphere_freeze')
 		and not botTarget:HasModifier('modifier_enigma_black_hole_pull')
 		then
+			local reach = botTarget:GetLocation()
+			local initiationSpell = botName == 'npc_dota_hero_skeleton_king' and 'skeleton_king_hellfire_blast'
+				or botName == 'npc_dota_hero_dragon_knight' and 'dragon_knight_dragon_tail'
+				or botName == 'npc_dota_hero_shadow_shaman' and 'shadow_shaman_voodoo'
+			if initiationSpell ~= nil then
+				local backup = J.GetAvailableFightAllies(bot, reach, 1300)
+				local spell = bot:GetAbilityByName(initiationSpell)
+				if backup < 1 or not J.CanCastAbility(spell) then return BOT_ACTION_DESIRE_NONE end
+				if botName == 'npc_dota_hero_skeleton_king' then
+					local reincarnation = bot:GetAbilityByName('skeleton_king_reincarnation')
+					local canReincarnate = reincarnation ~= nil and reincarnation:IsTrained()
+						and reincarnation:GetCooldownTimeRemaining() <= 0
+						and bot:GetMana() >= reincarnation:GetManaCost() + spell:GetManaCost()
+					if not canReincarnate and backup < 2 then return BOT_ACTION_DESIRE_NONE end
+				end
+			end
 			local nInRangeAlly = J.GetAlliesNearLoc(botTarget:GetLocation(), 1200)
 			local nInRangeEnemy = J.GetEnemiesNearLoc(botTarget:GetLocation(), 1200)
 			local bWeAreStronger = J.WeAreStronger(bot, 1200)
@@ -1721,7 +1740,8 @@ X.ConsiderItemDesire["item_blink"] = function( hItem )
 			if (#nInRangeAlly >= nNearbyEnemyHeroCount and bWeAreStronger) then
 				local nDistance = Min(nCastRange, GetUnitToUnitDistance(bot, botTarget))
 				local vLocation = J.GetUnitTowardDistanceLocation(bot, botTarget, nDistance) + RandomVector(150)
-				if IsLocationPassable(vLocation) then
+				if (initiationSpell == nil and IsLocationPassable(vLocation))
+					or (initiationSpell ~= nil and IsSafeCombatLanding(bot, vLocation)) then
 					return BOT_ACTION_DESIRE_HIGH, vLocation, 'ground', nil
 				end
 			end
@@ -2548,15 +2568,23 @@ local function ConsiderForceItem(item, allyOnly)
     local pushLength = item:GetSpecialValueInt('push_length')
     if pushLength <= 0 then return BOT_ACTION_DESIRE_NONE end
 
+    local preserveSelf = false
+    if allyOnly and J.IsCore(bot) then
+        local threats = GetCombatPursuers(bot, 1400)
+        preserveSelf = J.ShouldRetreatFromEnemyReinforcements(bot)
+            or (#threats > 0 and (J.IsRetreating(bot) or bot:WasRecentlyDamagedByAnyHero(2)
+                or EarliestPursuitContact(bot, threats) <= 1.25))
+    end
     local bestAlly, bestDesire, bestMotive, emergency = nil, 0, nil, nil
     for _, ally in ipairs(J.GetAlliesNearLoc(bot:GetLocation(), allyRange)) do
         if J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally) and not ally:IsChanneling()
+        and (not preserveSelf or ally == bot)
         and not ally:HasModifier('modifier_teleporting') and not ally:HasModifier('modifier_item_nullifier_mute')
         and not IsBeingDisplaced(ally)
         and J.IsInRange(bot, ally, allyRange) then
             local pursuers = GetCombatPursuers(ally, 1200)
             local stuck = J.IsStuck(ally) or ally:HasModifier('modifier_furion_sprout_damage')
-            local retreating = J.IsRetreating(ally) and #pursuers > 0
+            local retreating = (J.IsRetreating(ally) or (ally == bot and preserveSelf)) and #pursuers > 0
             if stuck or retreating then
                 local landing = J.GetFaceTowardDistanceLocation(ally, pushLength)
                 if MakesSpaceFromEnemies(ally, landing, pursuers)
@@ -2661,7 +2689,9 @@ X.ConsiderItemDesire['item_glimmer_cape'] = function(item)
             local underAttack = #GetCombatPursuers(ally, 1000) > 0
             local canConceal = not ally:IsInvisible() and not HasItemConcealment(ally)
                 and not J.HasInvisCounterBuff(ally) and #ally:GetNearbyTowers(850, true) == 0
-            local canSave = underAttack and canConceal and hp < 0.55 and (J.IsRetreating(ally) or J.IsDisabled(ally))
+            local canSave = underAttack and canConceal and hp < 0.65
+                and (J.IsRetreating(ally) or J.IsDisabled(ally)
+                    or (hp < 0.5 and ally:WasRecentlyDamagedByAnyHero(2)))
             if criticalMagic or canSave then
                 local desire = (criticalMagic and 0.83 or 0.71) + 0.14 * (1 - hp)
                 if desire > score then
@@ -3025,7 +3055,7 @@ X.ConsiderItemDesire['item_hurricane_pike'] = function(item)
 
     local range = item:GetSpecialValueInt('cast_range_enemy') + aetherRange
     local push = item:GetSpecialValueInt('enemy_length')
-    if J.IsRetreating(bot) and push > 0 and range > aetherRange then
+    if (J.IsRetreating(bot) or J.ShouldRetreatFromEnemyReinforcements(bot)) and push > 0 and range > aetherRange then
         local pursuers = GetCombatPursuers(bot, 1200)
         local best
         for _, enemy in ipairs(pursuers) do
@@ -3473,7 +3503,8 @@ end
 --疯脸
 X.ConsiderItemDesire["item_mask_of_madness"] = function( hItem )
 
-	if botName == 'npc_dota_hero_drow_ranger' then return BOT_ACTION_DESIRE_NONE end
+	if botName == 'npc_dota_hero_drow_ranger' or J.IsRetreating(bot)
+		or J.ShouldRetreatFromEnemyReinforcements(bot) then return BOT_ACTION_DESIRE_NONE end
 
 	local nAttackTarget = bot:GetAttackTarget()
 	local nCastRange = bot:GetAttackRange() + 100
@@ -3493,16 +3524,22 @@ X.ConsiderItemDesire["item_mask_of_madness"] = function( hItem )
 		if nAttackTarget:IsHero()
 			or ( #nEnemyHeroInView == 0 and not bot:WasRecentlyDamagedByAnyHero( 2.0 ) )
 		then
-			if ( #nEnemyHeroInView == 0 )
-			or ( botName ~= "npc_dota_hero_sniper"
-				or botName ~= "npc_dota_hero_medusa"
-				or botName ~= "npc_dota_hero_faceless_void" and J.GetUltimateAbility(bot):GetCooldown() > 0)
-			then
-				bot:SetTarget( nAttackTarget )
-				hEffectTarget = nAttackTarget
-				sCastMotive = '启动'
-				return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
+			if #nEnemyHeroInView > 0 and botName == 'npc_dota_hero_sniper' then
+				local shrapnel = bot:GetAbilityByName('sniper_shrapnel')
+				if J.CanCastAbility(shrapnel)
+					and (#nEnemyHeroInView >= 2 or J.GetHP(bot) < 0.65) then return BOT_ACTION_DESIRE_NONE end
 			end
+			if #nEnemyHeroInView > 0 and botName == "npc_dota_hero_faceless_void" then
+				local ultimate = J.GetUltimateAbility(bot)
+				if ultimate ~= nil and ultimate:IsTrained() and ultimate:GetCooldownTimeRemaining() <= 0 then
+					return BOT_ACTION_DESIRE_NONE
+				end
+			end
+
+			bot:SetTarget( nAttackTarget )
+			hEffectTarget = nAttackTarget
+			sCastMotive = '启动'
+			return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
 		end
 	end
 

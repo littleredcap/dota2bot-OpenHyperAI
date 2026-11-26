@@ -29,6 +29,7 @@ local ShouldAttackSpecialUnit = false
 local lastIdleStateCheck, isInIdleState = -1, false
 local rescueAlly, rescueEnemy, issuedRescueTarget
 local nearbyAllies, nearbyEnemies
+local focusEnemy, issuedFocusTarget
 
 -- Pickup / swap timers
 local PickedItem = nil
@@ -75,6 +76,7 @@ function GetDesire()
 end
 function GetDesireHelper()
     rescueAlly, rescueEnemy = nil, nil
+    focusEnemy = nil
     hTargetCreep, ShouldAttackSpecialUnit = nil, false
     if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then
         return BOT_MODE_DESIRE_NONE
@@ -119,10 +121,16 @@ function GetDesireHelper()
         return RemapValClamped(J.GetHP(bot), 0, 0.6, BOT_MODE_DESIRE_NONE, 0.98)
     end
 
-	hTargetCreep = X.GetLastHitCreep()
-	if J.IsValid(hTargetCreep) and J.CanBeAttacked(hTargetCreep) then
-		return 1.5
-	end
+    -- The lane mode times shots and holds position while a mid wave is contested.
+    local midWave = J.IsInLaningPhase() and J.IsCore(bot) and bot:GetAssignedLane() == LANE_MID
+        and GetUnitToLocationDistance(bot, GetLaneFrontLocation(team, LANE_MID, 0)) <= 1400
+        and #bot:GetNearbyLaneCreeps(1200, true) > 0
+    if not midWave then
+        hTargetCreep = X.GetLastHitCreep()
+        if J.IsValid(hTargetCreep) and J.CanBeAttacked(hTargetCreep) then
+            return 1.5
+        end
+    end
 
     if not bot:IsAlive() or bot:GetCurrentActionType() == BOT_ACTION_TYPE_DELAY then
         return BOT_MODE_DESIRE_NONE
@@ -146,6 +154,9 @@ function GetDesireHelper()
 
     if isBattleHorn then return itemDesire end
 
+    focusEnemy = J.GetSupportedFightTarget(bot, nearbyEnemies, nearbyAllies)
+    if focusEnemy ~= nil then return 0.86 end
+
     if not J.IsFarming(bot) and not J.IsPushing(bot) and not J.IsDefending(bot)
     and not J.IsDoingRoshan(bot) and not J.IsDoingTormentor(bot)
     and bot:GetActiveMode() ~= BOT_MODE_RUNE
@@ -157,7 +168,7 @@ function GetDesireHelper()
     and bot:GetActiveMode() ~= BOT_MODE_ROAM then
         return BOT_ACTION_DESIRE_NONE
     elseif #nearbyAllies >= #nearbyEnemies then
-        if IsHeroCore then
+        if IsHeroCore and not midWave then
             local botTarget, targetDesire = X.CarryFindTarget()
             if botTarget ~= nil then
                 targetUnit = botTarget
@@ -198,7 +209,7 @@ end
 
 function X.GetLastHitCreep()
 	if J.IsRetreating(bot)
-	or (not J.IsCore(bot) and J.IsThereCoreNearby(800))
+	or (not J.IsCore(bot) and not J.IsInLaningPhase() and J.IsThereCoreNearby(800))
 	or J.IsInTeamFight(bot, 1200)
 	then
 		return nil
@@ -212,6 +223,8 @@ function X.GetLastHitCreep()
 		and J.IsInRange(bot, creep, bot:GetAttackRange() + 300)
 		and not J.IsRoshan(creep)
 		and not J.IsTormentor(creep)
+		and J.CanSupportTakeLaneLastHit(bot, creep)
+		and (J.IsCore(bot) or creep:GetTeam() ~= TEAM_NEUTRAL or not J.IsThereCoreNearby(800))
 		then
 			local nDelay = J.GetAttackProDelayTime(bot, creep)
 			if J.WillKillTarget(creep, bot:GetAttackDamage()-1, DAMAGE_TYPE_PHYSICAL, nDelay)
@@ -279,8 +292,18 @@ end
 -- ==============================
 function OnStart() end
 
+local function CancelFocusOrder()
+    if issuedFocusTarget == nil then return end
+    if bot:GetTarget() == issuedFocusTarget then
+        bot:SetTarget(nil)
+        if not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
+    end
+    issuedFocusTarget = nil
+end
+
 function OnEnd()
     CancelRescueOrder()
+    CancelFocusOrder()
     rescueAlly, rescueEnemy = nil, nil
     towerTime = 0
     towerCreepMode = false
@@ -294,10 +317,24 @@ function Think()
     if J.CanNotUseAction(bot) then return end
     if J.ShouldRetreatFromEnemyReinforcements(bot) then
         CancelRescueOrder()
+        CancelFocusOrder()
         return
     end
 	-- diabled think less to avoid failing to last hit
     -- if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "team_roam") then return end
+
+    if focusEnemy ~= nil then
+        local location = bot:GetLocation()
+        if J.GetSupportedFightTarget(bot, J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)) == focusEnemy then
+            bot:SetTarget(focusEnemy)
+            bot:Action_AttackUnit(focusEnemy, true)
+            issuedFocusTarget = focusEnemy
+        else
+            CancelFocusOrder()
+        end
+        return
+    end
+    CancelFocusOrder()
 
     if rescueEnemy ~= nil then
         if FindRescueEnemy(rescueAlly, rescueEnemy) ~= nil then
@@ -312,7 +349,7 @@ function Think()
     end
     CancelRescueOrder()
 
-	if J.IsValid(hTargetCreep) then
+	if J.IsValid(hTargetCreep) and J.CanSupportTakeLaneLastHit(bot, hTargetCreep) then
 		bot:Action_AttackUnit(hTargetCreep, true)
 		return
 	end
@@ -321,6 +358,7 @@ function Think()
 	if targetUnit ~= nil then
 		if (not J.Utils.IsValidUnit(targetUnit))
 		or (not X.CanBeAttacked(targetUnit))
+		or not J.CanSupportTakeLaneLastHit(bot, targetUnit)
 		or (GetUnitToUnitDistance(bot, targetUnit) > 1800)  -- too far = drop it
 		or (bot:GetActiveMode() == BOT_MODE_LANING and GetUnitToUnitDistance(bot, targetUnit) > bot:GetAttackRange() + 250)
 		then
@@ -370,7 +408,8 @@ function X.SupportFindTarget()
     local botAD   = bot:GetAttackDamage()
     local botBAD  = X.GetAttackDamageToCreep(bot) - 1
 
-    if X.CanBeAttacked(nTarget) and nTarget == targetUnit and GetUnitToUnitDistance(bot, nTarget) <= 1600 then
+    if X.CanBeAttacked(nTarget) and nTarget == targetUnit and GetUnitToUnitDistance(bot, nTarget) <= 1600
+        and J.CanSupportTakeLaneLastHit(bot, nTarget) then
         if nTarget:GetTeam() == bot:GetTeam() then
             if nTarget:GetHealth() > X.GetLastHitHealth(bot, nTarget) then
                 return nTarget, BOT_MODE_DESIRE_VERYHIGH * 1.08
@@ -766,14 +805,6 @@ function X.CarryFindTarget()
 		and not J.IsTormentor(nEnemysCreeps[1])
 		and not J.IsRoshan(nEnemysCreeps[1])
 		then
-			if nEnemysCreeps[1]:GetTeam() == TEAM_NEUTRAL 
-			   and J.IsInRange(bot, nEnemysCreeps[1], nAttackRange + 100)
-			   and ( #nEnemysCreeps <= 2 
-			         or attackDamage > 220 
-					 or botName == "npc_dota_hero_antimage" )
-			then
-				J.Role['availableCampTable'] = X.UpdateCommonCamp(nEnemysCreeps[1], J.Role['availableCampTable']);
-			end
 			return nEnemysCreeps[1],BOT_MODE_DESIRE_ABSOLUTE;
 		end
 
@@ -1007,6 +1038,7 @@ function X.GetNearbyLastHitCreep(ignorAlly, bEnemy, nDamage, nRadius, bot)
 			local nRealDamage = nDamage * 1
 				
 			if J.WillKillTarget(nCreep,nRealDamage,nDamageType,nAttackProDelayTime)
+				and (not bEnemy or J.CanSupportTakeLaneLastHit(bot, nCreep))
 			then
 				return nCreep;
 			end
@@ -1233,22 +1265,6 @@ function X.CanBeInVisible(bot)
 	end
 
 	return false;
-end
-
-local lastUpdateTime = 0
-function X.UpdateCommonCamp(creep, AvailableCamp)
-	if lastUpdateTime < DotaTime() - 3.0
-	then
-		lastUpdateTime = DotaTime();
-		for i = 1, #AvailableCamp
-		do
-			if GetUnitToLocationDistance(creep,AvailableCamp[i].cattr.location) < 500 then
-				table.remove(AvailableCamp, i);
-				return AvailableCamp;
-			end
-		end
-	end
-	return AvailableCamp;
 end
 
 -- ==============================

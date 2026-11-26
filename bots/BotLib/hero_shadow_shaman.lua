@@ -25,7 +25,7 @@ local tTalentTreeList = {
 }
 
 local tAllAbilityBuildList = {
-						{1,3,1,2,1,6,1,2,3,3,6,2,2,3,6},
+						{1,3,1,2,1,6,1,3,3,2,6,3,2,2,6},
 }
 
 local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
@@ -42,8 +42,9 @@ sRoleItemsBuyList['pos_4'] = {
 
 	"item_magic_wand",
 	"item_arcane_boots",
-	"item_aghanims_shard",
 	"item_glimmer_cape",--
+	"item_blink",
+	"item_aghanims_shard",
 	"item_ultimate_scepter",
 	"item_guardian_greaves",--
 	"item_aether_lens",--
@@ -62,9 +63,11 @@ sRoleItemsBuyList['pos_5'] = {
 
 	"item_magic_wand",
 	"item_tranquil_boots",
+	"item_glimmer_cape",--
+	"item_force_staff",
+	"item_blink",
 	"item_aghanims_shard",
 	"item_pipe",--
-	"item_glimmer_cape",--
 	"item_ultimate_scepter",
 	"item_boots_of_bearing",--
 	"item_aether_lens",--
@@ -179,7 +182,7 @@ function X.SkillsComplement()
 
 
 	local aether = J.IsItemAvailable( "item_aether_lens" )
-	if aether ~= nil then aetherRange = 250 end
+	if aether then aetherRange = aether:GetSpecialValueInt('cast_range_bonus') end
 --	if talent3:IsTrained() then aetherRange = aetherRange + talent3:GetSpecialValueInt( "value" ) end
 	if talent7:IsTrained() then talent7Damage = talent7:GetSpecialValueInt( "value" ) end
 
@@ -196,13 +199,15 @@ function X.SkillsComplement()
 	end
 
 
-	castRDesire, castRLocation, sMotive = X.ConsiderR()
+	local siegeTarget
+	castRDesire, castRLocation, sMotive, siegeTarget = X.ConsiderR()
 	if ( castRDesire > 0 )
 	then
 		J.SetReportMotive( bDebugMode, sMotive )
 
 		J.SetQueuePtToINT( bot, true )
 
+		bot.ohaSerpentWardSiegeTarget = siegeTarget
 		bot:ActionQueue_UseAbilityOnLocation( abilityR, castRLocation )
 		return
 
@@ -734,7 +739,7 @@ function X.ConsiderR()
 	if not abilityR:IsFullyCastable() then return 0 end
 
 	local nSkillLV = abilityR:GetLevel()
-	local nCastRange = abilityR:GetCastRange() + aetherRange + 100
+	local nCastRange = abilityR:GetCastRange() + aetherRange
 	local nRadius	 = 150
 	local nCastPoint = abilityR:GetCastPoint()
 	local nManaCost = abilityR:GetManaCost()
@@ -742,6 +747,10 @@ function X.ConsiderR()
 	local nDamageType = DAMAGE_TYPE_MAGICAL
 	local nInRangeEnemyList = J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE )
 	local targetLocation = nil
+	local building, location = X.GetSiegeWardTarget(nCastRange)
+	if building ~= nil then
+		return BOT_ACTION_DESIRE_HIGH, location, 'R-Pushing', building
+	end
 
 	if J.IsGoingOnSomeone( bot )
 	then
@@ -777,41 +786,37 @@ function X.ConsiderR()
 		end
 	end
 
-	if J.IsPushing( bot )
-	then
-		local nTowerList = bot:GetNearbyTowers( 1100, true )
-		local nBarrackList = bot:GetNearbyBarracks( 1100, true )
-		local nEnemyAcient = GetAncient( GetOpposingTeam() )
-		local hBuildingList = {
-			nTowerList[1],
-			nBarrackList[1],
-			nEnemyAcient, 
-		}
+	return BOT_ACTION_DESIRE_NONE
 
-		for _, nBuilding in pairs( hBuildingList )
-		do
-			if J.IsValidBuilding( nBuilding )
-				and J.IsInRange( bot, nBuilding, nCastRange + 500 )
-				and not nBuilding:HasModifier( 'modifier_fountain_glyph' )
-				and not nBuilding:HasModifier( 'modifier_invulnerable' )
-				and not nBuilding:HasModifier( 'modifier_backdoor_protection' )
-			then
-				targetLocation = J.GetUnitTowardDistanceLocation( nBuilding, bot, 240 )
-				if GetUnitToLocationDistance( bot, targetLocation ) < 180
-				then
-					targetLocation = J.GetUnitTowardDistanceLocation( bot, nBuilding, 240 )
-				end
-				if targetLocation ~= nil
-				then
-					return BOT_ACTION_DESIRE_HIGH, targetLocation, "R-Pushing"
+
+end
+
+function X.GetSiegeWardTarget(castRange)
+	if J.IsRetreating(bot) or bot:WasRecentlyDamagedByAnyHero(2) then return end
+	local attackTarget = bot:GetAttackTarget()
+	if not J.IsPushing(bot) and not J.IsValidBuilding(attackTarget) then return end
+	local buildings = {attackTarget, bot:GetNearbyTowers(1300, true)[1],
+		bot:GetNearbyBarracks(1300, true)[1], GetAncient(GetOpposingTeam())}
+	local wave = bot:GetNearbyLaneCreeps(1300, false)
+	for _, building in pairs(buildings) do
+		if J.IsValidBuilding(building) and building:GetTeam() == GetOpposingTeam() and J.CanBeAttacked(building)
+			and not building:HasModifier('modifier_fountain_glyph')
+			and not building:HasModifier('modifier_backdoor_protection')
+			and not building:HasModifier('modifier_backdoor_protection_active')
+			and not building:HasModifier('modifier_backdoor_protection_in_base') then
+			local location = J.GetUnitTowardDistanceLocation(building, bot, 240)
+			if GetUnitToLocationDistance(bot, location) <= castRange and IsLocationPassable(location) then
+				local defenders = #J.GetEnemiesNearLoc(building:GetLocation(), 1100)
+				if defenders == 0 or J.GetAvailableFightAllies(bot, location, 1200) > defenders then
+					for _, creep in ipairs(wave) do
+						if J.IsValid(creep) and J.IsInRange(creep, building, 800) then
+							return building, location
+						end
+					end
 				end
 			end
 		end
 	end
-
-	return BOT_ACTION_DESIRE_NONE
-
-
 end
 
 

@@ -33,9 +33,10 @@ sRoleItemsBuyList['pos_1'] = {
     "item_wraith_band",
     "item_power_treads",
     "item_magic_wand",
+    "item_maelstrom",
     "item_mask_of_madness",
-    "item_mjollnir",--
     "item_black_king_bar",--
+    "item_mjollnir",--
     "item_skadi",--
     "item_aghanims_shard",
 	"item_butterfly",--
@@ -82,18 +83,28 @@ local TimeDilation 		= bot:GetAbilityByName('faceless_void_time_dilation')
 local Chronosphere 		= bot:GetAbilityByName('faceless_void_chronosphere')
 local TimeWalkReverse 	= bot:GetAbilityByName('faceless_void_time_walk_reverse')
 
-local TimeWalkDesire, TimeWalkLocation
 local TimeDilationDesire
 local ChronosphereDesire, ChronosphereLocation
 local TimeWalkReverseDesire
 
 local TimeWalkPrevLocation
+local pendingChronosphere
 
 local announceCount, lastAnnouncedTime = 0, GameTime()
 
 local botTarget
 
 function X.SkillsComplement()
+    if pendingChronosphere ~= nil then
+        local now = GameTime()
+        if now > pendingChronosphere.deadline or pendingChronosphere.ability:IsNull() then
+            pendingChronosphere = nil
+        elseif pendingChronosphere.ability:GetCooldownTimeRemaining() > 0 then
+            pendingChronosphere.expires = now + pendingChronosphere.duration
+            bot.ohaChronosphere = pendingChronosphere
+            pendingChronosphere = nil
+        end
+    end
     if J.CanNotUseAbility(bot) then return end
     if not Chronosphere or Chronosphere:IsHidden() then Chronosphere = bot:GetAbilityByName('faceless_void_time_zone') end
 
@@ -106,9 +117,9 @@ function X.SkillsComplement()
 		return
 	end
 
-	TimeWalkDesire, TimeWalkLocation = X.ConsiderTimeWalk()
+	local TimeWalkDesire, TimeWalkLocation, emergency = X.ConsiderTimeWalk()
     if TimeWalkDesire > 0
-	and IsAllowedToCast(TimeWalk:GetManaCost())
+	and (emergency or IsAllowedToCast(TimeWalk:GetManaCost()))
 	then
         J.SetQueuePtToINT(bot, false)
 
@@ -140,6 +151,15 @@ function X.SkillsComplement()
 		ChronosphereDesire, ChronosphereLocation = X.ConsiderChronosphere()
 		if ChronosphereDesire > 0
 		then
+			if Chronosphere:GetName() == 'faceless_void_chronosphere' then
+				pendingChronosphere = {
+					ability = Chronosphere,
+					location = ChronosphereLocation,
+					radius = math.max(Chronosphere:GetSpecialValueInt('radius'), Chronosphere:GetAOERadius() or 0),
+					duration = Chronosphere:GetSpecialValueFloat('duration'),
+					deadline = GameTime() + Chronosphere:GetCastPoint() + 1.25,
+				}
+			end
 			bot:Action_UseAbilityOnLocation(Chronosphere, ChronosphereLocation)
 			return
 		end
@@ -183,6 +203,11 @@ function X.ConsiderTimeWalk()
 	local nSpeed = TimeWalk:GetSpecialValueInt('speed')
 	local nDamageWindow = TimeWalk:GetSpecialValueInt('backtrack_duration')
 	local nEnemyHeroes = J.GetNearbyHeroes(bot,1600, true, BOT_MODE_NONE)
+	local underPressure = J.IsInLaningPhase() and J.IsLaningUnderPressure(bot, nEnemyHeroes)
+	if underPressure and (J.GetHP(bot) <= 0.5 or bot:HasModifier('modifier_dazzle_shallow_grave')) then
+		local escape = J.Site.GetXUnitsTowardsLocation(bot, J.GetEscapeLoc(), nCastRange)
+		if IsLocationPassable(escape) then return BOT_ACTION_DESIRE_HIGH, escape, true end
+	end
 
 	if J.IsStuck(bot)
 	then
@@ -204,7 +229,7 @@ function X.ConsiderTimeWalk()
 		end
 	end
 
-	if J.IsGoingOnSomeone(bot)
+	if J.IsGoingOnSomeone(bot) and not underPressure
 	then
 		if J.IsValidTarget(botTarget)
 		and J.CanCastOnNonMagicImmune(botTarget)
@@ -454,6 +479,7 @@ local function GetChronosphereAllies(ability, radius)
 	for _, ally in ipairs(J.GetAlliesNearLoc(bot:GetLocation(), searchRadius)) do
 		if ally ~= bot then
 			table.insert(allies, {
+				hero = ally,
 				current = ally:GetLocation(),
 				predicted = ally:GetExtrapolatedLocation(turnAndCastTime),
 			})
@@ -467,13 +493,33 @@ function X.IsChronosphereAllySafe(ability, location)
 	return not ChronosphereHitsAlly(location, radius, GetChronosphereAllies(ability, radius))
 end
 
-local function FindTeamfightChronosphere(castRange, radius, castPoint, allies, suggestedLocation)
+local function CanFollowUpChronosphere(target, targetLocation, duration, allies)
+	local distanceToTarget = J.Site.GetDistance(bot:GetLocation(), targetLocation)
+	local travelTime = math.max(0, distanceToTarget - bot:GetAttackRange()) / math.max(1, bot:GetCurrentMovementSpeed())
+	local attackCount = math.floor(math.max(0, duration - travelTime - 0.4) * bot:GetAttackSpeed())
+	if attackCount > 0 and J.CanKillTarget(target, attackCount * bot:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL) then
+		return true
+	end
+	for _, ally in ipairs(allies) do
+		if not J.IsDisabled(ally.hero) and not ally.hero:IsDisarmed() and not J.IsRetreating(ally.hero)
+			and J.Site.GetDistance(ally.predicted, targetLocation) <= ally.hero:GetAttackRange() + 100
+		then return true end
+	end
+	return false
+end
+
+local function FindTeamfightChronosphere(castRange, radius, castPoint, duration, allies, suggestedLocation)
 	local origin = bot:GetLocation()
 	local hitRadius = radius / 1.2
 	local enemies = {}
 	for _, enemy in ipairs(J.GetEnemiesNearLoc(origin, castRange + radius + 200)) do
 		if IsChronosphereTarget(enemy) then
-			table.insert(enemies, {hero = enemy, location = J.GetCorrectLoc(enemy, castPoint)})
+			local location = J.GetCorrectLoc(enemy, castPoint)
+			table.insert(enemies, {
+				hero = enemy,
+				location = location,
+				followUp = CanFollowUpChronosphere(enemy, location, duration, allies),
+			})
 		end
 	end
 	if #enemies < 2 then return nil, nil end
@@ -492,12 +538,12 @@ local function FindTeamfightChronosphere(castRange, radius, castPoint, allies, s
 			if J.Site.GetDistance(location, enemy.location) <= hitRadius then
 				enemyCount = enemyCount + 1
 				local health = enemy.hero:GetHealth()
-				if health < targetHealth then
+				if health < targetHealth and enemy.followUp then
 					target, targetHealth = enemy.hero, health
 				end
 			end
 		end
-		if enemyCount >= 2 and enemyCount > bestEnemyCount
+		if target ~= nil and enemyCount >= 2 and enemyCount > bestEnemyCount
 			and not ChronosphereHitsAlly(location, radius, allies)
 		then
 			bestLocation, bestTarget = location, target
@@ -535,7 +581,7 @@ function X.ConsiderChronosphere()
 	local nCastRange = Chronosphere:GetCastRange()
 	local nCastPoint = Chronosphere:GetCastPoint()
 	local nRadius = Chronosphere:GetSpecialValueInt('radius')
-	local nDuration = Chronosphere:GetSpecialValueInt('duration')
+	local nDuration = Chronosphere:GetSpecialValueFloat('duration')
 	local nAttackDamage = bot:GetAttackDamage()
 	local nAttackSpeed = bot:GetAttackSpeed()
 	local bFreezesAllies = Chronosphere:GetName() == 'faceless_void_chronosphere'
@@ -551,7 +597,7 @@ function X.ConsiderChronosphere()
 		local location = nLocationAoE.targetloc
 		local targetHero
 		if bFreezesAllies then
-			location, targetHero = FindTeamfightChronosphere(nCastRange, nRadius, nCastPoint, allies, location)
+			location, targetHero = FindTeamfightChronosphere(nCastRange, nRadius, nCastPoint, nDuration, allies, location)
 		elseif location ~= nil then
 			local enemies = J.GetEnemiesNearLoc(location, nRadius / 1.2)
 			local targetHealth = math.huge

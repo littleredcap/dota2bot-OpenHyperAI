@@ -33,7 +33,7 @@ local tTalentTreeList = {
 
 local tAllAbilityBuildList = {
 	{1,2,1,3,3,6,3,3,1,1,6,2,2,2,6},--pos2
-	{1,2,3,3,3,6,3,1,1,1,6,2,2,2,6},--pos3
+	{1,2,3,1,1,6,1,3,3,3,6,2,2,2,6},--pos3
 }
 
 local nAbilityBuildList
@@ -111,10 +111,11 @@ sRoleItemsBuyList['pos_3'] = {
 	"item_magic_wand",
 	"item_bracer",
 	"item_power_treads",
-	"item_orchid",
-	"item_crimson_guard",--
+	"item_blink",
 	"item_black_king_bar",--
+	"item_crimson_guard",--
 	"item_heavens_halberd",--
+	"item_orchid",
 	"item_aghanims_shard",
 	"item_overwhelming_blink",--
 	"item_bloodthorn",--
@@ -215,14 +216,18 @@ function X.SkillsComplement()
     nAllyHeroes = bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE)
     nEnemyHeroes = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
 
-	ElderDragonFormDesire = X.ConsiderElderDragonForm()
-	if ElderDragonFormDesire> 0 then
-		J.SetQueuePtToINT(bot, false)
-		bot:ActionQueue_UseAbility(ElderDragonForm)
-		return
+	local holdingTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) ~= nil
+	if holdingTower then BreatheFireDesire, BreatheFireLocation = X.ConsiderBreatheFire() end
+	if not holdingTower or BreatheFireDesire <= 0 then
+		ElderDragonFormDesire = X.ConsiderElderDragonForm()
+		if ElderDragonFormDesire > 0 then
+			J.SetQueuePtToINT(bot, false)
+			bot:ActionQueue_UseAbility(ElderDragonForm)
+			return
+		end
 	end
 
-	BreatheFireDesire, BreatheFireLocation = X.ConsiderBreatheFire()
+	if not holdingTower then BreatheFireDesire, BreatheFireLocation = X.ConsiderBreatheFire() end
 	if BreatheFireDesire > 0 then
 		J.SetQueuePtToINT(bot, false)
 		bot:ActionQueue_UseAbilityOnLocation(BreatheFire, BreatheFireLocation)
@@ -258,6 +263,15 @@ function X.ConsiderBreatheFire()
 	local fManaAfter = J.GetManaAfter(nManaCost)
 	local fManaThreshold1 = J.GetManaThreshold(bot, nManaCost, {BreatheFire, DragonTail, Fireball, ElderDragonForm})
 	local fManaThreshold2 = J.GetManaThreshold(bot, nManaCost, {DragonTail, ElderDragonForm})
+	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
+	if holdTower ~= nil and fManaAfter > fManaThreshold2 then
+		local wave = bot:FindAoELocation(true, false, bot:GetLocation(), nCastRange, nRadius, nCastPoint, 0)
+		if wave and wave.targetloc and (wave.count or 0) >= 2
+			and GetUnitToLocationDistance(holdTower, wave.targetloc) <= 1050
+			and J.GetInLocLaneCreepCount(bot, 1600, nRadius, wave.targetloc) >= 2 then
+			return BOT_ACTION_DESIRE_HIGH, wave.targetloc
+		end
+	end
 
 	for _, enemyHero in pairs(nEnemyHeroes) do
 		if J.IsValidHero(enemyHero)
@@ -364,15 +378,13 @@ function X.ConsiderBreatheFire()
         end
 	end
 
-	if J.IsDefending(bot) and bAttacking and #nEnemyHeroes == 0 and fManaAfter > fManaThreshold1 and not bInDragonForm then
-		for _, creep in pairs(nEnemyCreeps) do
-            if J.IsValid(creep) and J.CanBeAttacked(creep) and not J.IsRunning(creep) then
-                local nLocationAoE = bot:FindAoELocation(true, false, creep:GetLocation(), 0, nRadius, 0, 0)
-                if (nLocationAoE.count >= 4) then
-                    return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
-                end
-            end
-        end
+	if J.IsDefending(bot) and fManaAfter > fManaThreshold2
+		and (#nEnemyHeroes == 0 or (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()) then
+		local area = bot:FindAoELocation(true, false, bot:GetLocation(), nCastRange, nRadius, nCastPoint, 0)
+		if area and area.targetloc and (area.count or 0) >= 3
+			and J.GetInLocLaneCreepCount(bot, 1600, nRadius, area.targetloc) >= 3 then
+			return BOT_ACTION_DESIRE_HIGH, area.targetloc
+		end
 	end
 
 	if J.IsFarming(bot) and bAttacking and fManaAfter > fManaThreshold2 then
@@ -389,7 +401,7 @@ function X.ConsiderBreatheFire()
         end
 	end
 
-	if J.IsLaning(bot) and not J.IsInLaningPhase() and fManaAfter > fManaThreshold2 then
+	if J.IsLaning(bot) and fManaAfter > fManaThreshold2 then
 		for _, creep in ipairs(nEnemyCreeps) do
 			if  J.IsValid(creep)
 			and J.CanBeAttacked(creep)
@@ -397,7 +409,8 @@ function X.ConsiderBreatheFire()
 			then
 				local eta = (GetUnitToUnitDistance(bot, creep) / nSpeed) + nCastPoint
 				if J.WillKillTarget(creep, nDamage, DAMAGE_TYPE_MAGICAL, eta) then
-					if (J.IsValidHero(nEnemyHeroes[1]) and J.IsInRange(nEnemyHeroes[1], creep, nRadius) and not J.IsSuspiciousIllusion(nEnemyHeroes[1]))
+					if not J.IsInRange(bot, creep, bot:GetAttackRange())
+					or (J.IsValidHero(nEnemyHeroes[1]) and J.IsInRange(nEnemyHeroes[1], creep, nRadius) and not J.IsSuspiciousIllusion(nEnemyHeroes[1]))
 					or J.IsUnitTargetedByTower(creep, false)
 					then
 						return BOT_ACTION_DESIRE_HIGH, creep:GetLocation()
@@ -407,7 +420,7 @@ function X.ConsiderBreatheFire()
 		end
 
 		local nLocationAoE = bot:FindAoELocation(true, false, bot:GetLocation(), nCastRange, nRadius, 0, nDamage)
-		if nLocationAoE.count >= 2 then
+		if not J.IsInLaningPhase() and nLocationAoE.count >= 2 then
 			return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
 		end
 	end
@@ -739,21 +752,28 @@ function X.ConsiderElderDragonForm()
 	local nEnemyLaneCreeps = bot:GetNearbyLaneCreeps(800, true)
 
 	if J.IsPushing(bot) then
-		if J.IsValidBuilding(botTarget)
-		and J.CanBeAttacked(botTarget)
-		and J.GetHP(botTarget) > 0.2
-		and not botTarget:HasModifier('modifier_backdoor_protection')
-		and not botTarget:HasModifier('modifier_backdoor_protection_active')
-		and not botTarget:HasModifier('modifier_backdoor_protection_in_base')
-		and #nEnemyLaneCreeps >= 2
+		local building = bot:GetAttackTarget()
+		if not J.IsValidBuilding(building) then building = bot:GetNearbyTowers(1000, true)[1] end
+		if J.IsValidBuilding(building) and building:GetTeam() == GetOpposingTeam() and J.CanBeAttacked(building) and J.GetHP(building) > 0.2
+			and J.IsInRange(bot, building, 850) and not building:HasModifier('modifier_fountain_glyph')
+			and not building:HasModifier('modifier_backdoor_protection')
+			and not building:HasModifier('modifier_backdoor_protection_active')
+			and not building:HasModifier('modifier_backdoor_protection_in_base')
+			and (#nEnemyHeroes == 0 or J.GetAvailableFightAllies(bot, building:GetLocation(), 1200) >= #nEnemyHeroes)
 		then
-			return BOT_ACTION_DESIRE_HIGH
+			local wave = 0
+			for _, creep in ipairs(bot:GetNearbyLaneCreeps(1200, false)) do
+				if J.IsValid(creep) and J.IsInRange(creep, building, 850) then wave = wave + 1 end
+			end
+			if wave >= 2 then return BOT_ACTION_DESIRE_HIGH end
 		end
 	end
 
 	if J.IsDefending(bot) then
 		local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), 1200)
-		if #nEnemyLaneCreeps >= 6 and #nInRangeEnemy == 0 then
+		if #nEnemyLaneCreeps >= 4 and (#nInRangeEnemy == 0
+			or (not J.ShouldRetreatFromEnemyReinforcements(bot)
+				and J.GetAvailableFightAllies(bot, bot:GetLocation(), 1200) >= #nInRangeEnemy - 1)) then
 			return BOT_ACTION_DESIRE_HIGH
 		end
 	end

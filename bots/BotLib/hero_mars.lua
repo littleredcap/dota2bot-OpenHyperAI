@@ -65,8 +65,8 @@ sRoleItemsBuyList['pos_2'] = {
 	"item_boots",
 	"item_magic_wand",
 	"item_phase_boots",
-	"item_desolator",--
 	"item_blink",
+	"item_desolator",--
 	"item_black_king_bar",--
 	"item_aghanims_shard",
 	"item_assault",--
@@ -563,17 +563,42 @@ function X.ConsiderArenaOfBlood()
 	local nRadius = ArenaOfBlood:GetSpecialValueInt('radius')
 	local nDuration = ArenaOfBlood:GetSpecialValueInt('duration')
 
-	if J.IsInTeamFight(bot, 1300)
+	local bTeamFight = J.IsInTeamFight(bot, 1300)
+	local bDefending = J.IsDefending(bot)
+	local defendTower = nil
+	if not bTeamFight and (bDefending or J.IsLaning(bot)) then
+		local tower = bot:GetNearbyTowers(1500, false)[1]
+		if J.IsValidBuilding(tower) then
+			local towerLoc = tower:GetLocation()
+			local enemies = J.GetEnemiesNearLoc(towerLoc, 1250)
+			local allies = J.GetAlliesNearLoc(towerLoc, 1250)
+			local towerTarget = tower:GetAttackTarget()
+			if #enemies >= 2 and #allies >= 2 and #enemies <= #allies + 1
+				and (bDefending or J.IsValid(towerTarget) and towerTarget:GetTeam() ~= bot:GetTeam()) then
+				defendTower = tower
+			end
+		end
+	end
+
+	if bTeamFight or defendTower ~= nil
 	then
 		local nLocationAoE = bot:FindAoELocation(true, true, bot:GetLocation(), nCastRange, nRadius, nCastPoint, 0)
-		local nInRangeEnemy = J.GetEnemiesNearLoc(nLocationAoE.targetloc, nRadius)
+		local location = nLocationAoE.targetloc
+		local hitCount = 0
+		if location ~= nil then
+			for _, enemy in ipairs(J.GetEnemiesNearLoc(location, nRadius)) do
+				if defendTower == nil or J.IsInRange(enemy, defendTower, 1250) then
+					hitCount = hitCount + 1
+				end
+			end
+		end
 
-		if  nInRangeEnemy ~= nil and #nInRangeEnemy >= 2
-		and not J.IsLocationInChrono(nLocationAoE.targetloc)
-		and not J.IsLocationInBlackHole(nLocationAoE.targetloc)
-		and not J.IsLocationInArena(nLocationAoE.targetloc, nRadius)
+		if hitCount >= 2
+		and not J.IsLocationInChrono(location)
+		and not J.IsLocationInBlackHole(location)
+		and not J.IsLocationInArena(location, nRadius)
 		then
-			return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc
+			return BOT_ACTION_DESIRE_HIGH, location
 		end
 	end
 

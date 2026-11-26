@@ -64,6 +64,7 @@ local function fixture(itemNames, heroName)
         unit.IsRooted = function(self) return self.rooted == true end
         unit.IsDisarmed = function(self) return self.disarmed == true end
         unit.WasRecentlyDamagedByHero = function(self) return self.hurt == true end
+        unit.WasRecentlyDamagedByAnyHero = unit.WasRecentlyDamagedByHero
         unit.IsAlive, unit.IsHero, unit.IsFacingLocation = yes, yes, yes
         unit.IsChanneling = function(self) return self.channeling == true end
         unit.IsUsingAbility = no
@@ -141,6 +142,7 @@ local function fixture(itemNames, heroName)
         IsValidHero = function(unit) return unit ~= nil and unit.id ~= nil and not unit.hidden end,
         IsSuspiciousIllusion = no, IsDisabled = function(unit) return unit:IsRooted() end,
         IsRetreating = function(unit) return unit.retreating == true end,
+        IsCore = function(unit) return unit == bot and state.core == true end,
         ShouldRetreatFromEnemyReinforcements = function(unit) return unit == bot and state.reinforcements == true end,
         IsGoingOnSomeone = function(unit) return unit == bot and state.fighting end,
         GetAvailableFightAllies = function() return state.backup and 1 or 0 end,
@@ -222,6 +224,24 @@ do
     bot.incoming = {}
     enemies[1].x, enemies[1].casting = 450, ability('lion_voodoo', 8, 600, 100)
     assert(tick()[1][1] == 'item_black_king_bar', 'pre-empt a visible, in-range targeted disable without a projectile')
+end
+
+do
+    local state, bot, _, enemies, tick, chase = fixture({'item_black_king_bar'}, 'npc_dota_hero_dragon_knight')
+    chase(bot)
+    state.hurt = true
+    enemies[1].casting = ability('shadow_shaman_shackles', 8, 600, 100)
+    assert(tick()[1][1] == 'item_black_king_bar', 'protect an exposed frontliner from an imminent targeted disable')
+    enemies[1].casting = nil
+    assert(#tick() == 0, 'multiple physical attackers alone do not justify BKB')
+end
+
+do
+    local state, bot, _, enemies, tick = fixture({'item_hurricane_pike'}, 'npc_dota_hero_sniper')
+    local enemy = enemies[1]
+    enemy.hidden, enemy.x, enemy.attacking = false, 300, bot
+    state.reinforcements = true
+    assert(tick()[1][2] == enemy, 'allow a safe Pike before the bot switches into retreat mode')
 end
 
 do
@@ -379,6 +399,21 @@ do
     assert(#tick() == 0, 'do not Pike an enemy out of a nearby melee ally attack range')
     ally.attacking = nil
     assert(tick()[1][2] == enemy, 'preserve offensive Pike to space a melee attacker during a ranged duel')
+end
+
+do
+    local state, bot, ally, enemies, tick = fixture({'item_hurricane_pike'}, 'npc_dota_hero_sniper')
+    state.core, state.hurt = true, true
+    bot.direction = -1
+    ally.retreating = true
+    enemies[1].hidden, enemies[1].attacking = false, bot
+    enemies[2].hidden, enemies[2].attacking = false, ally
+    local order = tick()[1]
+    assert(order and order[2] == bot, 'preserve the endangered ranged core’s only displacement')
+    state.hurt, enemies[1].hidden = false, true
+    state.time = state.time + 1
+    enemies[2].x = 450
+    assert(tick()[1][2] == ally, 'still rescue the ally when the core is safe')
 end
 
 do

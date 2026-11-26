@@ -36,6 +36,9 @@ local function fixture(rescue)
         unit.GetHealth = function() return 1000 end
         unit.GetHealthRegen = function() return 0 end
         unit.GetAttackRange = function() return 700 end
+        unit.GetAttackDamage = function(self) return self.damage or 100 end
+        unit.GetSecondsPerAttack = function() return 1 end
+        unit.IsChanneling, unit.IsDisarmed, unit.IsStunned, unit.IsHexed, unit.IsNightmared, unit.IsRooted = no, no, no, no, no, no
         unit.GetCurrentMovementSpeed = function() return 300 end
         unit.GetEstimatedDamageToTarget = function() return 5 end
         unit.GetExtrapolatedLocation = unit.GetLocation
@@ -73,6 +76,8 @@ local function fixture(rescue)
         GetHP = function(unit) return unit == bot and state.hp or 0.8 end, GetMP = function() return 1 end,
         GetAlliesNearLoc = function(point, radius) return near(members, point, radius) end,
         GetEnemiesNearLoc = function(point, radius) return near(opponents, point, radius) end,
+        GetLastSeenEnemiesNearLoc = function() return state.recent or {} end,
+        GetLocationToLocationDistance = distance,
         GetTeamFightLocation = function() return pos(650) end,
         GetDistance = distance, WeAreStronger = no, IsInLaningPhase = no, IsInTeamFight = yes,
         IsEarlyGame = no, IsMidGame = no, IsChasingTarget = no,
@@ -95,6 +100,8 @@ local function fixture(rescue)
         J = j, GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
         GetTeam = function() return 2 end, GetOpposingTeam = function() return 3 end,
         GetTeamForPlayer = function(id) return id <= 4 and 2 or 3 end,
+        GetAncient = function() return state.ancient end,
+        GetHeightLevel = function(point) return point.x > 1000 and 2 or 1 end,
         GetIncomingTeleports = function() return state.teleports end,
         IsLocationVisible = function(location) return not location.hidden end,
         GetTeamPlayers = function() return {1, 2, 3, 4} end, GetTeamMember = function(i) return members[i] end,
@@ -193,4 +200,119 @@ do
     state.teleports = {teleport(6, 700, 2), teleport(7, 750, 1.5), destination}
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'nearby available backup prevents an automatic retreat')
 end
+do
+    local state = {x = 500, slowed = true, zones = {}}
+    local bot = {
+        HasModifier = function(_, name) return state.slowed and name == 'modifier_sniper_shrapnel_slow' end,
+        IsRooted = function() return state.rooted end, IsMagicImmune = no,
+        GetLocation = function() return pos(state.x) end, GetTeam = function() return 2 end,
+        GetNearbyTowers = empty, GetUnitName = function() return 'npc_dota_hero_test' end,
+        IsInvulnerable = no, IsHero = yes, IsAlive = yes, IsIllusion = no, GetAbilityByName = no,
+        Action_MoveToLocation = function(_, point) state.order = point end,
+    }
+    local j = {
+        Utils = {GameStates = {}}, GetChronosphereAvoidanceLocation = function() end,
+        CanNotUseAction = function() return state.channeling end, IsValidBuilding = no,
+        GetTeamFountain = function() return pos(0) end,
+        AdjustLocationWithOffsetTowardsFountain = function(point, step) return pos(point.x - step) end,
+        GetLocationToLocationDistance = distance,
+        VectorAway = function(origin, center, step) return pos(origin.x + (origin.x < center.x and -step or step)) end,
+    }
+    local env = setmetatable({J = j, GetAvoidanceZones = function() return state.zones end,
+        IsLocationVisible = function(point) return not point.hidden end, IsLocationPassable = yes,
+        GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
+        require = function(name) if name:find('jmz_func', 1, true) then return j end; return {} end,
+        BOT_MODE_DESIRE_ABSOLUTE = 1,
+    }, {__index = _G})
+    local start = assert(source:find('function J.GetShrapnelEscapeLocation(', 1, true))
+    local finish = assert(source:find('function J.GetChronosphereAvoidanceLocation(', start, true))
+    setfenv(assert(loadstring(source:sub(start, finish - 1))), env)()
+    setfenv(assert(loadfile('bots/mode_roam_generic.lua')), env)()
+    local hostile = {location = pos(780), radius = 400,
+        caster = {IsNull = no, GetTeam = function() return 3 end},
+        ability = {IsNull = no, GetName = function() return 'sniper_shrapnel' end}}
+    state.zones = {hostile}
+    assert(env.GetDesire() == 1 and not state.order)
+    env.Think()
+    assert(state.order.x == 295, 'leave by the short visible edge')
+    hostile.location.hidden = true
+    assert(j.GetShrapnelEscapeLocation(bot).x == -25, 'do not use hidden center coordinates')
+    state.zones, state.order, state.channeling = {}, nil, true
+    env.Think()
+    assert(not state.order, 'do not cancel a committed channel')
+    state.slowed, state.channeling = false, false
+    env.Think()
+    assert(not state.order, 'resume normal decisions as soon as exposure ends')
+    state.slowed, state.rooted = true, true
+    assert(j.GetShrapnelEscapeLocation(bot) == nil, 'do not take a walking path while rooted')
+end
+
 print('PASS: stop unsafe fights and rescue orders, including before visible hostile teleports finish')
+print('PASS: leave perceived Shrapnel promptly and preserve a channel already in progress')
+
+do
+    local state, _, bot, carry, _, enemy, _, j = fixture(false)
+    state.time, state.ancient = 2400, pos(3000)
+    bot.target, enemy.x, carry.x, carry.damage = enemy, 1450, -11000, 310
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'stop following an enemy onto high ground without damage support')
+    state.time, carry.x = 2402, 600
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'a timely core permits the chase')
+    carry.x, enemy.x = -11000, 300
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'keep an attack on a target already within reach')
+end
+
+do
+    local _, mode, bot, core, _, enemy, _, j = fixture(true)
+    bot.core = true
+    mode.LANE_MID = 2
+    bot.GetAssignedLane = function() return mode.LANE_MID end
+    mode.GetLaneFrontLocation = function() return pos(100) end
+    bot.GetNearbyLaneCreeps = function() return {pos(500)} end
+    bot.GetNearbyCreeps = function() error('team roam must leave a mid wave to the lane predictor') end
+    j.IsInLaningPhase, j.IsInTeamFight = yes, no
+    enemy.target = nil
+    assert(mode.GetDesire() == 0, 'the mid laner keeps control of the current wave')
+    core.retreating, enemy.target = true, core
+    assert(mode.GetDesire() > 0, 'an urgent rescue can still interrupt farming')
+end
+
+do
+    local state, _, bot, core, backup, enemy, reinforcement, j = fixture(false)
+    state.time, state.recent = 15 * 60, {enemy.id, reinforcement.id}
+    core.retreating = true
+    assert(not j.CanCommitToLaneTeleport(bot, pos(700)), 'do not teleport alone into two recently seen defenders')
+    core.retreating = false
+    assert(j.CanCommitToLaneTeleport(bot, pos(700)), 'visible and recently seen copies of one hero count once')
+    state.teleports = {{playerid = 7, time_remaining = 2, location = pos(700)}}
+    assert(not j.CanCommitToLaneTeleport(bot, pos(700)), 'visible hostile arrivals can invalidate a landing')
+    core.retreating, state.teleports = true, {}
+    reinforcement.alive = true
+    bot.WasRecentlyDamagedByAnyHero = yes
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'withdraw from two close enemies after losing local cover')
+    state.time, core.retreating = state.time + 2, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'preserve an even local fight after cover arrives')
+    enemy.damage, reinforcement.damage, core.target, backup.target = 270, 90, enemy, reinforcement
+    backup.retreating = false
+    assert(j.GetSupportedFightTarget(bot, {enemy, reinforcement}, {core, backup}) == enemy,
+        'prioritize the more dangerous enemy when both targets are reachable and have the same support')
+    core.retreating = true
+    assert(j.GetSupportedFightTarget(bot, {enemy, reinforcement}, {core, backup}) == reinforcement,
+        'change target if the ally committed to the first target backs out')
+end
+
+do
+    local state, _, bot, core, _, enemy, reinforcement, j = fixture(false)
+    state.time, state.hp = 48 * 60, 0.48
+    bot.WasRecentlyDamagedByAnyHero = yes
+    reinforcement.alive = true
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'even numbers do not justify a losing fight at half health')
+    state.time = state.time + 2
+    j.WeAreStronger = yes
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'continue a favorable fight with the same local numbers')
+    j.WeAreStronger = no
+    core.x, enemy.x, enemy.target, reinforcement.alive = 7600, 1225, bot, false
+    enemy.GetAttackRange = function() return 1100 end
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'disengage from an undefended long-range attacker')
+    state.time, enemy.target = state.time + 2, nil
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'one distant enemy without pressure should not force retreat')
+end

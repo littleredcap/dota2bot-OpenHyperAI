@@ -26,14 +26,15 @@ local function ability(values)
     }
 end
 
-local function loadHero(name, spells, bot, common)
+local function loadHero(name, spells, bot, common, abilityOrder, role)
     bot.GetAbilityByName = function(_, spell) return spells[spell] end
     bot.GetAbilityInSlot = function() end
     common.Skill = {
-        GetTalentList = empty, GetAbilityList = empty, GetRandomBuild = empty,
-        GetTalentBuild = empty, GetSkillList = empty,
+        GetTalentList = empty, GetAbilityList = function() return abilityOrder or {} end,
+        GetRandomBuild = function(builds) return builds[1] end,
+        GetTalentBuild = empty, GetSkillList = function(_, build) return build or {} end,
     }
-    common.Item = {GetRoleItemsBuyList = function() return 'pos_2' end}
+    common.Item = {GetRoleItemsBuyList = function() return role or 'pos_2' end}
     common.Role = {IsPvNMode = no, IsAllShadow = no}
     common.SetUserHeroInit = function(...) return ... end
     local env = setmetatable({
@@ -417,3 +418,319 @@ shieldRaised, retreating = true, false
 mars.SkillsComplement()
 assert(shieldOrder == facingPoint, 'Mars should lower the shield once the threat has passed')
 print('PASS: Mars aims Bulwark and skips its obsolete Scepter behavior')
+
+do
+    local tower = {GetLocation = function() return location end, GetAttackTarget = function() return enemy end}
+    local pushing, nearbyAlly, overlapsChrono = {}, true, false
+    local defenders = {{}, {}}
+    local arena = loadHero('mars', {mars_arena_of_blood = ability({radius = 550, duration = 5})}, {
+        GetLocation = function() return location end,
+        GetNearbyTowers = function() return {tower} end,
+        FindAoELocation = function() return {targetloc = location} end,
+    }, {
+        CanCastAbility = yes, GetProperCastRange = properRange, IsInTeamFight = no,
+        IsDefending = yes, IsValidBuilding = yes, IsGoingOnSomeone = no, IsRetreating = no,
+        GetEnemiesNearLoc = function() return pushing end,
+        GetAlliesNearLoc = function() return nearbyAlly and defenders or {} end,
+        IsInRange = yes, IsLocationInBlackHole = no, IsLocationInArena = no,
+        IsLocationInChrono = function() return overlapsChrono end,
+    })
+    pushing = {{}, {}}
+    assert(arena.ConsiderArenaOfBlood() == HIGH, 'Mars can protect a tower against a visible push')
+    assert(table.concat(arena.sBuyList, ' '):find('item_blink item_desolator', 1, true))
+    nearbyAlly = false
+    assert(arena.ConsiderArenaOfBlood() == NONE, 'A lone tower defender should hold Arena')
+    nearbyAlly, overlapsChrono = true, true
+    assert(arena.ConsiderArenaOfBlood() == NONE, 'Tower defense still avoids overlapping Chronosphere')
+end
+print('PASS: Mars prioritizes Blink and uses Arena for a supported defense')
+
+do
+    local impale = ability({duration = 1.4, impale_damage = 140})
+    impale.GetAOERadius = function() return 125 end
+    local tower, mana, invisible = {}, 0.75, false
+    local wave = {}
+    local nyx = loadHero('nyx_assassin', {nyx_assassin_impale = impale}, {
+        HasModifier = function() return invisible end,
+        GetLocation = function() return {x = 0} end,
+        GetNearbyTowers = function() return {tower} end,
+        GetNearbyLaneCreeps = function() return wave end,
+    }, {
+        GetProperCastRange = properRange, GetProperTarget = function() end, GetNearbyHeroes = empty,
+        IsGoingOnSomeone = no, IsRetreating = no, IsDefending = yes, IsValidBuilding = yes,
+        IsValid = yes, IsInRange = yes, GetMP = function() return mana end, IsLaning = no,
+        IsDoingRoshan = no, IsDoingTormentor = no,
+        Site = {GetXUnitsTowardsLocation = function(_, target) return target end},
+    })
+    getfenv(nyx.ConsiderImpale).PointToLineDistance = function(_, aim, creep)
+        return {within = true, distance = aim.y == creep.y and 0 or 200}
+    end
+    for i = 1, 4 do
+        local lanePoint = {x = i * 100, y = i < 4 and 0 or 200}
+        wave[i] = {GetExtrapolatedLocation = function() return lanePoint end}
+    end
+    local desire, aim = nyx.ConsiderImpale()
+    assert(desire == HIGH and aim.y == 0, 'Nyx should line up the tower wave')
+    mana = 0.4
+    assert(nyx.ConsiderImpale() == NONE, 'Nyx should retain mana for hero control')
+    mana, invisible = 0.75, true
+    assert(nyx.ConsiderImpale() == NONE, 'Nyx should preserve Vendetta when the wave is the only target')
+end
+print('PASS: Nyx clears a lined-up tower wave while preserving Vendetta and low mana')
+
+do
+    local aim, enemyCreep, mana, lane, lastHit, waveCount = 100, {}, 250, true, false, 1
+    local retreating, enemyInRange, reserve, deny, windingUp = false, true, false, false, false
+    local holdTower = nil
+    local casts, creepAim = {}, 700
+    local shrapnel = ability({radius = 450, damage_delay = 1.2, duration = 10, AbilityCharges = 3, AbilityChargeRestoreTime = 35})
+    shrapnel.GetAOERadius = function() return 450 end
+    shrapnel.GetLevel = function() return 1 end
+    shrapnel.IsInAbilityPhase = no
+    shrapnel.GetManaCost = function() return 75 end
+    local sniperBot = {
+        clock = 100, IsInvisible = no, GetLevel = function() return 4 end,
+        GetHealth = function() return 600 end, GetMaxHealth = function() return 600 end,
+        GetMana = function() return mana end, GetMaxMana = function() return 300 end,
+        GetAttackRange = function() return 600 end, GetAttackDamage = function() return 60 end,
+        GetLocation = function() return 0 end, GetNearbyLaneCreeps = function() return {enemyCreep} end,
+        GetNearbyTowers = empty,
+        FindAoELocation = function() return (not lane or retreating) and {targetloc = aim} or nil end,
+        ActionQueue_UseAbilityOnLocation = function(_, spell, point)
+            assert(spell == shrapnel)
+            casts[#casts + 1] = point
+        end,
+    }
+    local sniper = loadHero('sniper', {sniper_shrapnel = shrapnel, sniper_assassinate = {IsTrained = no}}, sniperBot, {
+        IsLaning = function() return lane end, IsInLaningPhase = yes, IsDefending = function() return not lane end,
+        GetAssignedOuterTower = function() return holdTower end,
+        IsRetreating = function() return retreating end, IsGoingOnSomeone = no,
+        GetNearbyHeroes = function() return {enemy} end,
+        GetInLocLaneCreepCount = function() return waveCount end,
+        IsValid = yes, IsValidHero = yes, CanBeAttacked = yes,
+        IsInRange = function(_, target) return target ~= enemy or enemyInRange end,
+        GetLaningAttackDamage = function() return 60 end,
+        GetLaningLastHitTarget = function() return lastHit and enemyCreep or nil, false, reserve end,
+        GetLaningDenyTarget = function() return deny and enemyCreep or nil end,
+        IsAttacking = function() return windingUp end,
+        CanCastOnNonMagicImmune = yes, IsSuspiciousIllusion = no,
+        GetCorrectLoc = function(unit, delay) assert(delay == 1.5); return unit == enemyCreep and creepAim or aim end,
+        GetLocationToLocationDistance = function(a, b) return math.abs(a - b) end,
+        CanNotUseAbility = no, ConsiderForMkbDisassembleMask = no, GetProperTarget = no, SetQueuePtToINT = no,
+    }, {[1] = 'sniper_shrapnel', [6] = 'sniper_assassinate'})
+    assert(sniper.sSkillList[2] == 3 and sniper.sSkillList[4] == 1 and sniper.sSkillList[7] == 2)
+    local buy = table.concat(sniper.sBuyList, ' ')
+    assert(buy:find('item_dragon_lance item_maelstrom item_hurricane_pike item_mask_of_madness item_aghanims_shard', 1, true))
+    local env = getfenv(sniper.ConsiderQ)
+    env.GetUnitToLocationDistance = function(_, point) return math.abs(point) end
+    sniper.ConsiderTarget = no
+    sniper.ConsiderR, sniper.ConsiderE, sniper.ConsiderAS = function() return NONE end,
+        function() return NONE end, function() return NONE end
+    lastHit = true
+    sniper.SkillsComplement()
+    assert(#casts == 0, 'secure a reachable last hit before applying Shrapnel')
+    lastHit, reserve = false, true
+    sniper.SkillsComplement()
+    assert(#casts == 0, 'reserve the next shot when a last hit will open soon')
+    reserve, deny = false, true
+    sniper.SkillsComplement()
+    assert(#casts == 0, 'secure the deny before applying Shrapnel')
+    deny, windingUp = false, true
+    sniper.SkillsComplement()
+    assert(#casts == 0, 'finish the attack windup before applying Shrapnel')
+    windingUp = false
+    sniper.SkillsComplement()
+    assert(casts[1] == 100, 'use a spare Shrapnel charge on the contested lane wave even without an AoE search result')
+    sniperBot.clock = 102
+    sniper.SkillsComplement()
+    assert(#casts == 2 and casts[2] == 100, 'allow a new cast after an order consumes no charge')
+    mana, sniperBot.clock = 175, 103
+    sniper.SkillsComplement()
+    assert(sniper.IsAbiltyQCastedHere(100, 450))
+    sniperBot.clock = 104
+    sniper.SkillsComplement()
+    assert(#casts == 2, 'do not spend a charge on an already covered wave')
+    aim = 700
+    sniper.SkillsComplement()
+    assert(casts[3] == 700, 'a separate wave can be targeted while a zone is active')
+    mana, sniperBot.clock = 100, 105
+    sniper.SkillsComplement()
+    assert(sniper.IsAbiltyQCastedHere(100, 450) and sniper.IsAbiltyQCastedHere(700, 450))
+    sniperBot.clock = 115
+    assert(not sniper.IsAbiltyQCastedHere(100, 450) and sniper.IsAbiltyQCastedHere(700, 450))
+    aim, lane, waveCount = 100, false, 3
+    sniper.SkillsComplement()
+    assert(casts[4] == 100, 'defend an incoming tower wave after the prior zone expires')
+    waveCount, lane, mana, sniperBot.clock = 0, true, 250, 132
+    sniper.SkillsComplement()
+    assert(#casts == 4, 'keep the last estimated charge while the first charge is replenishing')
+    sniperBot.clock = 150
+    sniper.SkillsComplement()
+    assert(casts[5] == 400, 'cover a retreating enemy and the wave when their centers are too far apart')
+    retreating, enemyInRange, aim, waveCount, sniperBot.clock = true, false, 750, 4, 185
+    sniper.SkillsComplement()
+    assert(casts[6] == 750, 'thin a contested wave without walking back into attack range')
+    holdTower, retreating, lane, aim, waveCount, sniperBot.clock = {}, false, false, 100, 2, 201
+    sniper.ConsiderR = function() error('clear the assigned wave before picking an ultimate target') end
+    sniper.SkillsComplement()
+    assert(casts[7] == 100, 'use the last planned wave clear even if there are only two creeps left')
+end
+print('PASS: Sniper balances last hits, lane pressure and distinct Shrapnel zones')
+
+do
+    local orders, laning = {}, true
+    local function ally(hp, core, pressured)
+        local unit = {hp = hp, core = core, pressured = pressured, GetTeam = function() return 2 end}
+        unit.IsIllusion = no
+        unit.IsInvulnerable = function(self) return self.invulnerable == true end
+        unit.HasModifier = function(self) return self.healing == true end
+        unit.WasRecentlyDamagedByAnyHero = function(self) return self.pressured end
+        return unit
+    end
+    local warlockBot, laneCore = ally(0.9, false, false), ally(0.76, true, true)
+    warlockBot.IsInvisible, warlockBot.GetLevel = no, function() return 5 end
+    warlockBot.GetMana, warlockBot.GetMaxMana = function() return 400 end, function() return 500 end
+    warlockBot.GetHealth, warlockBot.GetMaxHealth = function() return 540 end, function() return 600 end
+    warlockBot.ActionQueue_UseAbilityOnEntity = function(_, spell, target) orders[#orders + 1] = {spell, target} end
+    local word, bonds = ability({}), ability({})
+    local warlock = loadHero('warlock', {warlock_shadow_word = word, warlock_fatal_bonds = bonds}, warlockBot, {
+        IsInLaningPhase = function() return laning end, IsInTeamFight = no, IsGoingOnSomeone = no,
+        IsValidHero = yes, GetHP = function(unit) return unit.hp end, IsCore = function(unit) return unit.core end,
+        GetNearbyHeroes = function(_, _, hostile) return hostile and {} or {laneCore} end,
+        IsItemAvailable = no, CanNotUseAbility = no, SetQueuePtToINT = no,
+    }, {'warlock_fatal_bonds', 'warlock_shadow_word'})
+    assert(warlock.sSkillList[2] == 2 and warlock.sSkillList[5] == 2)
+    warlock.WarlockShouldMove = no
+    warlock.ConsiderRFR, warlock.ConsiderR = function() return NONE end, function() return NONE end
+    warlock.ConsiderQ = function() return HIGH, enemy end
+    warlock.SkillsComplement()
+    assert(orders[1][1] == word and orders[1][2] == laneCore, 'heal a pressured lane core before casting Bonds')
+    laneCore.healing = true
+    warlock.SkillsComplement()
+    assert(orders[2][1] == bonds, 'do not reapply Shadow Word to a target already healing')
+    laneCore.healing, laneCore.invulnerable = false, true
+    warlockBot.hp = 0.6
+    warlock.SkillsComplement()
+    assert(orders[3][1] == word and orders[3][2] == warlockBot, 'heal self when the pressured ally is invulnerable')
+    laneCore.invulnerable, warlockBot.hp, laning = false, 0.9, false
+    warlock.SkillsComplement()
+    assert(orders[4][1] == bonds, 'a lightly wounded core outside laning does not suppress offense')
+end
+print('PASS: Warlock learns and prioritizes useful lane healing')
+
+do
+    local tower = {x = 900, GetLocation = function() return 900 end, GetTeam = function() return 3 end, HasModifier = no}
+    local wave, towerGuarded, pushing = true, false, true
+    local shamanBot = {GetAttackTarget = function() end, WasRecentlyDamagedByAnyHero = no,
+        GetNearbyTowers = function() return {tower} end, GetNearbyBarracks = empty,
+        GetNearbyLaneCreeps = function() return wave and {{x = 800}} or {} end}
+    local common = {IsRetreating = no, IsPushing = function() return pushing end,
+        IsValidBuilding = function(unit) return unit == tower end, IsValid = yes, CanBeAttacked = yes,
+        IsInRange = function(a, b, r) return math.abs(a.x - b.x) <= r end,
+        GetUnitTowardDistanceLocation = function(building, _, r) return building.x - r end,
+        GetEnemiesNearLoc = function() return towerGuarded and {enemy} or {} end,
+        GetAvailableFightAllies = function() return 0 end}
+    local shaman = loadHero('shadow_shaman', {}, shamanBot, common)
+    local env = getfenv(shaman.GetSiegeWardTarget)
+    env.GetUnitToLocationDistance = function(_, point) return point end
+    env.GetAncient, env.GetOpposingTeam, env.IsLocationPassable = no, function() return 3 end, yes
+    local building, location = shaman.GetSiegeWardTarget(700)
+    assert(building == tower and location == 660, 'place siege wards within cast range and near the tower')
+    assert(shaman.GetSiegeWardTarget(650) == nil)
+    towerGuarded = true
+    assert(shaman.GetSiegeWardTarget(700) == nil, 'avoid unsupported casts into defenders')
+    towerGuarded, wave = false, false
+    assert(shaman.GetSiegeWardTarget(700) == nil, 'wait for allied creeps before committing siege wards')
+
+    local order
+    local ward = {x = 515, GetAttackRange = function() return 600 end,
+        Action_AttackUnit = function(_, target) order = target end}
+    local utility = {GetWeakestHero = function(range) assert(range == 600); return enemy end, IsNotAllowedToAttack = no}
+    local wardEnv = setmetatable({GetScriptDirectory = function() return 'bots' end,
+        require = function(name) return name:find('jmz_func', 1, true) and common or utility end,
+        GetUnitToUnitDistance = function(a, b) return math.abs(a.x - b.x) end}, {__index = _G})
+    local wards = setfenv(assert(loadfile('bots/FunLib/minion_lib/attacking_wards.lua')), wardEnv)()
+    shamanBot.ohaSerpentWardSiegeTarget = tower
+    wards.Think(shamanBot, ward)
+    assert(order == tower, 'siege wards prioritize a reachable tower using the ward attack range')
+    tower.HasModifier = function(_, modifier) return modifier == 'modifier_fountain_glyph' end
+    wards.Think(shamanBot, ward)
+    assert(order == enemy, 'protected structures fall back to a combat target')
+end
+print('PASS: Shaman plans a safe siege and serpent wards use their own attack range')
+
+do
+    local knight = loadHero('dragon_knight', {}, {}, {}, nil, 'pos_3')
+    assert(knight.sSkillList[4] == 1 and knight.sSkillList[7] == 1, 'offlane build ranks Breathe Fire for wave clear')
+    assert(table.concat(knight.sBuyList, ' '):find('item_blink item_black_king_bar item_crimson_guard', 1, true))
+    local king = loadHero('skeleton_king', {}, {}, {}, nil, 'pos_1')
+    assert(king.sSkillList[2] == 3 and king.sSkillList[7] == 3, 'carry build ranks Mortal Strike for last hits')
+    assert(table.concat(king.sBuyList, ' '):find('item_boots item_helm_of_iron_will item_phase_boots item_armlet item_blink item_black_king_bar', 1, true))
+end
+
+do
+    local shot = {x = 400, GetLocation = function() return 400 end,
+        GetUnitName = function() return 'npc_dota_creep_badguys_ranged' end}
+    local tower = {x = 700, HasModifier = no, GetTeam = function() return 3 end}
+    local pushing, alliedWave, order = false, false, nil
+    local breath = ability({end_radius = 250, damage = 100, speed = 1000})
+    breath.GetManaCost = function() return 100 end
+    local form = ability({})
+    local dragon = {x = 0, GetAttackRange = function() return 150 end, HasModifier = no,
+        GetLocation = function() return 0 end, GetNearbyHeroes = empty, GetNearbyTowers = function() return {tower} end,
+        GetNearbyCreeps = function() return {shot} end, FindAoELocation = function() return {count=0} end,
+        GetNearbyLaneCreeps = function(_, _, hostile) return not hostile and alliedWave and {{x=660}, {x=640}} or {} end,
+        GetAttackTarget = function() return pushing and tower or nil end,
+        ActionQueue_UseAbilityOnLocation = function(_, spell, place) order = {spell, place} end,
+        ActionQueue_UseAbility = function(_, spell) order = {spell} end}
+    local common = {CanNotUseAbility = no, CanCastAbility = function(spell) return spell ~= nil end,
+        IsAttacking = no, GetHP = function() return 1 end, GetProperTarget = no,
+        IsGoingOnSomeone = no, IsRetreating = no, IsInTeamFight = no, IsFarming = no,
+        IsPushing = function() return pushing end, IsDefending = no, IsDoingRoshan = no, IsDoingTormentor = no,
+        IsLaning = function() return not pushing end, IsInLaningPhase = yes, IsValid = yes, CanBeAttacked = yes,
+        IsValidBuilding = function(unit) return unit == tower end, IsValidHero = no,
+        IsInRange = function(a,b,r) return math.abs(a.x-b.x) <= r end, GetProperCastRange = properRange,
+        GetManaAfter = function() return 0.85 end, GetManaThreshold = function() return 0.2 end,
+        WillKillTarget = function(unit, damage) return unit == shot and damage == 100 end,
+        SetQueuePtToINT = no}
+    local dk = loadHero('dragon_knight', {dragon_knight_breathe_fire = breath, dragon_knight_elder_dragon_form = form},
+        dragon, common, nil, 'pos_3')
+    local env = getfenv(dk.SkillsComplement)
+    env.Min, env.GetOpposingTeam = math.min, function() return 3 end
+    dk.SkillsComplement()
+    assert(order and order[1] == breath and order[2] == 400, 'use Breathe Fire for a ranged last hit during the actual laning phase')
+    pushing, alliedWave, order = true, true, nil
+    dk.SkillsComplement()
+    assert(order and order[1] == form, 'use Dragon Form once allied creeps reach the tower after its wave is gone')
+end
+
+do
+    local spell = ability({damage = 80, blast_speed = 1200})
+    spell.GetManaCost = function() return 95 end
+    spell.GetLevel = function() return 1 end
+    local creep = {x = 400, hp = 75}
+    local target
+    local wkBot = {x = 0, IsInvisible = no, GetLevel = function() return 4 end,
+        GetMana = function() return 180 end, GetMaxMana = function() return 250 end,
+        GetHealth = function() return 500 end, GetMaxHealth = function() return 800 end,
+        GetAttackRange = function() return 150 end, GetActiveMode = function() return 7 end,
+        GetNearbyLaneCreeps = function() return {creep} end, WasRecentlyDamagedByAnyHero = no,
+        ActionQueue_UseAbilityOnEntity = function(_, used, unit) assert(used == spell); target=unit end}
+    local wk = loadHero('skeleton_king', {skeleton_king_hellfire_blast = spell}, wkBot, {
+        CanNotUseAbility = no, GetNearbyHeroes = empty, IsRetreating = no, IsFarming = no,
+        IsGoingOnSomeone = no, IsInTeamFight = no, IsValid = yes, CanBeAttacked = yes, IsKeyWordUnit = yes,
+        IsInRange = function(a,b,r) return math.abs(a.x-b.x) <= r end, SetQueuePtToINT = no,
+        WillKillTarget = function(unit, damage, _, delay)
+            assert(unit == creep and damage == 80 and math.abs(delay - (0.3 + 400 / 1200)) < 0.001)
+            return unit.hp <= damage
+        end,
+    }, nil, 'pos_1')
+    local env = getfenv(wk.SkillsComplement)
+    env.BOT_MODE_LANING = 7
+    wk.SkillsComplement()
+    assert(target == creep, 'use the real blast damage to secure a ranged creep WK cannot safely hit')
+    target, creep.hp = nil, 95
+    wk.SkillsComplement()
+    assert(target == nil, 'do not waste mana on a creep above the initial blast damage')
+end
+print('PASS: Dragon Knight and Wraith King secure lane creeps, and Dragon Form converts a clean siege')
