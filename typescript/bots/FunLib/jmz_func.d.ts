@@ -45,7 +45,7 @@ declare function GetNearbyLocationToTp(location: Vector): Vector;
 
 declare function GetPosition(bot: Unit | null): number;
 
-declare function IsInLaningPhase(): boolean;
+declare function IsInLaningPhase(unit?: Unit): boolean;
 
 declare function IsDoingRoshan(bot: Unit): boolean;
 
@@ -75,6 +75,21 @@ declare function IsMidGame(): boolean;
 declare function IsLateGame(): boolean;
 declare function GetEnemiesNearLoc(location: Vector, radius: number): Unit[];
 declare function GetAvailableFightAllies(bot: Unit, location: Vector, radius: number): number;
+declare function HasSiegeDamageInRange(bot: Unit, location: Vector): boolean;
+interface OuterTowerThreat {
+    count: number;
+    near: number;
+    waveSize: number;
+    waveHP: number;
+    siege: boolean;
+    eta: number;
+    score: number;
+}
+declare function GetOuterTowerThreat(tower: Unit, lane: Lane): OuterTowerThreat;
+declare function GetOuterTowerResponse(location: Vector, threat: OuterTowerThreat): LuaMultiReturn<[boolean, Record<number, {reach: number, cover: boolean, teleport?: Vector} | undefined>]>;
+declare function RunOuterTowerHold(bot: Unit, location: Vector, reach: number, cover: boolean): boolean;
+declare function CanCommitToLaneTeleport(bot: Unit, location: Vector, requireClear?: boolean): boolean;
+declare function ShouldRetreatFromEnemyReinforcements(bot: Unit): boolean;
 declare function GetAlliesNearLoc(location: Vector, radius: number): Unit[];
 declare function IsCore(bot: Unit): boolean;
 declare function IsSupport(bot: Unit): boolean;

@@ -40,6 +40,11 @@ interface DefendBotState {
     nInRangeAlly: Unit[];
     nInRangeEnemy: Unit[];
     distanceToLane: Record<Lane, number>;
+    waveClearLane?: Lane;
+    waveClearReach?: number;
+    waveClearTower?: Unit;
+    waveClearCover?: boolean;
+    waveClearTeleport?: Vector;
 }
 function getDefendState(bot: Unit): DefendBotState {
     if (!(bot as any)._defend) {
@@ -406,8 +411,8 @@ function GetClosestAllyPos(tPosList: number[], vLocation: Vector): number {
         const m = GetTeamMember(i);
         if (jmz.IsValidHero(m)) {
             const p = jmz.GetPosition(m);
-            for (let j = 1; j <= tPosList.length; j++) {
-                if (p === tPosList[j]) {
+            for (const candidatePos of tPosList) {
+                if (p === candidatePos) {
                     const d = GetUnitToLocationDistance(m, vLocation);
                     if (d < bestDist) {
                         bestDist = d;
@@ -567,15 +572,15 @@ export function ShouldDefend(bot: Unit, hBuilding: Unit | null, nRadius: number)
     for (const unit of unitState.enemyCreeps) {
         if (jmz.IsValid(unit) && GetUnitToUnitDistance(hBuilding, unit) <= nRadius) {
             const name = unit.GetUnitName();
-            if (string.find(name, "siege") !== null && string.find(name, "upgraded") === null) {
+            if (name.includes("siege") && !name.includes("upgraded")) {
                 creepWeights += 0.5;
-            } else if (string.find(name, "upgraded_mega") !== null) {
+            } else if (name.includes("upgraded_mega")) {
                 creepWeights += 0.6;
-            } else if (string.find(name, "upgraded") !== null) {
+            } else if (name.includes("upgraded")) {
                 creepWeights += 0.4;
-            } else if (string.find(name, "warlock_golem") !== null || string.find(name, "shadow_shaman_ward") !== null) {
+            } else if (name.includes("warlock_golem") || name.includes("shadow_shaman_ward")) {
                 creepWeights += 1.0;
-            } else if (string.find(name, "lone_druid_bear") !== null) {
+            } else if (name.includes("lone_druid_bear")) {
                 enemyHeroNearby = enemyHeroNearby + 1;
             } else if (
                 unit.IsCreep() ||
@@ -590,6 +595,7 @@ export function ShouldDefend(bot: Unit, hBuilding: Unit | null, nRadius: number)
     }
 
     const nNearby = enemyHeroNearby + math.floor(creepWeights);
+    if (nNearby === 0) return false;
     const pos = jmz.GetPosition(bot);
 
     let result = false;
@@ -706,6 +712,23 @@ export function GetDefendDesire(bot: Unit, lane: Lane): BotModeDesire {
     return res;
 }
 
+function GetPrimaryOuterSiege(): LuaMultiReturn<[Lane | undefined, jmz.OuterTowerThreat | undefined]> {
+    let selectedLane: Lane | undefined;
+    let selectedThreat: jmz.OuterTowerThreat | undefined;
+    for (const candidate of [Lane.Mid, Lane.Top, Lane.Bot]) {
+        const [tower, , tier] = GetFurthestBuildingOnLane(candidate);
+        if (tier <= 2 && IsValidBuildingTarget(tower)) {
+            const threat = jmz.GetOuterTowerThreat(tower, candidate);
+            if (threat.score > 0 && (selectedThreat === undefined || threat.score > selectedThreat.score
+                || (threat.score === selectedThreat.score && threat.eta < selectedThreat.eta))) {
+                selectedLane = candidate;
+                selectedThreat = threat;
+            }
+        }
+    }
+    return $multi(selectedLane, selectedThreat);
+}
+
 export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     if ((bot as any).laneToDefend == null) (bot as any).laneToDefend = lane;
     if ((bot as any).DefendLaneDesire == null) (bot as any).DefendLaneDesire = [0, 0, 0];
@@ -721,6 +744,12 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
 
     // Per-bot state — avoids cross-bot data races from module-level vars
     const ds = getDefendState(bot);
+    if (ds.waveClearLane === lane) {
+        ds.waveClearLane = undefined;
+        ds.waveClearTower = undefined;
+        (bot as any).ohaOuterTowerHoldUntil = undefined;
+    }
+    if ((bot as any).ohaOuterTowerTrade?.lane === lane) (bot as any).ohaOuterTowerTrade = undefined;
     ds.defendLoc = locationState.laneFronts[lane];
     const distanceToDefendLoc = GetUnitToLocationDistance(bot, ds.defendLoc);
 
@@ -757,13 +786,6 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         return BotModeDesire.None;
     }
 
-    // Cap defend desire when enemy heroes are very close — bot should fight, not defend
-    const closeEnemiesDefend = jmz.GetEnemiesNearLoc(bot.GetLocation(), 900);
-    const closeAlliesDefend = jmz.GetAlliesNearLoc(bot.GetLocation(), 900);
-    if (closeEnemiesDefend.length > 0 && closeAlliesDefend.length >= closeEnemiesDefend.length) {
-        return math.min(0.3, BotModeDesire.Moderate) as BotModeDesire;
-    }
-
     // Don't abandon a team push to defend a tower from creeps.
     // If 3+ allies are grouped together pushing, defend desire is very low.
     let teamIsPushing = false;
@@ -779,9 +801,6 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
                 }
             }
         }
-    }
-    if (teamIsPushing) {
-        return BotModeDesire.VeryLow;
     }
 
     const recentlyHit = bot.WasRecentlyDamagedByAnyHero(5) || bot.WasRecentlyDamagedByTower(5);
@@ -867,23 +886,12 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     ds.nInRangeEnemy = jmz.GetLastSeenEnemiesNearLoc(bot.GetLocation(), 1600);
 
     ds.weAreStronger = jmz.WeAreStronger(bot, 2500);
-    // aliveAllyHeroes = gameState.aliveAllyCount; // Using cached value directly
+    const [furthestBuilding, urgentMul, buildingTier] = GetFurthestBuildingOnLane(lane);
+    if (!IsValidBuildingTarget(furthestBuilding)) return BotModeDesire.None;
+    const hub = furthestBuilding.GetLocation();
+    const lEnemies = jmz.GetLastSeenEnemiesNearLoc(hub, 2500);
 
-    // Bail-outs to avoid feed / conflicts
-    const pos = jmz.GetPosition(bot);
-    const bMyLane = bot.GetAssignedLane() === lane;
-    if (
-        ds.nInRangeEnemy.length > 0 ||
-        (!bMyLane && pos === 1 && gameState.isLaningPhase) || // keep carry safe early
-        (jmz.IsDoingRoshan(bot) && jmz.GetAlliesNearLoc(jmz.GetCurrentRoshanLocation(), 2800).length >= 3) ||
-        (jmz.IsDoingTormentor(bot) &&
-            (jmz.GetAlliesNearLoc(jmz.GetTormentorLocation(team), 1600).length >= 2 || jmz.GetAlliesNearLoc(jmz.GetTormentorWaitingLocation(team), 2500).length >= 2) &&
-            enemiesAtAncient === 0)
-    ) {
-        return BotModeDesire.VeryLow;
-    }
-
-    // Human priority ping (use a hint floor instead of early-return)
+    // Human priority ping (use a hint floor instead of early-return).
     let pingFloor = 0;
     const [human, humanPing] = jmz.GetHumanPing();
     if (human && humanPing && !humanPing.normal_ping && DotaTime() > 0) {
@@ -894,10 +902,45 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         }
     }
 
-    // Compute desire anchored on furthest building
-    const [furthestBuilding, urgentMul, buildingTier] = GetFurthestBuildingOnLane(lane);
-    if (!IsValidBuildingTarget(furthestBuilding)) {
-        return BotModeDesire.None;
+    if (!panic.active && !isBaseThreatActive && buildingTier <= 2 && pingFloor === 0) {
+        const [primaryLane, threat] = GetPrimaryOuterSiege();
+        if (primaryLane === lane && threat) {
+            const [delay, assignments] = jmz.GetOuterTowerResponse(hub, threat);
+            if (delay) {
+                const assignment = assignments[bot.GetPlayerID()];
+                if (assignment === undefined || jmz.GetHP(furthestBuilding) <= 0.15) {
+                    (bot as any).ohaOuterTowerTrade = { lane, location: hub, expires: DotaTime() + 3 };
+                    return BotModeDesire.VeryLow;
+                }
+                ds.waveClearLane = lane;
+                ds.waveClearTower = furthestBuilding;
+                ds.waveClearReach = assignment.reach;
+                ds.waveClearCover = assignment.cover;
+                ds.waveClearTeleport = assignment.teleport;
+                (bot as any).ohaOuterTowerHoldUntil = DotaTime() + 3;
+                (bot as any).laneToDefend = lane;
+                return BotModeDesire.High;
+            }
+        } else if (primaryLane !== undefined) {
+            return BotModeDesire.VeryLow;
+        }
+    }
+    if (teamIsPushing && !panic.active && !isBaseThreatActive && buildingTier < 3 && pingFloor === 0) {
+        return BotModeDesire.VeryLow;
+    }
+
+    // Bail-outs to avoid feed / conflicts
+    const pos = jmz.GetPosition(bot);
+    const bMyLane = bot.GetAssignedLane() === lane;
+    if (
+        (!panic.active && ds.nInRangeEnemy.length > ds.nInRangeAlly.length + 1 && !ds.weAreStronger) ||
+        (!bMyLane && pos === 1 && gameState.isLaningPhase) || // keep carry safe early
+        (jmz.IsDoingRoshan(bot) && jmz.GetAlliesNearLoc(jmz.GetCurrentRoshanLocation(), 2800).length >= 3) ||
+        (jmz.IsDoingTormentor(bot) &&
+            (jmz.GetAlliesNearLoc(jmz.GetTormentorLocation(team), 1600).length >= 2 || jmz.GetAlliesNearLoc(jmz.GetTormentorWaitingLocation(team), 2500).length >= 2) &&
+            enemiesAtAncient === 0)
+    ) {
+        return BotModeDesire.VeryLow;
     }
 
     // Use ShouldDefend to gate/dampen
@@ -917,14 +960,10 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     let nDefendDesire = GetDefendLaneDesire(lane);
 
     // Avoid dogpile if enemies absent & allies/core already covering
-    const hub = IsValidBuildingTarget(furthestBuilding) ? furthestBuilding.GetLocation() : GetLaneFrontLocation(nTeam, lane, 0);
-
-    // Use hub (not defendLoc) for these two gates:
-    const lEnemies = jmz.GetLastSeenEnemiesNearLoc(hub, 2500);
     const nDefendAllies = jmz.GetAlliesNearLoc(hub, 2500);
     const nEffAllies = nDefendAllies.length + jmz.Utils.GetAllyIdsInTpToLocation(hub, 2500).length;
 
-    if (lEnemies.length === 0 && (jmz.IsAnyAllyDefending(bot, lane) || jmz.IsCore(bot))) {
+    if (lEnemies.length === 0 && (jmz.IsAnyAllyDefending(bot, lane) || !shouldDef)) {
         return BotModeDesire.VeryLow;
     }
     if (lEnemies.length === 1 && (nEffAllies > lEnemies.length || (jmz.IsAnyAllyDefending(bot, lane) && jmz.GetAverageLevel(false) >= jmz.GetAverageLevel(true)))) {
@@ -938,6 +977,12 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     const baseFloor = shouldDef ? BotActionDesire.Low : BotActionDesire.VeryLow;
 
     nDefendDesire = RemapValClamped(jmz.GetHP(bot), 0.75, 0.2, RemapValClamped(nDefendDesire * urgentMul, 0, 1, baseFloor, maxDesire), BotActionDesire.Low);
+
+    if (shouldDef && buildingTier <= 2 && pos !== 1 && lEnemies.length >= 2 && !recentlyHit &&
+        jmz.GetHP(bot) >= 0.55 && GetUnitToLocationDistance(bot, hub) <= 2700 &&
+        nDefendAllies.length >= math.min(2, lEnemies.length - 1)) {
+        nDefendDesire = math.max(nDefendDesire, 0.68) as BotModeDesire;
+    }
 
     // Be cautious if outnumbered near destination and not stronger
     {
@@ -1088,6 +1133,20 @@ export function DefendThink(bot: Unit, lane: Lane) {
     if (IsValidBuildingTarget(bld)) hub = bld.GetLocation();
     if (!hub) hub = GetLaneFrontLocation(nTeam, lane, 0);
 
+    if (ds.waveClearLane === lane) {
+        const [primaryLane] = GetPrimaryOuterSiege();
+        if (bld !== ds.waveClearTower || primaryLane !== lane || ((bot as any).ohaOuterTowerHoldUntil ?? 0) <= now) {
+            OnEnd(bot, lane);
+            (bot as any).ohaOuterTowerHoldUntil = undefined;
+            ds.waveClearLane = undefined;
+            return;
+        }
+        if (jmz.RunOuterTowerHold(bot, hub, ds.waveClearReach ?? attackRange, ds.waveClearCover === true)) {
+            (bot as any).ohaIssuedOuterHold = lane;
+        }
+        return;
+    }
+
     // If we are defending tier ≥3 lane hold the edge of the high ground
     if (buildingTier >= 3) {
         const edgeInside = GetHighGroundEdgeWaitPoint(nTeam, lane);
@@ -1110,6 +1169,14 @@ export function DefendThink(bot: Unit, lane: Lane) {
 
     // Prefer nearest valid enemy hero within range (cheap local queries first)
     const enemiesAtHub = jmz.GetEnemiesNearLoc(hub, SEARCH_RANGE_DEFAULT);
+    if (enemiesAtHub.length >= 2 && !ds.weAreStronger) {
+        if (jmz.IsValidHero(enemiesAtHub[0]) && jmz.IsInRange(bot, enemiesAtHub[0], attackRange)) {
+            bot.Action_AttackUnit(enemiesAtHub[0], true);
+        } else {
+            bot.Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(hub, 250));
+        }
+        return;
+    }
     if (jmz.IsValidHero(enemiesAtHub[0]) && jmz.IsInRange(bot, enemiesAtHub[0], nSearchRange)) {
         bot.Action_AttackUnit(enemiesAtHub[0], true);
         return;
@@ -1161,6 +1228,9 @@ export function DefendThink(bot: Unit, lane: Lane) {
     }
 }
 
-export function OnEnd() {
+export function OnEnd(bot: Unit, lane: Lane): void {
+    if ((bot as any).ohaIssuedOuterHold !== lane) return;
+    (bot as any).ohaIssuedOuterHold = undefined;
+    if (!bot.IsUsingAbility() && !bot.IsCastingAbility() && !bot.IsChanneling()) bot.Action_ClearActions(true);
     // no-op
 }

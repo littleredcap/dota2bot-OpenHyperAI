@@ -144,7 +144,7 @@ print('PASS: Tormentor commits with healthy support and stops on a threat or los
 local file = assert(io.open('bots/ability_item_usage_generic.lua', 'rb'))
 local source = file:read('*a')
 file:close()
-local first = assert(source:find('local function UseGlyph()', 1, true))
+local first = assert(source:find('local function HasGlyphPressure(', 1, true))
 local last = assert(source:find('function ItemUsageThink()', first, true))
 local glyphCode = assert(loadstring(source:sub(first, last - 1) .. '\nreturn UseGlyph'))
 local glyphs = 0
@@ -153,13 +153,21 @@ local glyphBot = {
     ActionImmediate_Glyph = function() glyphs = glyphs + 1 end,
 }
 local roster = {glyphBot, glyphBot, glyphBot, glyphBot}
-local ancient = {GetHealth = function() return 40 end, GetMaxHealth = function() return 100 end}
+local ancientHP, tierOne, clearers, wave = 40, nil, {}, {}
+local ancient = {GetHealth = function() return ancientHP end, GetMaxHealth = function() return 100 end}
 local env = setmetatable({
     bot = glyphBot,
-    X = {IsTargetedByEnemy = yes},
+    X = {IsTargetedByEnemy = function(building) return building == ancient end},
+    J = {GetAlliesNearLoc = function() return clearers end, IsValid = yes},
     DotaTime = function() return 100 end,
     GetGlyphCooldown = function() return 0 end,
     GetAncient = function() return ancient end,
+    GetTower = function(_, id) return id == 2 and tierOne or nil end,
+    GetBarracks = function() end,
+    GetUnitList = function() return wave end,
+    GetUnitToUnitDistance = function() return 900 end,
+    TOWER_TOP_1=1, TOWER_MID_1=2, TOWER_BOT_1=3, TOWER_TOP_2=4, TOWER_MID_2=5, TOWER_BOT_2=6,
+    TOWER_TOP_3=7, TOWER_MID_3=8, TOWER_BOT_3=9, TOWER_BASE_1=10, TOWER_BASE_2=11,
     GetTeamMember = function(i) return roster[i] end,
 }, {__index = _G})
 local useGlyph = setfenv(glyphCode, env)()
@@ -171,4 +179,15 @@ assert(glyphs == 0, 'spent glyph in a mixed human/Bot team')
 roster[5] = glyphBot
 useGlyph()
 assert(glyphs == 1, 'did not defend the threatened Ancient in a full Bot roster')
+ancientHP = 100
+tierOne = {GetHealth = function() return 48 end, GetMaxHealth = function() return 100 end,
+    GetLocation = function() return {} end, CanBeSeen = yes}
+local creep = {GetAttackTarget = function() return tierOne end, GetUnitName = function() return 'npc_dota_creep_badguys_melee' end}
+wave = {creep, creep, creep}
+useGlyph()
+assert(glyphs == 1, 'save glyph when no one can make use of the outer tower delay')
+clearers[1] = {_defend = {waveClearTower = tierOne}, ohaOuterTowerHoldUntil = 103,
+    GetCurrentMovementSpeed = function() return 300 end}
+useGlyph()
+assert(glyphs == 2, 'glyph a pressured tower before it becomes unsavable if a clearer is almost there')
 print('PASS: Glyph tolerates missing teammates and preserves full-Bot defense')

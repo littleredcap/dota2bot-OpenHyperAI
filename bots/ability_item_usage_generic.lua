@@ -4747,29 +4747,18 @@ function X.GetLaningTPLocation( bot, nMinTPDistance, botLocation )
 		return nil, false
 	end
 
-	local laneToTP
+	local laneToTP = bot:GetAssignedLane()
 	local tp = false
-	local position = J.GetPosition(bot)
-
-	if team == TEAM_RADIANT then
-		if position == 1 then
-			laneToTP = LANE_BOT
-		elseif position == 2 then
+	if laneToTP ~= LANE_TOP and laneToTP ~= LANE_MID and laneToTP ~= LANE_BOT then
+		local position = J.GetPosition(bot)
+		if position == 2 then
 			laneToTP = LANE_MID
+		elseif position == 1 or position == 5 then
+			laneToTP = team == TEAM_RADIANT and LANE_BOT or LANE_TOP
 		elseif position == 3 or position == 4 then
-			laneToTP = LANE_TOP
-		elseif position == 5 then
-			laneToTP = LANE_BOT
-		end
-	elseif team == TEAM_DIRE then
-		if position == 1 then
-			laneToTP = LANE_TOP
-		elseif position == 2 then
-			laneToTP = LANE_MID
-		elseif position == 3 or position == 4 then
-			laneToTP = LANE_BOT
-		elseif position == 5 then
-			laneToTP = LANE_TOP
+			laneToTP = team == TEAM_RADIANT and LANE_TOP or LANE_BOT
+		else
+			return nil, false
 		end
 	end
 
@@ -4780,7 +4769,10 @@ function X.GetLaningTPLocation( bot, nMinTPDistance, botLocation )
 	then
 		tp = true
 	end
-
+	if tp and laneToTP ~= LANE_MID and bot:DistanceFromFountain() < 1400 then
+		local tower = GetTower(team, laneToTP == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+		if tower and tower:IsAlive() then return J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 200), true end
+	end
 	return GetLaneFrontLocation(team, laneToTP, 100), tp
 end
 
@@ -4939,12 +4931,14 @@ if bot.useProphetTP == nil then bot.useProphetTP = false end
 if bot.ProphetTPLocation == nil then bot.ProphetTPLocation = bot:GetLocation() end
 X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
+	local nMode = bot:GetActiveMode()
 	if nMode == BOT_MODE_RUNE
 		or ( bot:IsRooted() )
 		or ( bot:HasModifier( "modifier_item_armlet_unholy_strength" ) )
 		or ( bot:HasModifier( "modifier_kunkka_x_marks_the_spot" ) )
 		or ( bot:HasModifier( "modifier_teleporting" ) )
 		or ( bot:HasModifier( "modifier_sniper_assassinate" ) )
+		or J.GetShrapnelEscapeLocation(bot) ~= nil
 		or ( bot:HasModifier( "modifier_viper_nethertoxin" ) )
 		or ( bot:HasModifier( "modifier_oracle_false_promise_timer" ) and J.GetModifierTime( bot, "modifier_oracle_false_promise_timer" ) <= 3.2 )
 		or ( bot:HasModifier( "modifier_jakiro_macropyre_burn" ) and J.GetModifierTime( bot, "modifier_jakiro_macropyre_burn" ) >= 1.4 )
@@ -4974,7 +4968,6 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local sCastMotive = nil
 
 	local nMinTPDistance = 5500
-	local nMode = bot:GetActiveMode()
 	local nModeDesire = bot:GetActiveModeDesire()
 	local botLocation = bot:GetLocation()
 	local botHP = J.GetHP( bot )
@@ -4982,14 +4975,23 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local nEnemyCount = X.GetNumHeroWithinRange( 1600 )
 	local nAllyCount = J.GetAllyCount( bot, 1600 )
 	local itemFlask = J.IsItemAvailable( "item_flask" )
+	local defense = bot._defend
+	local plannedDefense = defense and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
+		and defense.waveClearTeleport ~= nil and J.IsValidBuilding(defense.waveClearTower)
+	if plannedDefense and J.IsDefending(bot) and nEnemyCount == 0
+		and GetUnitToLocationDistance(bot, defense.waveClearTeleport) > 1800
+		and J.CanCommitToLaneTeleport(bot, defense.waveClearTeleport, true) then
+		return BOT_ACTION_DESIRE_ABSOLUTE, defense.waveClearTeleport, sCastType, '提前转线清兵守塔'
+	end
 
 	if bot:GetLevel() > 12 and bot:DistanceFromFountain() < 600 then nMinTPDistance = nMinTPDistance + 600 end
 
 	if nMode == BOT_MODE_LANING
 	then
+		local shouldTp
 		hEffectTarget, shouldTp = X.GetLaningTPLocation(bot, nMinTPDistance, botLocation)
 		sCastMotive = '出去发育'
-		if shouldTp
+		if shouldTp and J.CanCommitToLaneTeleport(bot, hEffectTarget)
 		then
 			if botName == 'npc_dota_hero_furion'
 			then
@@ -5010,7 +5012,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	-- Go complete items
 	if X.IsInvFull(bot) and X.GetNumStashItem(bot) >= 1
 	and (X.IsThereRecipeInStash(bot) or (bot:GetStashValue() >= 1000 and bot:GetGold() > 1100))
-	and (bot:GetActiveMode() ~= BOT_MODE_PUSH_TOWER_TOP or bot:GetActiveMode() ~= BOT_MODE_PUSH_TOWER_MID or bot:GetActiveMode() ~= BOT_MODE_PUSH_TOWER_BOT or bot:GetActiveMode() ~= BOT_MODE_ATTACK)
+	and not J.IsPushing(bot) and not J.IsGoingOnSomeone(bot)
 	and not J.IsInTeamFight(bot, 1000)
 	and nEnemyCount == 0
 	and J.GetLaningHoldTower(bot) == nil
@@ -5102,16 +5104,17 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		if nMode == BOT_MODE_DEFEND_TOWER_TOP then nDefendLane, sLane = LANE_TOP, 'tower_top' end
 		if nMode == BOT_MODE_DEFEND_TOWER_BOT then nDefendLane, sLane = LANE_BOT, 'tower_bot' end
 
-		local botAmount = GetAmountAlongLane( nDefendLane, botLocation )
-		local laneFront = GetLaneFrontAmount( team, nDefendLane, false )
-		if botAmount.distance > nMinTPDistance
-			or botAmount.amount < laneFront / 5
-		then
-			tpLoc = X.GetDefendTPLocation( nDefendLane )
+		if not defense or defense.waveClearLane ~= nDefendLane or (bot.ohaOuterTowerHoldUntil or 0) <= DotaTime() then
+			local botAmount = GetAmountAlongLane(nDefendLane, botLocation)
+			local laneFront = GetLaneFrontAmount(team, nDefendLane, false)
+			if botAmount.distance > nMinTPDistance or botAmount.amount < laneFront / 5 then
+				tpLoc = X.GetDefendTPLocation(nDefendLane)
+			end
 		end
 
 		if tpLoc ~= nil
-			and GetUnitToLocationDistance( bot, tpLoc ) > nMinTPDistance - 500
+			and GetUnitToLocationDistance(bot, tpLoc) > nMinTPDistance - 500
+			and J.CanCommitToLaneTeleport(bot, tpLoc)
 		then
 			hEffectTarget = tpLoc
 			sCastMotive = '前往守塔:'..sLane
@@ -5152,6 +5155,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 		if tpLoc ~= nil
 			and GetUnitToLocationDistance( bot, tpLoc ) > nMinTPDistance - 600
+			and J.CanCommitToLaneTeleport(bot, tpLoc)
 		then
 			hEffectTarget = tpLoc
 			sCastMotive = '前往推塔:'..sLane
@@ -8166,6 +8170,18 @@ function X.IsTargetedByEnemy( building )
 
 end
 
+local function HasGlyphPressure(building)
+	if X.IsTargetedByEnemy(building) then return true end
+	local attackers = 0
+	for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
+		if J.IsValid(creep) and creep:GetAttackTarget() == building then
+			attackers = attackers + (string.find(creep:GetUnitName(), 'siege', 1, true) and 2 or 1)
+			if attackers >= 3 then return true end
+		end
+	end
+	return false
+end
+
 local function UseGlyph()
 
 	if GetGlyphCooldown( ) > 0
@@ -8196,16 +8212,29 @@ local function UseGlyph()
 		TOWER_BASE_2
 	}
 
-	for _, t in pairs( T1 )
+	local coverOuter = false
+	for index = #T1, 1, -1
 	do
-		local tower = GetTower( team, t )
+		local tower = GetTower(team, T1[index])
 		if tower ~= nil and tower:GetHealth() > 0
-			and tower:GetHealth() / tower:GetMaxHealth() < 0.36
+			and tower:GetHealth() / tower:GetMaxHealth() < (index > 6 and 0.40 or 0.50)
 			and tower:CanBeSeen()
-			and X.IsTargetedByEnemy(tower)
+			and HasGlyphPressure(tower)
 		then
-			bot:ActionImmediate_Glyph( )
-			return
+			if index > 6 then
+				bot:ActionImmediate_Glyph()
+				return
+			end
+			for _, ally in ipairs(J.GetAlliesNearLoc(tower:GetLocation(), 2000)) do
+				local defense = ally._defend
+				if defense and defense.waveClearTower == tower and not defense.waveClearCover
+					and (ally.ohaOuterTowerHoldUntil or 0) > DotaTime()
+					and GetUnitToUnitDistance(ally, tower) / math.max(250, ally:GetCurrentMovementSpeed()) <= 5.5
+				then
+					coverOuter = true
+					break
+				end
+			end
 		end
 	end
 
@@ -8221,7 +8250,7 @@ local function UseGlyph()
 		local barrack = GetBarracks( team, b )
 		if barrack ~= nil and barrack:GetHealth() > 0
 			and barrack:GetHealth() / barrack:GetMaxHealth() < 0.5
-			and X.IsTargetedByEnemy( barrack )
+			and HasGlyphPressure(barrack)
 		then
 			bot:ActionImmediate_Glyph( )
 			return
@@ -8231,12 +8260,13 @@ local function UseGlyph()
 	local Ancient = GetAncient( team )
 	if Ancient ~= nil and Ancient:GetHealth() > 0
 		and Ancient:GetHealth() / Ancient:GetMaxHealth() < 0.5
-		and X.IsTargetedByEnemy( Ancient )
+		and HasGlyphPressure(Ancient)
 	then
 		bot:ActionImmediate_Glyph( )
 		return
 	end
 
+	if coverOuter then bot:ActionImmediate_Glyph() end
 end
 
 function ItemUsageThink()

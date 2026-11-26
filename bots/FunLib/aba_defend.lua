@@ -526,17 +526,13 @@ function GetClosestAllyPos(tPosList, vLocation)
             local m = GetTeamMember(i)
             if jmz.IsValidHero(m) then
                 local p = jmz.GetPosition(m)
-                do
-                    local j = 1
-                    while j <= #tPosList do
-                        if p == tPosList[j + 1] then
-                            local d = GetUnitToLocationDistance(m, vLocation)
-                            if d < bestDist then
-                                bestDist = d
-                                bestPos = p
-                            end
+                for ____, candidatePos in ipairs(tPosList) do
+                    if p == candidatePos then
+                        local d = GetUnitToLocationDistance(m, vLocation)
+                        if d < bestDist then
+                            bestDist = d
+                            bestPos = p
                         end
-                        j = j + 1
                     end
                 end
             end
@@ -866,15 +862,15 @@ function ____exports.ShouldDefend(bot, hBuilding, nRadius)
     for ____, unit in ipairs(unitState.enemyCreeps) do
         if jmz.IsValid(unit) and GetUnitToUnitDistance(hBuilding, unit) <= nRadius then
             local name = unit:GetUnitName()
-            if ({string.find(name, "siege")}) ~= nil and ({string.find(name, "upgraded")}) == nil then
+            if __TS__StringIncludes(name, "siege") and not __TS__StringIncludes(name, "upgraded") then
                 creepWeights = creepWeights + 0.5
-            elseif ({string.find(name, "upgraded_mega")}) ~= nil then
+            elseif __TS__StringIncludes(name, "upgraded_mega") then
                 creepWeights = creepWeights + 0.6
-            elseif ({string.find(name, "upgraded")}) ~= nil then
+            elseif __TS__StringIncludes(name, "upgraded") then
                 creepWeights = creepWeights + 0.4
-            elseif ({string.find(name, "warlock_golem")}) ~= nil or ({string.find(name, "shadow_shaman_ward")}) ~= nil then
+            elseif __TS__StringIncludes(name, "warlock_golem") or __TS__StringIncludes(name, "shadow_shaman_ward") then
                 creepWeights = creepWeights + 1
-            elseif ({string.find(name, "lone_druid_bear")}) ~= nil then
+            elseif __TS__StringIncludes(name, "lone_druid_bear") then
                 enemyHeroNearby = enemyHeroNearby + 1
             elseif unit:IsCreep() or unit:IsAncientCreep() or unit:IsDominated() or unit:HasModifier("modifier_chen_holy_persuasion") or unit:HasModifier("modifier_dominated") then
                 creepWeights = creepWeights + 0.2
@@ -882,6 +878,9 @@ function ____exports.ShouldDefend(bot, hBuilding, nRadius)
         end
     end
     local nNearby = enemyHeroNearby + math.floor(creepWeights)
+    if nNearby == 0 then
+        return false
+    end
     local pos = jmz.GetPosition(bot)
     local result = false
     if nNearby == 1 then
@@ -981,6 +980,21 @@ function ConsiderPingedDefend(bot, lane, desire, building, tier, nEffAllies, nEn
         defendPings.lane = lane
     end
 end
+local function GetPrimaryOuterSiege()
+    local selectedLane, selectedThreat = nil, nil
+    for _, candidate in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
+        local tower, _, tier = unpack(____exports.GetFurthestBuildingOnLane(candidate))
+        if tier <= 2 and IsValidBuildingTarget(tower) then
+            local threat = jmz.GetOuterTowerThreat(tower, candidate)
+            if threat.score > 0 and (selectedThreat == nil or threat.score > selectedThreat.score
+                or (threat.score == selectedThreat.score and threat.eta < selectedThreat.eta)) then
+                selectedLane, selectedThreat = candidate, threat
+            end
+        end
+    end
+    return selectedLane, selectedThreat
+end
+
 function ____exports.GetDefendDesireHelper(bot, lane)
     if bot.laneToDefend == nil then
         bot.laneToDefend = lane
@@ -993,6 +1007,12 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     local team = gameState.team
     local ancient = gameState.ourAncient
     local ds = getDefendState(bot)
+    if ds.waveClearLane == lane then
+        ds.waveClearLane = nil
+        ds.waveClearTower = nil
+        bot.ohaOuterTowerHoldUntil = nil
+    end
+    if bot.ohaOuterTowerTrade and bot.ohaOuterTowerTrade.lane == lane then bot.ohaOuterTowerTrade = nil end
     ds.defendLoc = locationState.laneFronts[lane]
     local distanceToDefendLoc = GetUnitToLocationDistance(bot, ds.defendLoc)
     local creepBaseDesire = GetCreepBaseDefenseDesire(bot, lane, ancient)
@@ -1010,17 +1030,6 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     end
     if botLevel < 3 then
         return BotModeDesire.None
-    end
-    local closeEnemiesDefend = jmz.GetEnemiesNearLoc(
-        bot:GetLocation(),
-        900
-    )
-    local closeAlliesDefend = jmz.GetAlliesNearLoc(
-        bot:GetLocation(),
-        900
-    )
-    if #closeEnemiesDefend > 0 and #closeAlliesDefend >= #closeEnemiesDefend then
-        return math.min(0.3, BotModeDesire.Moderate)
     end
     local teamIsPushing = false
     do
@@ -1042,9 +1051,6 @@ function ____exports.GetDefendDesireHelper(bot, lane)
             end
             i = i + 1
         end
-    end
-    if teamIsPushing then
-        return BotModeDesire.VeryLow
     end
     local recentlyHit = bot:WasRecentlyDamagedByAnyHero(5) or bot:WasRecentlyDamagedByTower(5)
     local threatenedLane = GetThreatenedLane()
@@ -1150,9 +1156,50 @@ function ____exports.GetDefendDesireHelper(bot, lane)
         1600
     )
     ds.weAreStronger = jmz.WeAreStronger(bot, 2500)
+    local furthestBuilding, urgentMul, buildingTier = unpack(____exports.GetFurthestBuildingOnLane(lane))
+    if not IsValidBuildingTarget(furthestBuilding) then return BotModeDesire.None end
+    local hub = furthestBuilding:GetLocation()
+    local lEnemies = jmz.GetLastSeenEnemiesNearLoc(hub, 2500)
+
+    local pingFloor = 0
+    local human, humanPing = jmz.GetHumanPing()
+    if human and humanPing and not humanPing.normal_ping and DotaTime() > 0 then
+        local isPinged, pingedLane = jmz.IsPingCloseToValidTower(gameState.team, humanPing, 800, 5)
+        if isPinged and lane == pingedLane and GameTime() < humanPing.time + PING_DELTA then
+            bot.laneToDefend = lane
+            pingFloor = 0.95
+        end
+    end
+
+    if not panic.active and not isBaseThreatActive and buildingTier <= 2 and pingFloor == 0 then
+        local primaryLane, threat = GetPrimaryOuterSiege()
+        if primaryLane == lane then
+            local delay, assignments = jmz.GetOuterTowerResponse(hub, threat)
+            if delay then
+                local assignment = assignments[bot:GetPlayerID()]
+                if assignment == nil or jmz.GetHP(furthestBuilding) <= 0.15 then
+                    bot.ohaOuterTowerTrade = {lane = lane, location = hub, expires = DotaTime() + 3}
+                    return BotModeDesire.VeryLow
+                end
+                ds.waveClearLane = lane
+                ds.waveClearTower = furthestBuilding
+                ds.waveClearReach = assignment.reach
+                ds.waveClearCover = assignment.cover
+                ds.waveClearTeleport = assignment.teleport
+                bot.ohaOuterTowerHoldUntil = DotaTime() + 3
+                bot.laneToDefend = lane
+                return BotModeDesire.High
+            end
+        elseif primaryLane ~= nil then
+            return BotModeDesire.VeryLow
+        end
+    end
+    if teamIsPushing and not panic.active and not isBaseThreatActive and buildingTier < 3 and pingFloor == 0 then
+        return BotModeDesire.VeryLow
+    end
     local pos = jmz.GetPosition(bot)
     local bMyLane = bot:GetAssignedLane() == lane
-    if #ds.nInRangeEnemy > 0 or not bMyLane and pos == 1 and gameState.isLaningPhase or jmz.IsDoingRoshan(bot) and #jmz.GetAlliesNearLoc(
+    if not panic.active and #ds.nInRangeEnemy > #ds.nInRangeAlly + 1 and not ds.weAreStronger or not bMyLane and pos == 1 and gameState.isLaningPhase or jmz.IsDoingRoshan(bot) and #jmz.GetAlliesNearLoc(
         jmz.GetCurrentRoshanLocation(),
         2800
     ) >= 3 or jmz.IsDoingTormentor(bot) and (#jmz.GetAlliesNearLoc(
@@ -1163,19 +1210,6 @@ function ____exports.GetDefendDesireHelper(bot, lane)
         2500
     ) >= 2) and enemiesAtAncient == 0 then
         return BotModeDesire.VeryLow
-    end
-    local pingFloor = 0
-    local human, humanPing = jmz.GetHumanPing()
-    if human and humanPing and not humanPing.normal_ping and DotaTime() > 0 then
-        local isPinged, pingedLane = jmz.IsPingCloseToValidTower(gameState.team, humanPing, 800, 5)
-        if isPinged and lane == pingedLane and GameTime() < humanPing.time + PING_DELTA then
-            bot.laneToDefend = lane
-            pingFloor = 0.95
-        end
-    end
-    local furthestBuilding, urgentMul, buildingTier = unpack(____exports.GetFurthestBuildingOnLane(lane))
-    if not IsValidBuildingTarget(furthestBuilding) then
-        return BotModeDesire.None
     end
     local shouldDef = ____exports.ShouldDefend(bot, furthestBuilding, 1600)
     if not shouldDef then
@@ -1193,11 +1227,9 @@ function ____exports.GetDefendDesireHelper(bot, lane)
         end
     end
     local nDefendDesire = GetDefendLaneDesire(lane)
-    local hub = IsValidBuildingTarget(furthestBuilding) and furthestBuilding:GetLocation() or GetLaneFrontLocation(nTeam, lane, 0)
-    local lEnemies = jmz.GetLastSeenEnemiesNearLoc(hub, 2500)
     local nDefendAllies = jmz.GetAlliesNearLoc(hub, 2500)
     local nEffAllies = #nDefendAllies + #jmz.Utils.GetAllyIdsInTpToLocation(hub, 2500)
-    if #lEnemies == 0 and (jmz.IsAnyAllyDefending(bot, lane) or jmz.IsCore(bot)) then
+    if #lEnemies == 0 and (jmz.IsAnyAllyDefending(bot, lane) or not shouldDef) then
         return BotModeDesire.VeryLow
     end
     if #lEnemies == 1 and (nEffAllies > #lEnemies or jmz.IsAnyAllyDefending(bot, lane) and jmz.GetAverageLevel(false) >= jmz.GetAverageLevel(true)) then
@@ -1220,6 +1252,11 @@ function ____exports.GetDefendDesireHelper(bot, lane)
         ),
         BotActionDesire.Low
     )
+    if shouldDef and buildingTier <= 2 and pos ~= 1 and #lEnemies >= 2 and not recentlyHit
+        and jmz.GetHP(bot) >= 0.55 and GetUnitToLocationDistance(bot, hub) <= 2700
+        and #nDefendAllies >= math.min(2, #lEnemies - 1) then
+        nDefendDesire = math.max(nDefendDesire, 0.68)
+    end
     do
         local dist = ds.distanceToLane[lane]
         if dist and dist < 1600 and #ds.nInRangeEnemy > #ds.nInRangeAlly and not ds.weAreStronger then
@@ -1464,6 +1501,20 @@ function ____exports.DefendThink(bot, lane)
     if not hub then
         hub = GetLaneFrontLocation(nTeam, lane, 0)
     end
+
+    if ds.waveClearLane == lane then
+        if bld ~= ds.waveClearTower or GetPrimaryOuterSiege() ~= lane
+            or (bot.ohaOuterTowerHoldUntil or 0) <= now then
+            ____exports.OnEnd(bot, lane)
+            bot.ohaOuterTowerHoldUntil = nil
+            ds.waveClearLane = nil
+            return
+        end
+        if jmz.RunOuterTowerHold(bot, hub, ds.waveClearReach or attackRange, ds.waveClearCover) then
+            bot.ohaIssuedOuterHold = lane
+        end
+        return
+    end
     if buildingTier >= 3 then
         local edgeInside = GetHighGroundEdgeWaitPoint(nTeam, lane)
         local enemyAtHG = jmz.Utils.CountEnemyHeroesOnHighGround(nTeam)
@@ -1486,6 +1537,14 @@ function ____exports.DefendThink(bot, lane)
         return
     end
     local enemiesAtHub = jmz.GetEnemiesNearLoc(hub, SEARCH_RANGE_DEFAULT)
+    if #enemiesAtHub >= 2 and not ds.weAreStronger then
+        if jmz.IsValidHero(enemiesAtHub[1]) and jmz.IsInRange(bot, enemiesAtHub[1], attackRange) then
+            bot:Action_AttackUnit(enemiesAtHub[1], true)
+        else
+            bot:Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(hub, 250))
+        end
+        return
+    end
     if jmz.IsValidHero(enemiesAtHub[1]) and jmz.IsInRange(bot, enemiesAtHub[1], nSearchRange) then
         bot:Action_AttackUnit(enemiesAtHub[1], true)
         return
@@ -1542,6 +1601,11 @@ function ____exports.DefendThink(bot, lane)
         bot:Action_MoveToLocation(moveLoc)
     end
 end
-function ____exports.OnEnd()
+function ____exports.OnEnd(bot, lane)
+    if bot.ohaIssuedOuterHold ~= lane then return end
+    bot.ohaIssuedOuterHold = nil
+    if not bot:IsUsingAbility() and not bot:IsCastingAbility() and not bot:IsChanneling() then
+        bot:Action_ClearActions(true)
+    end
 end
 return ____exports

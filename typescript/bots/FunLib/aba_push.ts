@@ -289,7 +289,13 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     const enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(teamAncientLoc, BASE_ANC_RADIUS);
     // If Ancient under direct pressure → strongly deprioritize pushes
     if (enemiesAtAncient >= 1) return BotModeDesire.ExtraLow;
-    if (hEnemyAncient && !HasHighGroundCover(bot, hEnemyAncient)) return BotModeDesire.VeryLow;
+    if (((bot as any).ohaOuterTowerHoldUntil ?? 0) > DotaTime()) return BotModeDesire.None;
+    if (!criticalBaseCreeps && GetCounterPushTarget(bot, lane, gameState.enemyTeam)) {
+        (bot as any).ohaCounterPushLane = lane;
+        (bot as any).laneToPush = lane;
+        return 0.67 as BotModeDesire;
+    }
+    if (hEnemyAncient && !HasHighGroundCover(bot, hEnemyAncient, lane)) return BotModeDesire.VeryLow;
 
     const nEffAlliesNearAncient = jmz.GetAlliesNearLoc(teamAncientLoc, 4500).length
         + jmz.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500).length;
@@ -370,7 +376,17 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         return BOT_MODE_DESIRE_EXTRA_LOW as BotModeDesire;
     }
 
-    // If a team member is still very low level, hold pushes entirely
+    const [nH] = jmz.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam());
+    if ((nH === 0 || currentTime > StartToPushTime) && !criticalBaseCreeps && !baseDefenseLimited && !activeDefense) {
+        const tower = GetPostFightOuterTower(bot, lane, gameState);
+        if (tower) {
+            (bot as any).ohaPostFightTower = { lane, tower };
+            (bot as any).laneToPush = lane;
+            return (GetUnitToUnitDistance(bot, tower) <= 1600 ? 0.8 : 0.76) as BotModeDesire;
+        }
+    }
+
+    // Limit ordinary pushes while a teammate is still very low level.
     for (let i = 1; i <= GetTeamPlayers(team).length; i++) {
         const member = GetTeamMember(i);
         if (member !== null && member.GetLevel() < 6) {
@@ -379,7 +395,6 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     }
 
     // Human opponents → delay high-commit pushes before a certain time
-    const [nH] = jmz.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam());
     if (nH > 0 && currentTime <= StartToPushTime) {
         return BOT_MODE_DESIRE_EXTRA_LOW as BotModeDesire;
     }
@@ -531,16 +546,67 @@ function UnitIsValidObjective(u: Unit | null): u is Unit {
     return !!u && jmz.IsValidBuilding(u) && jmz.CanBeAttacked(u) && !HasBackdoorProtect(u);
 }
 
-function HasHighGroundCover(bot: Unit, ancient: Unit): boolean {
-    if (GetUnitToUnitDistance(bot, ancient) >= 3000) return true;
+function GetOuterTowerTarget(bot: Unit, lane: Lane, enemyTeam: Team, allowSolo: boolean, maxDistance = 1600): Unit | undefined {
+    const tierOne = lane === Lane.Top ? Tower.Top1 : lane === Lane.Mid ? Tower.Mid1 : Tower.Bot1;
+    const tierTwo = lane === Lane.Top ? Tower.Top2 : lane === Lane.Mid ? Tower.Mid2 : Tower.Bot2;
+    let tower = GetTower(enemyTeam, tierOne);
+    if (!jmz.IsValidBuilding(tower)) tower = GetTower(enemyTeam, tierTwo);
+    if (!UnitIsValidObjective(tower)) return;
+    const distance = GetUnitToUnitDistance(bot, tower);
+    if (distance > maxDistance) return;
+
+    const location = tower.GetLocation();
+    if (!jmz.CanCommitToLaneTeleport(bot, location, true)) return;
+    if (!allowSolo && jmz.GetAvailableFightAllies(bot, location, 1600) < 1
+        && (distance <= 1600 || jmz.GetAvailableFightAllies(bot, bot.GetLocation(), 1600) < 1)) return;
+    const wave = distance <= 1600 ? bot.GetNearbyLaneCreeps(1600, false) : GetUnitList(UnitType.AlliedCreeps);
+    const nearbyLaneCreeps = wave.filter(creep => jmz.IsValid(creep) && GetUnitToUnitDistance(creep, tower) <= 900
+        && (distance <= 1600 || creep.GetUnitName().includes('npc_dota_creep_') || creep.GetUnitName().includes('_siege')));
+    return nearbyLaneCreeps.length >= (allowSolo ? 3 : 2) ? tower : undefined;
+}
+
+function GetPostFightOuterTower(bot: Unit, lane: Lane, gameState: ReturnType<typeof getGlobalGameState>): Unit | undefined {
+    if (DotaTime() < 8 * 60 || gameState.aliveAllyCount <= gameState.aliveEnemyCount || gameState.aliveAllyCoreCount < 1
+        || jmz.GetHP(bot) < 0.6 || jmz.IsRetreating(bot) || jmz.IsDoingTormentor(bot) || jmz.IsDoingRoshan(bot)
+        || bot.WasRecentlyDamagedByAnyHero(2) || jmz.GetEnemiesNearLoc(bot.GetLocation(), 1400).length > 0) return;
+    const canApproach = gameState.aliveAllyCount >= 3 && gameState.aliveEnemyCount <= 2;
+    return GetOuterTowerTarget(bot, lane, gameState.enemyTeam, false, canApproach ? 3000 : 1600);
+}
+
+function GetCounterPushTarget(bot: Unit, lane: Lane, enemyTeam: Team): Unit | undefined {
+    const trade = (bot as any).ohaOuterTowerTrade;
+    if (!trade || trade.lane === lane || trade.expires <= DotaTime() || DotaTime() < 8 * 60
+        || !jmz.IsCore(bot) || jmz.GetHP(bot) < 0.6 || jmz.IsRetreating(bot) || bot.WasRecentlyDamagedByAnyHero(2)
+        || jmz.GetEnemiesNearLoc(trade.location, 1800).length < 3) return;
+    const tower = GetOuterTowerTarget(bot, lane, enemyTeam, true);
+    if (tower && GetUnitToLocationDistance(tower, trade.location) >= 3200
+        && jmz.CanCommitToLaneTeleport(bot, tower.GetLocation(), true)) return tower;
+}
+
+function HasHighGroundCover(bot: Unit, ancient: Unit, lane: Lane): boolean {
+    const enemyTeam = GetOpposingTeam();
+    const tower = GetTower(enemyTeam, lane === Lane.Top ? Tower.Top3 : lane === Lane.Mid ? Tower.Mid3 : Tower.Bot3);
+    const barracks = lane === Lane.Top ? Barracks.TopMelee : lane === Lane.Mid ? Barracks.MidMelee : Barracks.BotMelee;
+    let building = tower && tower.IsAlive() ? tower : GetBarracks(enemyTeam, barracks);
+    if (!building || !building.IsAlive()) {
+        building = GetBarracks(enemyTeam, lane === Lane.Top ? Barracks.TopRanged : lane === Lane.Mid ? Barracks.MidRanged : Barracks.BotRanged);
+    }
+    const objective = building && building.IsAlive() ? building : ancient;
+    if (GetUnitToUnitDistance(bot, ancient) >= 3000) {
+        if (GetUnitToUnitDistance(bot, objective) > 1900) return true;
+        const outer = GetTower(enemyTeam, lane === Lane.Top ? Tower.Top2 : lane === Lane.Mid ? Tower.Mid2 : Tower.Bot2);
+        if (outer && outer.IsAlive()) return true;
+    }
     const location = bot.GetLocation();
     const allies = jmz.GetAvailableFightAllies(bot, location, 1600);
     const enemies = Math.max(jmz.GetEnemiesNearLoc(location, 1600).length,
-        jmz.GetEnemiesNearLoc(ancient.GetLocation(), 1600).length);
-    if (allies < 1 || jmz.GetHP(bot) < 0.35 || enemies >= allies + 1) return false;
+        jmz.GetEnemiesNearLoc(ancient.GetLocation(), 1600).length, jmz.GetEnemiesNearLoc(objective.GetLocation(), 1600).length);
+    if (allies < 1 || jmz.GetHP(bot) < 0.35 || enemies >= allies + 1
+        || (enemies > 0 && !jmz.WeAreStronger(bot, 1800))) return false;
     const wave = bot.GetNearbyLaneCreeps(1200, false).filter(creep => jmz.IsValid(creep));
-    return wave.length >= 2 || (enemies === 0 && allies >= 2 && jmz.GetNumOfAliveHeroes(true) <= 1
-        && CanFinishAncient(bot, ancient) && jmz.GetHP(ancient) <= 0.35);
+    if (enemies === 0 && allies >= 2 && jmz.GetNumOfAliveHeroes(true) <= 1
+        && CanFinishAncient(bot, ancient) && jmz.GetHP(ancient) <= 0.35) return true;
+    return wave.length >= 2 && jmz.HasSiegeDamageInRange(bot, objective.GetLocation());
 }
 
 function CanFinishAncient(bot: Unit, ancient: Unit): boolean {
@@ -760,7 +826,8 @@ export function WhichLaneToPush(_bot: Unit, _lane: Lane): Lane {
  * ---------------------------------------------------------------------------*/
 let fNextMovementTime = 0;
 
-export function CancelPushOrder(bot: Unit): void {
+export function CancelPushOrder(bot: Unit, lane?: Lane): void {
+    if (lane !== undefined && (bot as any).ohaPostFightTower?.lane === lane) (bot as any).ohaPostFightTower = undefined;
     if (!(bot as any)._ohaIssuedPushOrder) return;
     if (!jmz.CanNotUseAction(bot)) bot.Action_ClearActions(true);
     (bot as any)._ohaIssuedPushOrder = false;
@@ -776,8 +843,22 @@ export function PushThink(bot: Unit, lane: Lane): void {
     // An active push mode can still think before the next desire arbitration.
     const ourAncient = GetAncient(GetTeam());
     const [baseResponder, criticalBaseCreeps] = GetBaseCreepResponse(bot, ourAncient);
-    if (baseResponder || (ourAncient && jmz.Utils.CountEnemyHeroesNear(ourAncient.GetLocation(), BASE_ANC_RADIUS) > 0)) {
-        CancelPushOrder(bot);
+    if (baseResponder || (ourAncient && jmz.Utils.CountEnemyHeroesNear(ourAncient.GetLocation(), BASE_ANC_RADIUS) > 0)
+        || jmz.ShouldRetreatFromEnemyReinforcements(bot)) {
+        CancelPushOrder(bot, lane);
+        return;
+    }
+
+    if ((bot as any).ohaCounterPushLane === lane) {
+        const tower = !criticalBaseCreeps && ((bot as any).ohaOuterTowerHoldUntil ?? 0) <= now
+            ? GetCounterPushTarget(bot, lane, GetOpposingTeam()) : undefined;
+        if (!tower) {
+            (bot as any).ohaCounterPushLane = undefined;
+            CancelPushOrder(bot);
+            return;
+        }
+        (bot as any)._ohaIssuedPushOrder = true;
+        bot.Action_AttackUnit(tower, true);
         return;
     }
 
@@ -785,8 +866,30 @@ export function PushThink(bot: Unit, lane: Lane): void {
     autoCleanupCache();
     const gameState = getGlobalGameState();
     const locationState = getGlobalLocationState();
+    const plan = (bot as any).ohaPostFightTower;
+    if (plan?.lane === lane) {
+        const tower = !criticalBaseCreeps && ((bot as any).ohaOuterTowerHoldUntil ?? 0) <= now
+            ? GetPostFightOuterTower(bot, lane, gameState) : undefined;
+        if (!tower || tower !== plan.tower) {
+            CancelPushOrder(bot, lane);
+            return;
+        }
+        if (tower.GetAttackTarget() === bot || bot.WasRecentlyDamagedByTower(2)) {
+            CancelPushOrder(bot);
+            bot.Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(bot.GetLocation(), 350));
+        } else {
+            (bot as any)._ohaIssuedPushOrder = true;
+            if (GetUnitToUnitDistance(bot, tower) > 1600) {
+                const staging = jmz.AdjustLocationWithOffsetTowardsFountain(tower.GetLocation(), 900);
+                bot.Action_MoveToLocation(staging);
+            } else {
+                bot.Action_AttackUnit(tower, true);
+            }
+        }
+        return;
+    }
     hEnemyAncient = gameState.enemyAncient;
-    if (hEnemyAncient && !HasHighGroundCover(bot, hEnemyAncient)) {
+    if (hEnemyAncient && !HasHighGroundCover(bot, hEnemyAncient, lane)) {
         CancelPushOrder(bot);
         bot.Action_MoveToLocation(jmz.VectorTowards(bot.GetLocation(), locationState.teamFountain, 850));
         return;

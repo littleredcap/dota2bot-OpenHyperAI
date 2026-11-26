@@ -9,3 +9,4 @@ end
 
 function GetDesire() return Defend.GetDefendDesire(bot, LANE_BOT) end
 function Think() Defend.DefendThink(bot, LANE_BOT) end
+function OnEnd() Defend.OnEnd(bot, LANE_BOT) end

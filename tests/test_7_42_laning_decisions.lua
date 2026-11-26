@@ -437,3 +437,54 @@ do
     env.Think()
 end
 print('PASS: collect either nearby water rune and stay for a reachable last hit')
+
+do
+    local state, env, _, _, bot = fixture(false, false)
+    local j = env.J
+    local file = assert(io.open('bots/ability_item_usage_generic.lua', 'rb'))
+    local source = file:read('*a')
+    file:close()
+    local tpStart = assert(source:find('X.ConsiderItemDesire["item_tpscroll"] = function', 1, true))
+    local tpEnd = assert(source:find('X.ConsiderItemDesire["item_urn_of_shadows"]', tpStart, true))
+    local laneStart = assert(source:find('function X.GetLaningTPLocation(', 1, true))
+    local laneEnd = assert(source:find('function X.GetDefendTPLocation(', laneStart, true))
+    env.X = {ConsiderItemDesire={}, GetNumHeroWithinRange=function() return 0 end,
+        IsInvFull=function() return state.buy end, GetNumStashItem=function() return 1 end,
+        IsThereRecipeInStash=yes, IsFarmingAlways=no, CanJuke=yes}
+    env.bot, env.botName, env.team = bot, bot:GetUnitName(), 2
+    env.BOT_MODE_RETREAT, env.BOT_MODE_LANING = 7, 8
+    env.BOT_MODE_DESIRE_MODERATE, env.BOT_ACTION_DESIRE_HIGH, env.BOT_ACTION_DESIRE_NONE = 0.5, 0.75, 0
+    j.GetShrapnelEscapeLocation, j.IsItemAvailable = function() end, function() end
+    j.IsDefending, j.IsPushing, j.IsGoingOnSomeone, j.IsInTeamFight, j.IsDoingRoshan, j.IsStuck = no, no, no, no, no, no
+    j.GetAllyCount, j.GetAttackProjectileDamageByRange = function() return 1 end, function() return 0 end
+    j.GetTeamFountain, j.GetMP = function() return -7000 end, function() return 0.5 end
+    j.GetNearbyHeroes, j.Role, j.GetModifierTime = empty, {ShouldTpToDefend=no}, function() return 4 end
+    bot.GetHealth = function() return state.hp * 1000 end
+    bot.IsRooted = no
+    bot.HasModifier = function(_, m) return state.rupture and m == 'modifier_bloodseeker_rupture' end
+    bot.GetActiveMode, bot.GetActiveModeDesire = function() return state.mode or 7 end, function() return 0.8 end
+    bot.DistanceFromFountain = function() return state.atBase and 0 or 6500 end
+    bot.GetActualIncomingDamage = function(_, damage) return damage end
+    env.GetLaneFrontAmount = function() return 0.5 end
+    env.GetAmountAlongLane = function(lane) state.destinationLane = lane; return {amount=0, distance=6000} end
+    j.CanCommitToLaneTeleport = function() return not state.unsafe end
+    setfenv(assert(loadstring(source:sub(laneStart, laneEnd-1) .. source:sub(tpStart, tpEnd-1))), env)()
+    local teleport = env.X.ConsiderItemDesire.item_tpscroll
+    env.GetTower().x = 300
+    state.partner, state.partnerHP, state.partnerHit, state.hp, state.buy = true, 0.28, true, 0.66, true
+    assert(teleport() == 0, 'the healthy cover does not recall for an item while its partner resets')
+    state.buy, state.rupture = false, true
+    local desire, destination = teleport()
+    assert(desire > 0 and destination == j.GetTeamFountain(), 'immediate escape from Rupture retains priority')
+    state.rupture, state.partner, state.hp, state.pressure = false, false, 0.17, true
+    desire, destination = teleport()
+    assert(desire > 0 and destination == j.GetTeamFountain(), 'a critically wounded laner can recall')
+    state.atBase, state.mode, state.hp, state.pressure = true, 8, 1, false
+    bot.GetAssignedLane = function() return env.LANE_TOP end
+    desire, destination = teleport()
+    assert(desire > 0 and state.destinationLane == env.LANE_TOP and destination == 100,
+        'return to the actual side lane behind the T1 even when the default role lane differs')
+    state.unsafe = true
+    assert(teleport() == 0, 'do not teleport back into a dangerous landing')
+end
+print('PASS: stagger fountain teleports, allow emergencies, and rejoin the assigned side lane')

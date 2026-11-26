@@ -320,19 +320,9 @@ export const IsLargeCamp = function (camp: any): boolean {
 export const RefreshCamp = function (bot: Unit): LuaMultiReturn<[any[], number]> {
     const camps = GetNeutralSpawners();
     const allCampList: any[] = [];
-    const botLevel = bot.GetLevel();
-
     for (const aCamp of Object.values(camps)) {
         const camp = aCamp as any;
-        if ((botLevel <= 7 || bot.GetAttackDamage() <= 80) && !IsEnemyCamp(camp) && !IsLargeCamp(camp) && !IsAncientCamp(camp)) {
-            allCampList.push({ idx: camp.idx, cattr: camp });
-        } else if (botLevel <= 11 && !IsEnemyCamp(camp) && !IsAncientCamp(camp)) {
-            allCampList.push({ idx: camp.idx, cattr: camp });
-        } else if (botLevel <= 14 && !IsEnemyCamp(camp)) {
-            allCampList.push({ idx: camp.idx, cattr: camp });
-        } else {
-            allCampList.push({ idx: camp.idx, cattr: camp });
-        }
+        allCampList.push({ idx: camp.idx, cattr: camp });
     }
 
     return $multi(allCampList, allCampList.length);
@@ -361,11 +351,13 @@ export const GetClosestNeutralSpwan = function (bot: Unit, availableCampList: an
     let minDist = 15000;
     let closestCamp: any | null = null;
 
+    const level = bot.GetLevel();
     for (const camp of availableCampList) {
-        let dist = GetUnitToLocationDistance(bot, camp.cattr.location);
-        if (IsEnemyCamp(camp)) dist *= 1.5;
-
-        if (IsTheClosestOne(bot, camp.cattr.location) && dist < minDist && (bot.GetLevel() >= 10 || !IsAncientCamp(camp))) {
+        const data = camp.cattr;
+        const enemy = IsEnemyCamp(data);
+        const dist = GetUnitToLocationDistance(bot, data.location) * (enemy ? 1.5 : 1);
+        if (dist < minDist && (!enemy || level >= 15) && (!IsAncientCamp(data) || level >= 12)
+            && (!IsLargeCamp(data) || level >= 8)) {
             minDist = dist;
             closestCamp = camp;
         }
@@ -617,7 +609,7 @@ export const IsTimeToFarm = function (bot: Unit): boolean {
 export const UpdateAvailableCamp = function (bot: Unit, preferredCamp: any, availableCampList: any[]): LuaMultiReturn<[any[], any | null]> {
     if (preferredCamp !== null) {
         for (let i = 0; i < availableCampList.length; i++) {
-            if (availableCampList[i].cattr.location === preferredCamp.cattr.location || GetUnitToLocationDistance(bot, availableCampList[i].cattr.location) < 500) {
+            if (GetLocationToLocationDistance(availableCampList[i].cattr.location, preferredCamp.cattr.location) < 32) {
                 availableCampList.splice(i, 1);
                 return $multi(availableCampList, null);
             }

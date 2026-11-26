@@ -15,10 +15,16 @@ local RB = Vector(-7174.000000, -6671.00000, 0.000000)
 local DB = Vector(7023.000000, 6450.000000, 0.000000)
 
 local botName = bot:GetUnitName();
-local sec = 0;
+local lastCampRefreshMinute = 0
 local preferedCamp = nil;
 local farmLaneLocation = nil
+local recoveringLane = false
+local tradingTowerLocation = nil
 local nextCampSearch = 0
+local lastWaveLocation, lastWaveSeenAt = nil, -math.huge
+local lastWaveCreeps = {}
+local postWaveCampDistance = nil
+local postWaveOrigin, postWaveUntil = nil, 0
 local issuedFarmOrder = false
 local hLaneCreepList = {};
 local farmState = 0;
@@ -26,6 +32,7 @@ local FARM_STATE_NONE = 0;
 local FARM_STATE_FARM = 1;
 local teamPlayers = nil;
 local nLaneList = {LANE_TOP, LANE_MID, LANE_BOT};
+local laneTierOne = {[LANE_TOP] = TOWER_TOP_1, [LANE_MID] = TOWER_MID_1, [LANE_BOT] = TOWER_BOT_1}
 local assembleTime = 0;
 local teamTime = 0;
 
@@ -66,7 +73,31 @@ local function ShouldYieldForBaseDefense()
 end
 
 local function IsFarmLocationSafe(location)
-	return #J.GetEnemiesNearLoc(location, 1400) == 0
+	if #J.GetEnemiesNearLoc(location, 1400) > 0
+		or (recoveringLane and #J.GetLastSeenEnemiesNearLoc(location, 1400) > 0) then return false end
+	if tradingTowerLocation == nil then return true end
+	if J.GetLocationToLocationDistance(location, tradingTowerLocation) <= 1800 then return false end
+	local path = PointToLineDistance(bot:GetLocation(), location, tradingTowerLocation)
+	if path ~= nil and path.within and path.distance < 1200
+		and GetUnitToLocationDistance(bot, tradingTowerLocation) > 1400 then return false end
+	for i = 1, #GetTeamPlayers(team) do
+		local ally = GetTeamMember(i)
+		local claim = ally ~= nil and ally ~= bot and ally.ohaOuterFarmClaim
+		if claim and ally:IsAlive() and claim.expires > DotaTime()
+			and J.GetLocationToLocationDistance(location, claim.location) < 900 then return false end
+	end
+	return true
+end
+
+local function IsFarmWaveAvailable(location)
+	if not IsFarmLocationSafe(location) then return false end
+	if not recoveringLane then return true end
+	for _, ally in ipairs(J.GetAlliesNearLoc(location, 1000)) do
+		if ally ~= bot and J.IsCore(ally) and not J.IsRetreating(ally)
+			and (J.IsLaning(ally) or J.IsFarming(ally) or J.GetPosition(ally) == 1)
+		then return false end
+	end
+	return true
 end
 
 local function MoveToFarm(location)
@@ -85,9 +116,27 @@ local function CancelFarmOrder()
 	issuedFarmOrder = false
 end
 
+local function IsFarmPathSafe(location)
+	local distance = GetUnitToLocationDistance(bot, location)
+	if distance > 850 then
+		local halfway = J.GetLocationTowardDistanceLocation(bot, location, distance / 2)
+		if #J.GetLastSeenEnemiesNearLoc(halfway, 850) > 0 or #J.GetEnemiesNearLoc(halfway, 850) > 0 then return false end
+	end
+	return true
+end
+
 local function CanFarmCamp(camp)
 	local location = camp.cattr.location
-	if not IsFarmLocationSafe(location) then return false end
+	if (recoveringLane or postWaveCampDistance) and (J.Site.IsEnemyCamp(camp.cattr)
+		or GetUnitToLocationDistance(bot, location) > (postWaveCampDistance or 2600)) then return false end
+	if postWaveCampDistance and postWaveOrigin and J.GetLocationToLocationDistance(location, postWaveOrigin) > postWaveCampDistance then return false end
+	if not IsFarmLocationSafe(location) or not IsFarmPathSafe(location) then return false end
+	for i = 1, #GetTeamPlayers(team) do
+		local ally = GetTeamMember(i)
+		local claim = ally and ally ~= bot and ally.ohaFarmCampClaim
+		if claim and ally:IsAlive() and claim.expires > DotaTime()
+			and J.GetLocationToLocationDistance(claim.location, location) < 100 then return false end
+	end
 	for _, ally in ipairs(J.GetAlliesNearLoc(location, 800)) do
 		if ally ~= bot and J.IsValidHero(ally) and not ally:IsIllusion() then
 			local target = ally:GetAttackTarget()
@@ -123,6 +172,145 @@ local function FindFarmCamp()
 	return preferedCamp
 end
 
+local function RefreshFarmCamps()
+	local minute = math.floor((DotaTime() - 1) / 60)
+	if minute > lastCampRefreshMinute then
+		J.Role.availableCampTable, J.Role.campCount = J.Site.RefreshCamp(bot)
+		lastCampRefreshMinute = minute
+		nextCampSearch = 0
+	end
+end
+
+local function HasJustClearedWave()
+	local now = DotaTime()
+	local wave = bot:GetNearbyLaneCreeps(900, true)
+	if #wave > 0 then
+		lastWaveLocation, lastWaveSeenAt, lastWaveCreeps = J.GetCenterOfUnits(wave), now, wave
+		return false
+	end
+	if now - lastWaveSeenAt > 14 or lastWaveLocation == nil or GetUnitToLocationDistance(bot, lastWaveLocation) > 1100
+		or not IsLocationVisible(lastWaveLocation) then return false end
+	for _, creep in ipairs(lastWaveCreeps) do
+		if not creep:IsNull() and creep:CanBeSeen() and creep:IsAlive() then return false end
+	end
+	return true
+end
+
+local function GetReturningWave()
+	if postWaveOrigin == nil or DotaTime() > postWaveUntil then return nil end
+	for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
+		if J.IsValid(creep) and creep:GetTeam() == GetOpposingTeam() and GetUnitToLocationDistance(creep, postWaveOrigin) < 950 then
+			local name = creep:GetUnitName()
+			if string.find(name, 'npc_dota_creep_', 1, true) or string.find(name, '_siege', 1, true) then
+				local point = creep:GetLocation()
+				if IsFarmWaveAvailable(point) and IsFarmPathSafe(point) then return point end
+			end
+		end
+	end
+end
+
+local function FindRecoveryRoute(maxLaneDistance, desire, excludedLane)
+	recoveringLane = true
+	local nearbyWave = bot:GetNearbyLaneCreeps(1600, true)
+	if #nearbyWave > 0 then
+		local location = J.GetCenterOfUnits(nearbyWave)
+		if IsFarmWaveAvailable(location) then farmLaneLocation = location end
+	end
+	if farmLaneLocation == nil and maxLaneDistance ~= nil then
+		for _, candidateLane in ipairs(nLaneList) do
+			local location = GetLaneFrontLocation(team, candidateLane, 0)
+			local distance = GetUnitToLocationDistance(bot, location)
+			-- An empty front already within creep vision isn't an income source.
+			if candidateLane ~= excludedLane and distance > 650 and distance < maxLaneDistance and IsLocationVisible(location)
+				and IsFarmWaveAvailable(location) then
+				farmLaneLocation, maxLaneDistance = location, distance
+			end
+		end
+	end
+	local camp = farmLaneLocation == nil and FindFarmCamp() or nil
+	local location = farmLaneLocation or (camp and camp.cattr.location)
+	if location ~= nil then
+		bot.farmLocation = location
+		return desire
+	end
+	recoveringLane = false
+	tradingTowerLocation = nil
+	return BOT_MODE_DESIRE_NONE
+end
+
+local function GetOuterTowerRecoveryDesire()
+	local trade = bot.ohaOuterTowerTrade
+	local now = DotaTime()
+	if trade == nil or trade.expires <= now or (bot.ohaOuterTowerHoldUntil or 0) > now
+		or not J.IsCore(bot) or J.GetHP(bot) < 0.55 or bot:WasRecentlyDamagedByAnyHero(2)
+		or J.IsInTeamFight(bot, 1200)
+	then
+		bot.ohaOuterFarmClaim = nil
+		return BOT_MODE_DESIRE_NONE
+	end
+
+	tradingTowerLocation = trade.location
+	local desire = FindRecoveryRoute(3800, 0.6, trade.lane)
+	if desire > BOT_MODE_DESIRE_NONE then
+		bot.ohaOuterFarmClaim = {location = bot.farmLocation, expires = now + 3}
+	else
+		bot.ohaOuterFarmClaim = nil
+	end
+	return desire
+end
+
+local function GetLaningRecoveryDesire()
+	local position = J.GetPosition(bot)
+	local turbo = J.IsModeTurbo()
+	local time = DotaTime()
+	local recoveryStart = turbo and 5 * 60 or 7 * 60
+	local carryStart = turbo and 3 * 60 + 30 or 4 * 60 + 30
+	if time < (position == 1 and carryStart or recoveryStart) or time >= (turbo and 14 * 60 or 20 * 60)
+		or position > 3 or bot:GetLevel() < (position == 1 and 3 or 4) or bot:GetNetWorth() >= 8000
+		or J.GetHP(bot) < 0.45 or (bot:WasRecentlyDamagedByAnyHero(2) and not J.WeAreStronger(bot, 1200))
+		or GetGameMode() == GAMEMODE_MO or GetGameMode() == GAMEMODE_1V1MID
+	then return BOT_MODE_DESIRE_NONE end
+
+	local lane = bot:GetAssignedLane()
+	local towerId = laneTierOne[lane]
+	if towerId == nil then return BOT_MODE_DESIRE_NONE end
+	if J.IsValidBuilding(GetTower(team, towerId)) then
+		-- Before ten minutes, only a displaced carry should leave an intact lane to farm.
+		if position ~= 1 and time < (turbo and 8 * 60 or 10 * 60) then return BOT_MODE_DESIRE_NONE end
+		local laneFront = GetLaneFrontLocation(team, lane, 0)
+		local enemies = J.GetLastSeenEnemiesNearLoc(laneFront, 1600)
+		local outmatched = not J.WeAreStronger(bot, 1600)
+		local harassed = bot:WasRecentlyDamagedByAnyHero(6)
+		local outnumbered = #enemies >= 2 and #enemies > #J.GetAlliesNearLoc(laneFront, 1600)
+		if time < recoveryStart and not outnumbered and not (harassed and outmatched) then return BOT_MODE_DESIRE_NONE end
+		if #enemies == 0 or (#enemies == 1 and not (harassed and outmatched))
+			or (#enemies >= 2 and not outnumbered and not harassed and not outmatched) then
+			return BOT_MODE_DESIRE_NONE
+		end
+	end
+
+	return FindRecoveryRoute(2900, BOT_MODE_DESIRE_MODERATE)
+end
+
+local function GetUnclaimedSupportWaveDesire()
+	if DotaTime() < 8 * 60 or J.IsCore(bot) or J.GetHP(bot) < 0.55 or J.IsInTeamFight(bot, 1200)
+		or J.IsGoingOnSomeone(bot) or bot:WasRecentlyDamagedByAnyHero(2) then return BOT_MODE_DESIRE_NONE end
+	local wave = bot:GetNearbyLaneCreeps(1000, true)
+	if #wave < 3 then return BOT_MODE_DESIRE_NONE end
+	local location = J.GetCenterOfUnits(wave)
+	if not J.IsInAllyArea(wave[1]) or not IsFarmLocationSafe(location)
+		or #J.GetLastSeenEnemiesNearLoc(location, 1400) > 0 then return BOT_MODE_DESIRE_NONE end
+	for _, ally in ipairs(J.GetAlliesNearLoc(location, 1250)) do
+		if ally ~= bot and J.IsValidHero(ally) and not J.IsRetreating(ally)
+			and (J.IsCore(ally) or GetUnitToLocationDistance(ally, location) + 150 < GetUnitToLocationDistance(bot, location)) then
+			return BOT_MODE_DESIRE_NONE
+		end
+	end
+	recoveringLane = true
+	farmLaneLocation, bot.farmLocation = location, location
+	return 0.49
+end
+
 function GetDesire()
 	-- local cacheKey = 'GetFarmDesire'..tostring(bot:GetPlayerID())
 	-- local cachedVar = J.Utils.GetCachedVars(cacheKey, 0.4)
@@ -134,6 +322,9 @@ end
 
 function GetDesireHelper()
 	farmLaneLocation = nil
+	recoveringLane = false
+	tradingTowerLocation = nil
+	postWaveCampDistance = nil
 	-- Utils.PrintPings(0.15)
 
 	if DotaTime() - CleanupCachedVarsTime > Utils.CachedVarsCleanTime then
@@ -187,7 +378,6 @@ function GetDesireHelper()
 
 	-- Early exits first (cheap checks before expensive queries)
     if not bAlive
-	or J.IsInLaningPhase()
 	or (J.IsDoingRoshan(bot) and bNotClone)
 	or (J.IsDoingTormentor(bot) and bNotClone)
     or DotaTime() < 50
@@ -203,6 +393,21 @@ function GetDesireHelper()
 		teamTime = DotaTime()
 		return BOT_MODE_DESIRE_NONE
 	end
+	if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then return BOT_MODE_DESIRE_NONE end
+	RefreshFarmCamps()
+	local tradeDesire = GetOuterTowerRecoveryDesire()
+	if tradeDesire > BOT_MODE_DESIRE_NONE then return tradeDesire end
+	if (bot.ohaIdleRecoveryUntil or 0) > DotaTime() and J.IsCore(bot) and J.GetHP(bot) >= 0.55
+		and not J.IsInTeamFight(bot, 1200) and not J.IsGoingOnSomeone(bot) then
+		local idleDesire = FindRecoveryRoute(3800, 0.65)
+		if idleDesire > BOT_MODE_DESIRE_NONE then return idleDesire end
+	end
+	local unclaimedWave = GetUnclaimedSupportWaveDesire()
+	if unclaimedWave > BOT_MODE_DESIRE_NONE then return unclaimedWave end
+	local recoveryDesire = GetLaningRecoveryDesire()
+	if recoveryDesire > BOT_MODE_DESIRE_NONE or J.IsInLaningPhase() then return recoveryDesire end
+	local betweenWaves = J.IsCore(bot) and HasJustClearedWave()
+	if DotaTime() > postWaveUntil then postWaveOrigin = nil end
 
 	-- Expensive queries (only after early exits)
     local botLevel = bot:GetLevel()
@@ -229,21 +434,6 @@ function GetDesireHelper()
 
 	if DotaTime() < 50 or botActiveMode == BOT_MODE_RUNE then
 		return 0.0
-	end
-	
-	sec = math.floor(DotaTime()) % 60;
-	
-	if not J.Role.IsCampRefreshDone()
-	   and J.Role.GetAvailableCampCount() < J.Role.GetCampCount()
-	   and ( DotaTime() > 20 and  sec > 0 and sec < 2 )  
-	then
-		J.Role['availableCampTable'], J.Role['campCount'] = J.Site.RefreshCamp(bot);
-		J.Role['hasRefreshDone'] = true;
-	end
-	
-	if J.Role.IsCampRefreshDone() and sec > 52
-	then
-		J.Role['hasRefreshDone'] = false;
 	end
 	
     local nEnemyHeroes = J.GetEnemiesNearLoc(bot:GetLocation(), 1600)
@@ -274,7 +464,7 @@ function GetDesireHelper()
 
     if #nAllyHeroes_attacking > 0 then
         local nInRangeEnemy = J.GetEnemiesNearLoc(J.GetCenterOfUnits(nAllyHeroes_attacking), 1200)
-        if #nAllyHeroes_attacking + 1 >= #nInRangeEnemy then
+        if #nInRangeEnemy > 0 and #nAllyHeroes_attacking + 1 >= #nInRangeEnemy then
             return BOT_MODE_DESIRE_NONE
         end
     end
@@ -345,6 +535,28 @@ function GetDesireHelper()
 	if J.DoesTeamHaveAegis() and nAliveAllyCount >= 4 then
 		return BOT_MODE_DESIRE_NONE;
 	end
+
+	-- A visible wave just died. Use the gap for a short round trip to a friendly camp.
+	-- A nearby fight, an actual tower push or a defense assignment still owns the hero.
+	if (betweenWaves or postWaveOrigin ~= nil) and bNotClone and J.GetHP(bot) >= 0.55 and #nEnemyHeroes == 0
+		and not bot:WasRecentlyDamagedByAnyHero(3) and not J.IsInTeamFight(bot, 1800)
+		and not (vTeamFightLocation and GetUnitToLocationDistance(bot, vTeamFightLocation) < 2500)
+		and not (J.IsPushing(bot) and J.IsValidBuilding(bot:GetNearbyTowers(1600, true)[1]))
+		and not (J.IsDefending(bot) and botActiveModeDesire >= BOT_MODE_DESIRE_HIGH)
+		and GetGameMode() ~= GAMEMODE_MO and GetGameMode() ~= GAMEMODE_1V1MID then
+		recoveringLane = true
+		postWaveCampDistance = math.min(2400, bot:GetCurrentMovementSpeed() * 6)
+		local returning = GetReturningWave()
+		if returning ~= nil then
+			farmLaneLocation, bot.farmLocation = returning, returning
+			return 0.62
+		end
+		local desire = FindRecoveryRoute(nil, 0.62)
+		if desire > 0 and farmLaneLocation == nil and postWaveOrigin == nil then
+			postWaveOrigin, postWaveUntil = lastWaveLocation, DotaTime() + 28
+		end
+		return desire
+	end
 		
 	if DotaTime() > countTime + countCD
 	then
@@ -378,18 +590,6 @@ function GetDesireHelper()
 	if allyKills > enemyKills + 20 and nAliveAllyCount >= 4
 	then return BOT_MODE_DESIRE_NONE; end
 
-	local nAlliesCount = J.GetAllyCount(bot,1400);
-	if nAlliesCount >= 4
-	   or (bot:GetLevel() >= 23 and nAlliesCount >= 3)
-	   or GetRoshanDesire() > BOT_MODE_DESIRE_VERYHIGH
-	then
-		local nNeutrals = bot:GetNearbyNeutralCreeps( bot:GetAttackRange() ); 
-		if #nNeutrals == 0 
-		then 
-		    teamTime = DotaTime();
-		end
-	end
-
     local hItem = J.IsItemAvailable('item_hand_of_midas')
     if J.IsInAllyArea(bot) and J.CanCastAbility(hItem) then
         FindFarmCamp()
@@ -410,7 +610,6 @@ function GetDesireHelper()
 		if (beHighFarmer or (beNormalFarmer and J.IsMidGame()) or J.IsLateGame() or bot:GetNetWorth() >= 15000) then
 			if bot:GetActiveMode() == BOT_MODE_ASSEMBLE then assembleTime = DotaTime() end
 			if DotaTime() - assembleTime < 15.0 then return BOT_MODE_DESIRE_NONE end
-			if J.IsTeamActivityCount(bot, 3)	then return BOT_MODE_DESIRE_NONE end
 		end
 	end
 
@@ -419,6 +618,15 @@ function GetDesireHelper()
 	local nFarmRampStart = J.IsModeTurbo() and 8 * 60 or 10 * 60
 	local nFarmRampEnd   = J.IsModeTurbo() and 14 * 60 or 20 * 60
 	local nFarmCap = RemapValClamped(DotaTime(), nFarmRampStart, nFarmRampEnd, 0.3, 0.6)
+	if bCore and bNotClone and GetGameMode() ~= GAMEMODE_MO and GetGameMode() ~= GAMEMODE_1V1MID
+		and J.GetHP(bot) >= 0.55 and #nEnemyHeroes == 0 and not bot:WasRecentlyDamagedByAnyHero(3)
+		and not J.IsInTeamFight(bot, 1800)
+		and (botActiveModeDesire < BOT_MODE_DESIRE_HIGH or (not J.IsPushing(bot) and not J.IsDefending(bot)))
+	then
+		-- Use nearby income between fights, including after the late-game cutoff.
+		local desire = FindRecoveryRoute(nil, Min(nFarmCap, 0.55))
+		if desire > BOT_MODE_DESIRE_NONE then return desire end
+	end
 
 	if GetGameMode() ~= GAMEMODE_MO
 	and J.Site.IsTimeToFarm(bot)
@@ -428,15 +636,10 @@ function GetDesireHelper()
 	and networthAdvantage < 6000
 	and not J.IsLateGame()
 	then
+		hLaneCreepList = {}
 		if J.GetDistanceFromEnemyFountain(bot) > 4000
 		then
 			hLaneCreepList = bot:GetNearbyLaneCreeps(1600, true);
-			if #hLaneCreepList == 0
-			   and J.IsInAllyArea( bot )
-			   and X.IsNearLaneFront( bot )
-			then
-				hLaneCreepList = bot:GetNearbyLaneCreeps(1600, false);
-			end
 		end;
 
 		local laneCenter = #hLaneCreepList > 0 and J.GetCenterOfUnits(hLaneCreepList) or nil
@@ -516,8 +719,13 @@ end
 function OnEnd()
 	if issuedFarmOrder and not bot:IsUsingAbility() and not bot:IsChanneling() then CancelFarmOrder() end
 	issuedFarmOrder = false
+	bot.ohaFarmCampClaim = nil
+	postWaveCampDistance = nil
+	postWaveOrigin = nil
 	preferedCamp = nil;
 	farmLaneLocation = nil
+	recoveringLane = false
+	tradingTowerLocation = nil
 	nextCampSearch = 0
 	farmState = FARM_STATE_NONE;
 	hLaneCreepList  = {};
@@ -529,7 +737,6 @@ end
 function Think()
 	if J.CanNotUseAction(bot) then return end
 	if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "farm") then return end
-	sec = math.floor(DotaTime()) % 60
 	if runMode
 	then
 		if not bot:IsInvisible() and bot:GetLevel() >= 15
@@ -585,8 +792,21 @@ function Think()
 		end
 	end
 
-	if ShouldYieldForBaseDefense() then
+	if ShouldYieldForBaseDefense() or (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then
+		bot.ohaOuterFarmClaim = nil
+		bot.ohaFarmCampClaim = nil
 		CancelFarmOrder()
+		return
+	end
+	if postWaveCampDistance and (#J.GetEnemiesNearLoc(bot:GetLocation(), 1600) > 0 or bot:WasRecentlyDamagedByAnyHero(3)) then
+		bot.ohaFarmCampClaim = nil
+		CancelFarmOrder()
+		return
+	end
+	local returning = postWaveCampDistance and GetReturningWave()
+	if returning and GetUnitToLocationDistance(bot, returning) > 900 then
+		bot.ohaFarmCampClaim = nil
+		MoveToFarm(returning)
 		return
 	end
 
@@ -612,8 +832,10 @@ function Think()
 		local nSearchRange = bot:GetAttackRange() + 180
 		if nSearchRange > 1600 then nSearchRange = 1600 end
 		local nNeutrals = bot:GetNearbyNeutralCreeps(nSearchRange);
-		if J.IsValid(farmTarget) and IsFarmLocationSafe(farmTarget:GetLocation())
-		and (#nNeutrals == 0 or farmLaneLocation ~= nil) then
+		if J.IsValid(farmTarget) and IsFarmWaveAvailable(farmTarget:GetLocation())
+		and (#nNeutrals == 0 or farmLaneLocation ~= nil or postWaveCampDistance ~= nil) then
+			bot.ohaFarmCampClaim = nil
+			postWaveOrigin = nil
 			if farmTarget:GetTeam() ~= bot:GetTeam() then
 				local nEnemyTowers = bot:GetNearbyTowers(1600, true)
 				if J.IsValidBuilding(nEnemyTowers[1]) then
@@ -636,7 +858,8 @@ function Think()
 		end
 	end
 
-	if farmLaneLocation ~= nil and IsFarmLocationSafe(farmLaneLocation) then
+	if farmLaneLocation ~= nil and IsFarmWaveAvailable(farmLaneLocation) then
+		bot.ohaFarmCampClaim = nil
 		MoveToFarm(farmLaneLocation)
 		return
 	end
@@ -644,6 +867,7 @@ function Think()
 
 	if FindFarmCamp() ~= nil then
 		local targetFarmLoc = preferedCamp.cattr.location;
+		bot.ohaFarmCampClaim = {location = targetFarmLoc, expires = DotaTime() + 3}
 		local cDist = GetUnitToLocationDistance(bot, targetFarmLoc);
 		local nNeutrals = {}
 		for _, creep in ipairs(bot:GetNearbyNeutralCreeps(1000)) do
@@ -661,12 +885,6 @@ function Think()
 		   and not J.IsRoshan(nNeutrals[1])
 		   and ( bot:GetLevel() >= 10 or not nNeutrals[1]:IsAncientCreep())
 		then
-
-			if GetUnitToUnitDistance(bot,nNeutrals[1]) < bot:GetAttackRange() + 150
-				and J.HasNotActionLast(4.0,'creep')
-			then
-				J.Role['availableCampTable'] = J.Site.UpdateCommonCamp(nNeutrals[1],J.Role['availableCampTable']);
-			end
 
 			-- Use ability-specific range for neutral farming too
 			local farmTarget = J.Site.FindFarmNeutralTarget(nNeutrals)
@@ -713,6 +931,7 @@ function Think()
 					farmState = FARM_STATE_NONE;
 					J.Role['availableCampTable'], preferedCamp = J.Site.UpdateAvailableCamp(bot, preferedCamp, J.Role['availableCampTable']);
 					nextCampSearch = 0
+					bot.ohaFarmCampClaim = nil
 			else
 			
 				local farmTarget = J.Site.FindFarmNeutralTarget(neutralCreeps)
@@ -727,23 +946,10 @@ function Think()
 			end
 		end			
 	end
+	bot.ohaFarmCampClaim = nil
 	CancelFarmOrder()
 	
 end
-
-function X.IsNearLaneFront( bot )
-	local testDist = 1600;
-	for _,lane in pairs(nLaneList)
-	do
-		local tFLoc = GetLaneFrontLocation(GetTeam(), lane, 0);
-		if GetUnitToLocationDistance(bot,tFLoc) <= testDist
-		then
-		    return true;
-		end		
-	end
-	return false;
-end
-
 
 function X.CouldBlade(bot,nLocation) 
 	local blade = J.IsItemAvailable("item_quelling_blade");

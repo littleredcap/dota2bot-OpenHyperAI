@@ -5686,11 +5686,347 @@ function J.GetAvailableFightAllies(bot, location, radius)
 	return count
 end
 
+function J.HasSiegeDamageInRange(bot, location)
+	local travel = math.max(0, GetUnitToLocationDistance(bot, location) - bot:GetAttackRange())
+	local arrivalWindow = 3 + travel / math.max(1, bot:GetCurrentMovementSpeed())
+	local strongest, ready = 0, 0
+	local ranged, readyRanged = 0, 0
+	for i = 1, #GetTeamPlayers(bot:GetTeam()) do
+		local member = GetTeamMember(i)
+		if member ~= nil and not member:IsNull() and J.IsCore(member) then
+			local damage = member:GetAttackDamage() / math.max(0.2, member:GetSecondsPerAttack())
+			local range = member:GetAttackRange()
+			strongest = math.max(strongest, damage)
+			if range >= 500 then ranged = math.max(ranged, damage) end
+			if member:IsAlive() and J.GetHP(member) >= 0.45 and not J.IsRetreating(member)
+				and not member:IsStunned() and not member:IsHexed() and not member:IsNightmared()
+				and not member:IsDisarmed() and not member:IsChanneling()
+				and not member:HasModifier('modifier_teleporting') then
+				local distance = GetUnitToLocationDistance(member, location) - range
+				if distance <= 0 or (not member:IsRooted() and distance <= member:GetCurrentMovementSpeed() * arrivalWindow) then
+					ready = math.max(ready, damage)
+					if range >= 500 then readyRanged = math.max(readyRanged, damage) end
+				end
+			end
+		end
+	end
+	return strongest > 0 and ready >= strongest * 0.85 and (ranged < strongest * 0.65 or readyRanged >= ranged * 0.85)
+end
+
+function J.CanCommitToLaneTeleport(bot, location, requireClear)
+	if location == nil then return false end
+	local enemies = {}
+	for _, id in ipairs(J.GetLastSeenEnemiesNearLoc(location, 1500)) do enemies[id] = true end
+	for _, enemy in ipairs(J.GetEnemiesNearLoc(location, 1500)) do
+		if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) then enemies[enemy:GetPlayerID()] = true end
+	end
+	for _, tp in ipairs(GetIncomingTeleports()) do
+		if tp.playerid ~= nil and tp.location ~= nil and tp.time_remaining ~= nil
+			and tp.time_remaining >= 0 and tp.time_remaining <= 4 and GetTeamForPlayer(tp.playerid) == GetOpposingTeam()
+			and IsLocationVisible(tp.location) and J.GetLocationToLocationDistance(tp.location, location) <= 1500 then
+			enemies[tp.playerid] = true
+		end
+	end
+	local threatCount = 0
+	for _ in pairs(enemies) do threatCount = threatCount + 1 end
+	if requireClear then return threatCount == 0 end
+	if threatCount < 2 then return true end
+	local backup = J.GetAvailableFightAllies(bot, location, 1150)
+	return backup >= threatCount - 1 and J.GetHP(bot) >= 0.55
+end
+
+function J.GetSupportedFightTarget(bot, enemies, allies)
+	if DotaTime() < 8 * 60 or #enemies == 0 or J.GetHP(bot) < 0.45 or J.IsRetreating(bot) then return nil end
+	local reach = bot:GetAttackRange() + 450
+	local tower = bot:GetNearbyTowers(1600, true)[1]
+	local best, bestScore = nil, 0
+	for _, enemy in ipairs(enemies) do
+		if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and not J.IsSuspiciousIllusion(enemy)
+			and not enemy:HasModifier('modifier_skeleton_king_reincarnation_scepter_active')
+			and J.IsInRange(bot, enemy, reach)
+			and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 800)) then
+			local committed = 0
+			for _, ally in ipairs(allies) do
+				if ally ~= bot and J.IsValidHero(ally) and not J.IsRetreating(ally)
+					and ally:GetAttackTarget() == enemy and J.IsInRange(ally, enemy, ally:GetAttackRange() + 250) then
+					committed = committed + 1
+				end
+			end
+			local location = enemy:GetLocation()
+			if committed > 0 and J.GetAvailableFightAllies(bot, location, 1250) + 1 >= #J.GetEnemiesNearLoc(location, 1250) then
+				local score = committed + (1 - J.GetHP(enemy)) * 2 + math.min(enemy:GetAttackDamage() / 250, 1)
+				if score > bestScore then best, bestScore = enemy, score end
+			end
+		end
+	end
+	return best
+end
+
+
+local function IsSiegeSummon(name)
+	return string.find(name, 'shadow_shaman_ward', 1, true) ~= nil or string.find(name, 'warlock_golem', 1, true) ~= nil
+end
+
+function J.GetOuterTowerThreat(tower, lane)
+	local hub = tower:GetLocation()
+	local key = 'OuterTowerThreat:' .. tostring(lane) .. ':' .. tower:GetUnitName()
+	local cached = J.Utils.GetCachedVars(key, 0.3)
+	if cached ~= nil then return cached end
+	local towerTrack = GetAmountAlongLane(lane, hub)
+	local direction = GetTeam() == TEAM_RADIANT and 1 or -1
+	local function onApproach(location)
+		local track = GetAmountAlongLane(lane, location)
+		return track.distance <= 850 and (track.amount - towerTrack.amount) * direction >= -0.025
+	end
+
+	local seen = {}
+	local near = {}
+	local activeAttackers = 0
+	for _, id in ipairs(J.GetLastSeenEnemiesNearLoc(hub, 1600)) do seen[id], near[id] = true, true end
+	for _, enemy in ipairs(J.GetEnemiesNearLoc(hub, 3200)) do
+		local id = enemy:GetPlayerID()
+		if enemy:GetAttackTarget() == tower then activeAttackers = activeAttackers + 1 end
+		if GetUnitToUnitDistance(enemy, tower) <= 1600 then
+			seen[id], near[id] = true, true
+		elseif onApproach(enemy:GetLocation()) and (enemy:GetAttackTarget() == tower or enemy:IsFacingLocation(hub, 50)) then
+			seen[id] = true
+		end
+	end
+	for _, tp in ipairs(GetIncomingTeleports()) do
+		if tp.playerid ~= nil and tp.location ~= nil and tp.time_remaining ~= nil
+			and tp.time_remaining >= 0 and tp.time_remaining <= 4 and GetTeamForPlayer(tp.playerid) == GetOpposingTeam()
+			and IsLocationVisible(tp.location) and J.GetLocationToLocationDistance(tp.location, hub) <= 2600
+			and onApproach(tp.location) then seen[tp.playerid] = true end
+	end
+
+	local enemyCount, nearCount = 0, 0
+	for _ in pairs(seen) do enemyCount = enemyCount + 1 end
+	for _ in pairs(near) do nearCount = nearCount + 1 end
+	local waveSize, waveHP, siege, eta = 0, 0, false, math.huge
+	local attackingCreeps, siegeAttacking = 0, false
+	for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
+		if J.IsValid(creep) then
+			local name = creep:GetUnitName()
+			local distance = GetUnitToUnitDistance(creep, tower)
+			local attacking = creep:GetAttackTarget() == tower
+			local summon = IsSiegeSummon(name)
+			local catapult = string.find(name, 'siege', 1, true) ~= nil
+			if (summon and attacking and distance <= 1400)
+				or (distance <= 3000 and (catapult or string.find(name, 'npc_dota_creep_', 1, true))
+					and (attacking or onApproach(creep:GetLocation()))) then
+				waveSize = waveSize + 1
+				siege = siege or summon or catapult
+				if not catapult and not summon then waveHP = math.max(waveHP, creep:GetHealth()) end
+				if attacking then
+					attackingCreeps = attackingCreeps + 1
+					siegeAttacking = siegeAttacking or summon or catapult
+					eta = 0
+				else
+					eta = math.min(eta, math.max(0, distance - 650) / math.max(250, creep:GetCurrentMovementSpeed()))
+				end
+			end
+		end
+	end
+	local wavePressure = attackingCreeps >= 2 or siegeAttacking or (enemyCount == 1 and waveSize >= 3 and eta <= 5)
+	local active = (enemyCount >= 2 and (waveSize > 0 or nearCount >= 2)) or wavePressure
+	local holdable = tower:GetHealth() > tower:GetMaxHealth() * 0.15
+	local threat = {count = enemyCount, near = nearCount, waveSize = waveSize, waveHP = waveHP,
+		siege = siege, eta = eta < math.huge and eta or 0,
+		score = active and (nearCount * 3 + enemyCount * 2 + math.min(waveSize, 8)
+			+ activeAttackers * 2 + (siege and 2 or 0)) * (holdable and 1 or 0.25) or 0}
+	J.Utils.SetCachedVars(key, threat)
+	return threat
+end
+
+local function GetWaveClearScore(hero, travelTime)
+	local best, bestReach, bestDamage = 0, 0, 0
+	for slot = 0, 8 do
+		local ability = hero:GetAbilityInSlot(slot)
+		if J.CanCastAbilitySoon(ability, travelTime + 3) and not ability:IsUltimate()
+			and hero:GetMana() >= ability:GetManaCost() then
+			local radius = math.max(ability:GetAOERadius() or 0, ability:GetSpecialValueInt('radius'),
+				ability:GetSpecialValueInt('damage_radius'), ability:GetSpecialValueInt('width'),
+				ability:GetSpecialValueInt('start_radius'), ability:GetSpecialValueInt('end_radius'))
+			local shrapnel = ability:GetSpecialValueInt('shrapnel_damage')
+			local damage = math.max(ability:GetAbilityDamage() or 0, ability:GetSpecialValueInt('damage'),
+				ability:GetSpecialValueInt('base_damage'),
+				shrapnel * math.max(1, math.min(3, ability:GetSpecialValueInt('duration'))))
+			local reach = ability:GetCastRange() + radius
+			if radius >= 100 and damage >= 60 and reach >= 600 and (shrapnel == 0 or ability:IsFullyCastable()) then
+				local score = math.sqrt(damage * radius) + math.min(reach, 1400) * 0.25
+					- 12 * math.max(0, ability:GetCooldownTimeRemaining() - travelTime)
+				if score > best then best, bestReach, bestDamage = score, reach, damage * math.min(1, radius / 250) end
+			end
+		end
+	end
+	return best, bestReach, bestDamage
+end
+
+function J.GetOuterTowerResponse(location, threat)
+	local ready = {}
+	local closeCount, closest, closestDistance = 0, nil, math.huge
+	local approaching = threat.near < 2 and threat.eta >= 3
+	local tpPoint = approaching and J.AdjustLocationWithOffsetTowardsFountain(location, 475) or nil
+	if tpPoint ~= nil and (not IsLocationPassable(tpPoint) or #J.GetLastSeenEnemiesNearLoc(tpPoint, 1650) > 0
+		or #J.GetEnemiesNearLoc(tpPoint, 1650) > 0) then tpPoint = nil end
+	for _, ally in ipairs(J.GetAlliesNearLoc(location, tpPoint ~= nil and 7500 or 3300)) do
+		local tp = ally._defend and ally._defend.waveClearTeleport
+		local teleportingHere = tpPoint ~= nil and tp ~= nil and J.GetLocationToLocationDistance(tpPoint, tp) < 350
+		if J.IsValidHero(ally) and not ally:IsIllusion() and not J.IsRetreating(ally)
+			and (not ally:HasModifier('modifier_teleporting') or teleportingHere) and J.GetHP(ally) >= 0.45 then
+			local distance = GetUnitToLocationDistance(ally, location)
+			if distance <= 2200 then
+				closeCount = closeCount + 1
+				if distance < closestDistance then closest, closestDistance = ally, distance end
+			end
+			ready[#ready + 1] = ally
+		end
+	end
+	if threat.near >= 2 and closeCount >= threat.count and J.WeAreStronger(closest, 2200)
+		and not J.Utils.HasTeamMemberWithCriticalItemInCooldown(location)
+		and not J.Utils.HasTeamMemberWithCriticalSpellInCooldown(location) then
+		return false, {}
+	end
+
+	local fountain = J.GetTeamFountain()
+	local towerFromFountain = J.GetLocationToLocationDistance(location, fountain)
+	local candidates = {}
+	for _, ally in ipairs(ready) do
+		local pressured = ally:WasRecentlyDamagedByAnyHero(2)
+		if ally:IsBot() and (not pressured or J.GetHP(ally) >= 0.65) then
+			local distance = GetUnitToLocationDistance(ally, location)
+			local travelTime = GetUnitToLocationDistance(ally, fountain) <= towerFromFountain + 350
+				and distance / math.max(ally:GetCurrentMovementSpeed(), 250) or math.huge
+			local landing = nil
+			if tpPoint ~= nil and distance > 2100 and travelTime > 5 and not pressured
+				and (ally:HasModifier('modifier_teleporting') or J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')))
+				and #J.GetEnemiesNearLoc(ally:GetLocation(), 1200) == 0 and J.CanCommitToLaneTeleport(ally, tpPoint, true) then
+				travelTime, landing = 4.5, tpPoint
+			end
+			if travelTime <= math.max(6, threat.eta + 4) then
+				local score, reach, damage = GetWaveClearScore(ally, travelTime)
+				if damage == 0 and threat.count <= 1 and travelTime <= 5 and landing == nil then
+					-- A nearby hero can stop an ordinary wave even without an area spell.
+					reach, damage = ally:GetAttackRange(), 1
+				end
+				local canSave = J.CanCastAbility(J.GetItem2(ally, 'item_force_staff'))
+					or J.CanCastAbility(J.GetItem2(ally, 'item_glimmer_cape'))
+				local cost = 24 * travelTime + (J.GetPosition(ally) == 1 and 95 or 0)
+				candidates[#candidates + 1] = {hero = ally, reach = reach, damage = damage, score = score - cost, teleport = landing,
+					cover = (canSave and 180 or 0) - cost}
+			end
+		end
+	end
+	table.sort(candidates, function(a, b)
+		if a.score == b.score then return a.hero:GetPlayerID() < b.hero:GetPlayerID() end
+		return a.score > b.score
+	end)
+	local primary = candidates[1]
+	if primary == nil or primary.damage <= 0 then return true, {} end
+
+	local requiredDamage = math.max(180, threat.waveHP * 0.8)
+	local heavy = threat.siege or threat.waveSize >= 6
+	local needsSecond = heavy or primary.damage < requiredDamage
+	local exposed = threat.count >= 3 and (threat.near >= 2 or threat.eta <= 3)
+	local assignments = {[primary.hero:GetPlayerID()] = {reach = primary.reach, cover = false, teleport = primary.teleport}}
+	local secondary = candidates[2]
+	if needsSecond and threat.count >= 2 then
+		if secondary == nil or secondary.damage <= 0 or primary.damage + secondary.damage < requiredDamage then return true, {} end
+		assignments[secondary.hero:GetPlayerID()] = {reach = secondary.reach, cover = false, teleport = secondary.teleport}
+	elseif needsSecond and secondary ~= nil and secondary.damage > 1 then
+		assignments[secondary.hero:GetPlayerID()] = {reach = secondary.reach, cover = false, teleport = secondary.teleport}
+	end
+	if exposed and (not needsSecond or primary.reach < 900 or secondary.reach < 900) then
+		local cover = nil
+		for _, candidate in ipairs(candidates) do
+			if assignments[candidate.hero:GetPlayerID()] == nil and (cover == nil or candidate.cover > cover.cover) then cover = candidate end
+		end
+		if cover == nil then return true, {} end
+		assignments[cover.hero:GetPlayerID()] = {reach = cover.hero:GetAttackRange(), cover = true, teleport = cover.teleport}
+	end
+	return true, assignments
+end
+
+function J.RunOuterTowerHold(bot, hub, reach, cover)
+	local offset = cover and 650 or math.max(250, math.min(600, reach - 400))
+	local hold = J.AdjustLocationWithOffsetTowardsFountain(hub, offset)
+	if not IsLocationPassable(hold) then hold = J.AdjustLocationWithOffsetTowardsFountain(hub, 220) end
+	local hostile = J.GetEnemiesNearLoc(hold, 700)
+	if #hostile >= 2 or (#hostile == 1 and bot:WasRecentlyDamagedByAnyHero(2)
+		and (#J.GetAlliesNearLoc(hold, 850) <= 1 or J.GetHP(bot) < 0.45)) then
+		bot:Action_MoveToLocation(J.AdjustLocationWithOffsetTowardsFountain(hub, 1000))
+		return true
+	end
+	if bot:IsUsingAbility() or bot:IsCastingAbility() or bot:IsChanneling() then return false end
+	local awayFromHold = GetUnitToLocationDistance(bot, hold) > 220
+	local canStepUp = not cover and #J.GetLastSeenEnemiesNearLoc(hub, 1150) == 0
+		and #J.GetEnemiesNearLoc(hub, 1150) == 0
+	if awayFromHold and (not canStepUp or GetUnitToLocationDistance(bot, hub) > 700) then
+		bot:Action_MoveToLocation(hold)
+		return true
+	end
+	if cover then
+		for _, enemy in ipairs(hostile) do
+			if J.IsInRange(bot, enemy, bot:GetAttackRange()) and J.CanBeAttacked(enemy) then
+				bot:Action_AttackUnit(enemy, true)
+				return true
+			end
+		end
+	end
+	local target, priority = nil, 0
+	for _, unit in ipairs(bot:GetNearbyCreeps(bot:GetAttackRange(), true)) do
+		if J.IsValid(unit) and J.CanBeAttacked(unit) and IsSiegeSummon(unit:GetUnitName()) then
+			target, priority = unit, 3
+			break
+		end
+	end
+	local range = bot:GetAttackRange()
+	for _, creep in ipairs(bot:GetNearbyLaneCreeps(canStepUp and range + 400 or range, true)) do
+		if J.IsValid(creep) and J.CanBeAttacked(creep)
+			and (J.IsInRange(bot, creep, range) or GetUnitToLocationDistance(creep, hub) <= 650) then
+			local weight = string.find(creep:GetUnitName(), 'siege', 1, true) and 2 or 1
+			if weight > priority then target, priority = creep, weight end
+		end
+	end
+	if target ~= nil then
+		bot:Action_AttackUnit(target, true)
+		return true
+	elseif awayFromHold then
+		bot:Action_MoveToLocation(hold)
+		return true
+	elseif J.IsValidHero(bot:GetAttackTarget()) then
+		bot:Action_ClearActions(true)
+	end
+	return false
+end
+
+function J.GetAssignedOuterTower(bot)
+	local state = bot._defend
+	if state and not state.waveClearCover and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
+		and J.IsValidBuilding(state.waveClearTower) then return state.waveClearTower end
+end
+
 function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local now = DotaTime()
 	if now < 0 or not bot:IsAlive() or bot:HasModifier('modifier_fountain_invulnerability') then return false end
 
 	local enemyTeam = GetOpposingTeam()
+	if now >= 8 * 60 then
+		local target = bot:GetAttackTarget() or bot:GetTarget()
+		if J.IsValidHero(target) and target:GetTeam() == enemyTeam
+			and GetUnitToUnitDistance(bot, target) > bot:GetAttackRange() + 100 then
+			local ancient = GetAncient(enemyTeam)
+			if ancient ~= nil then
+				local fromBase, targetFromBase = GetUnitToUnitDistance(bot, ancient), GetUnitToUnitDistance(target, ancient)
+				if fromBase < 3800 and targetFromBase < 2450 and targetFromBase + 250 < fromBase
+					and (targetFromBase < 1600 or GetHeightLevel(target:GetLocation()) > GetHeightLevel(bot:GetLocation()))
+					and not J.HasSiegeDamageInRange(bot, target:GetLocation()) then
+					bot.ohaReinforcementRetreatAt = now
+					return true
+				end
+			end
+		end
+	end
 	local threats = {}
 	local incoming = 0
 	for _, tp in ipairs(GetIncomingTeleports()) do
@@ -5708,9 +6044,13 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local location = bot:GetLocation()
 	local total, close = incoming, 0
 	local closePlayers = {}
+	local underFire = false
 	for _, enemy in ipairs(J.GetEnemiesNearLoc(location, 1400)) do
 		local id = enemy:GetPlayerID()
-		if not closePlayers[id] and GetUnitToUnitDistance(bot, enemy) <= 1000 then
+		local distance = GetUnitToUnitDistance(bot, enemy)
+		local inFiringRange = enemy:GetAttackTarget() == bot and distance <= enemy:GetAttackRange() + 250
+		underFire = underFire or inFiringRange
+		if not closePlayers[id] and (distance <= 1000 or inFiringRange) then
 			closePlayers[id] = true
 			close = close + 1
 		end
@@ -5719,8 +6059,15 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 			total = total + 1
 		end
 	end
-	if total >= 4 and (incoming >= 2 or close >= 3)
-		and total >= J.GetAvailableFightAllies(bot, location, 1400) + 3 then
+	local backup = total > 0 and J.GetAvailableFightAllies(bot, location, 1400) or 0
+	local damaged = bot:WasRecentlyDamagedByAnyHero(2)
+	local isolated = now >= 8 * 60 and close >= 2 and total >= backup + 2
+		and (backup == 0 or J.GetHP(bot) < 0.7)
+		and (close >= 3 or damaged)
+	local losingExchange = now >= 8 * 60 and damaged and J.GetHP(bot) <= 0.58
+		and (close >= 2 or (underFire and backup == 0)) and total >= backup + 1
+		and not J.WeAreStronger(bot, 1400)
+	if isolated or losingExchange or (total >= 4 and (incoming >= 2 or close >= 3) and total >= backup + 3) then
 		bot.ohaReinforcementRetreatAt = now
 		return true
 	end
@@ -6005,6 +6352,87 @@ end
 
 function J.IsDoingTormentor(bot)
 	return bot:GetActiveMode() == BOT_MODE_SIDE_SHOP
+end
+
+local function GetChronosphereStandOff(bot, location, radius)
+	local distance = GetUnitToLocationDistance(bot, location)
+	if distance > radius + 320 then return nil end
+
+	local projectedDistance = J.GetLocationToLocationDistance(bot:GetExtrapolatedLocation(0.45), location)
+	local entering = projectedDistance < distance - 10 and projectedDistance <= radius + 45
+	if not entering and not J.IsRetreating(bot) and distance <= radius + 130 then
+		local target = bot:GetAttackTarget()
+		entering = J.IsValid(target) and not J.IsInRange(bot, target, bot:GetAttackRange())
+			and GetUnitToLocationDistance(target, location) <= radius
+	end
+	if not entering and distance > radius then return nil end
+
+	local origin = bot:GetLocation()
+	if distance < 1 then return J.AdjustLocationWithOffsetTowardsFountain(origin, radius + 130) end
+	local safe = J.VectorAway(origin, location, math.max(70, radius + 130 - distance))
+	if IsLocationPassable(safe) then return safe end
+	return origin
+end
+
+function J.GetShrapnelEscapeLocation(bot)
+	-- The bot's own debuff confirms exposure even when the engine omits the zone.
+	if not bot:HasModifier('modifier_sniper_shrapnel_slow') or bot:IsMagicImmune() or bot:IsRooted() then return nil end
+	local origin = bot:GetLocation()
+	local fountain = J.GetTeamFountain()
+	local fallback = J.AdjustLocationWithOffsetTowardsFountain(origin, 525)
+	local tower = bot:GetNearbyTowers(1550, true)[1]
+	local function isSafe(point)
+		return IsLocationPassable(point) and (not J.IsValidBuilding(tower)
+			or GetUnitToLocationDistance(tower, point) > 850
+			or GetUnitToLocationDistance(tower, point) > GetUnitToLocationDistance(tower, origin))
+	end
+	if type(GetAvoidanceZones) == 'function' then
+		local best, bestDistance = nil, math.huge
+		for _, zone in pairs(GetAvoidanceZones() or {}) do
+			local center, radius = zone.location, zone.radius
+			if center ~= nil and type(radius) == 'number' and radius > 0
+				and zone.ability ~= nil and not zone.ability:IsNull() and zone.ability:GetName() == 'sniper_shrapnel'
+				and zone.caster ~= nil and not zone.caster:IsNull() and zone.caster:GetTeam() ~= bot:GetTeam()
+				and IsLocationVisible(center) then
+				local distance = J.GetLocationToLocationDistance(origin, center)
+				if distance > 1 and distance < radius + 30 then
+					local step = radius + 85 - distance
+					local point = J.VectorAway(origin, center, step)
+					if step < bestDistance and isSafe(point)
+						and J.GetLocationToLocationDistance(point, fountain) <= J.GetLocationToLocationDistance(origin, fountain) + 120 then
+						best, bestDistance = point, step
+					end
+				end
+			end
+		end
+		if best ~= nil then return best end
+	end
+	if isSafe(fallback) then return fallback end
+	local shortStep = J.AdjustLocationWithOffsetTowardsFountain(origin, 260)
+	if isSafe(shortStep) then return shortStep end
+end
+
+function J.GetChronosphereAvoidanceLocation(bot)
+	-- Team handles also cover allied casts omitted by the engine zone list.
+	local now = GameTime()
+	for i = 1, #GetTeamPlayers(bot:GetTeam()) do
+		local ally = GetTeamMember(i)
+		local sphere = ally ~= nil and ally ~= bot and ally.ohaChronosphere
+		if sphere and now < sphere.expires then
+			local safe = GetChronosphereStandOff(bot, sphere.location, sphere.radius)
+			if safe ~= nil then return safe end
+		end
+	end
+	if GetAvoidanceZones == nil then return nil end
+	for _, zone in pairs(GetAvoidanceZones()) do
+		if zone.caster ~= nil and zone.caster ~= bot and not zone.caster:IsNull() and zone.caster:GetTeam() == bot:GetTeam()
+			and zone.ability ~= nil and not zone.ability:IsNull() and zone.ability:GetName() == 'faceless_void_chronosphere'
+			and zone.location ~= nil and zone.radius ~= nil and zone.radius > 0 then
+			local safe = GetChronosphereStandOff(bot, zone.location, zone.radius)
+			if safe ~= nil then return safe end
+		end
+	end
+	return nil
 end
 
 function J.IsLocationInChrono(loc)
@@ -6959,7 +7387,12 @@ function J.CheckBotIdleState()
 			and diffDistance <= deltaIdleDistance -- normally a bot gets stuck if it stopped moving.
 			then
 				botState.idleCount = botState.idleCount + 1
-				if bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE
+				if J.IsCore(bot) and DotaTime() > 8 * 60 and botState.idleCount >= 3
+					and not J.IsDefending(bot) and not J.IsRetreating(bot)
+					and not J.IsDoingRoshan(bot) and not J.IsDoingTormentor(bot)
+					and #J.GetEnemiesNearLoc(bot:GetLocation(), 1400) == 0 then
+					bot.ohaIdleRecoveryUntil = DotaTime() + 4
+				elseif bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE
 				or botMode == BOT_MODE_ITEM
 				or botMode == BOT_MODE_FARM then
 					local nActions = bot:NumQueuedActions()

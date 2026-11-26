@@ -406,18 +406,9 @@ end
 ____exports.RefreshCamp = function(bot)
     local camps = GetNeutralSpawners()
     local allCampList = {}
-    local botLevel = bot:GetLevel()
     for ____, aCamp in ipairs(__TS__ObjectValues(camps)) do
         local camp = aCamp
-        if (botLevel <= 7 or bot:GetAttackDamage() <= 80) and not ____exports.IsEnemyCamp(camp) and not ____exports.IsLargeCamp(camp) and not ____exports.IsAncientCamp(camp) then
-            allCampList[#allCampList + 1] = {idx = camp.idx, cattr = camp}
-        elseif botLevel <= 11 and not ____exports.IsEnemyCamp(camp) and not ____exports.IsAncientCamp(camp) then
-            allCampList[#allCampList + 1] = {idx = camp.idx, cattr = camp}
-        elseif botLevel <= 14 and not ____exports.IsEnemyCamp(camp) then
-            allCampList[#allCampList + 1] = {idx = camp.idx, cattr = camp}
-        else
-            allCampList[#allCampList + 1] = {idx = camp.idx, cattr = camp}
-        end
+        allCampList[#allCampList + 1] = {idx = camp.idx, cattr = camp}
     end
     return allCampList, #allCampList
 end
@@ -439,12 +430,14 @@ end
 ____exports.GetClosestNeutralSpwan = function(bot, availableCampList)
     local minDist = 15000
     local closestCamp = nil
+    local level = bot:GetLevel()
     for ____, camp in ipairs(availableCampList) do
-        local dist = GetUnitToLocationDistance(bot, camp.cattr.location)
-        if ____exports.IsEnemyCamp(camp) then
-            dist = dist * 1.5
-        end
-        if ____exports.IsTheClosestOne(bot, camp.cattr.location) and dist < minDist and (bot:GetLevel() >= 10 or not ____exports.IsAncientCamp(camp)) then
+        local data = camp.cattr
+        local enemy = ____exports.IsEnemyCamp(data)
+        local dist = GetUnitToLocationDistance(bot, data.location) * (enemy and 1.5 or 1)
+        if dist < minDist and (not enemy or level >= 15)
+            and (not ____exports.IsAncientCamp(data) or level >= 12)
+            and (not ____exports.IsLargeCamp(data) or level >= 8) then
             minDist = dist
             closestCamp = camp
         end
@@ -634,7 +627,7 @@ ____exports.UpdateAvailableCamp = function(bot, preferredCamp, availableCampList
         do
             local i = 0
             while i < #availableCampList do
-                if availableCampList[i + 1].cattr.location == preferredCamp.cattr.location or GetUnitToLocationDistance(bot, availableCampList[i + 1].cattr.location) < 500 then
+                if GetLocationToLocationDistance(availableCampList[i + 1].cattr.location, preferredCamp.cattr.location) < 32 then
                     __TS__ArraySplice(availableCampList, i, 1)
                     return availableCampList, nil
                 end

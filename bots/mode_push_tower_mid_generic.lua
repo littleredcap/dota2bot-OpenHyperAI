@@ -10,4 +10,4 @@ function GetDesire()
     return bot.PushLaneDesire[LANE_MID]
 end
 function Think() Push.PushThink(bot, LANE_MID) end
-function OnEnd() Push.CancelPushOrder(bot) end
+function OnEnd() Push.CancelPushOrder(bot, LANE_MID) end
