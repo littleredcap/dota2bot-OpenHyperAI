@@ -7,6 +7,7 @@ if GAMEMODE_ARDM == nil then GAMEMODE_ARDM = 20 end
 local Item = require( GetScriptDirectory()..'/FunLib/aba_item' )
 local Role = require( GetScriptDirectory()..'/FunLib/aba_role' )
 local J = require( GetScriptDirectory()..'/FunLib/jmz_func')
+local LaneSupply = require(GetScriptDirectory() .. '/FunLib/lane_supply')
 local Utils = require( GetScriptDirectory()..'/FunLib/utils')
 local AdvancedItemStrategy = require(GetScriptDirectory()..'/FunLib/advanced_item_strategy').AdvancedItemStrategy
 
@@ -61,7 +62,6 @@ local t3Check = -90
 bot.lastInvCheck = -90
 bot.fullInvCheck = -90
 bot.switchTime = 0
-bot.hasBuyClarity = false
 local lastBootsCheck = -90
 local buyBootsStatus = false
 local buyRD = false
@@ -771,128 +771,19 @@ function ItemPurchaseThink()
 		lastBootsCheck = currentTime
 	end
 
-	--买小净化
-	if J.GetMP(bot) < 0.3
-	and botDistanceFromFountain > 2000
-	and botCourierValue == 0
-	and GetItemStockCount('item_clarity') > 1
-	and Item.GetItemCharges(bot, 'item_clarity') <= 0
-	and botGold >= GetItemCost( "item_clarity" )
-	then
-		bot.hasBuyClarity = true
-		bot:ActionImmediate_PurchaseItem( "item_clarity" )
+	-- During laning, value the wave and delivery before spending on optional regeneration.
+	if bot.ohaLaneSupply or J.IsInLaningPhase(bot) then
+		if LaneSupply.Update(bot) then return end
+	elseif J.GetMP(bot) < 0.3 and botDistanceFromFountain > 2000 and botCourierValue == 0
+		and GetItemStockCount('item_clarity') > 1 and Item.GetItemCharges(bot, 'item_clarity') <= 0
+		and botGold >= GetItemCost('item_clarity') then
+		bot:ActionImmediate_PurchaseItem('item_clarity')
 	end
 
-	--辅助定位英雄购买辅助物品
-	if J.GetPosition(bot) >= 4
-	then
-		if currentTime > 30 and not bot.hasBuyClarity
-			and botGold >= GetItemCost( "item_clarity" )
-			and not Role.IsPvNMode()
-			and Utils.CountBackpackEmptySpace(bot) >= 2
-		then
-			bot.hasBuyClarity = true
-			bot:ActionImmediate_PurchaseItem( "item_clarity" )
-		elseif botLevel >= 5
-			and Role['invisEnemyExist'] == true
-			and buyBootsStatus == true
-			and botGold >= GetItemCost( "item_dust" )
-			and Item.GetEmptyInventoryAmount( bot ) >= 2
-			and Item.GetItemCharges( bot, "item_dust" ) <= 0
-			and botCourierValue == 0
-			and not J.HasItem(bot, 'item_ward_sentry')
-		then
-			bot:ActionImmediate_PurchaseItem( "item_dust" )
-		end
-	end
-
-	-- Init Healing Items in Lane; works for now
-	if J.IsInLaningPhase()
-	then
-		if botLevel < 6
-		and bot:IsAlive()
-		and botCourierValue == 0
-		and bot:FindItemSlot('item_flask') < 0
-		and bot:FindItemSlot('item_tango') < 0
-		and botDistanceFromFountain > 2000
-		and botStashValue == 0
-		and not bot:HasModifier('modifier_elixer_healing')
-		and not bot:HasModifier('modifier_filler_heal')
-		and not bot:HasModifier('modifier_flask_healing')
-		and not bot:HasModifier('modifier_fountain_aura_buff')
-		and not bot:HasModifier('modifier_juggernaut_healing_ward_heal')
-		and not bot:HasModifier('modifier_warlock_shadow_word')
-		and not IsThereHealingInStash(bot)
-		and Item.GetEmptyInventoryAmount(bot) >= 1
-		and J.GetHP(bot) < 0.5
-		then
-			local partner = J.GetLanePartner(bot)
-
-			if bot:GetHealthRegen() <= 10
-			then
-				if J.IsCore(bot)
-				then
-					if partner ~= nil
-					then
-						if partner:FindItemSlot('item_flask') < 0
-						and partner:FindItemSlot('item_tango') < 0
-						and Item.GetItemCharges(bot, 'item_flask') <= 0
-						and botGold >= GetItemCost('item_flask')
-						and GetItemStockCount('item_flask') > 1
-						then
-							bot:ActionImmediate_PurchaseItem('item_flask')
-						end
-					else
-						if Item.GetItemCharges(bot, 'item_flask') <= 0
-						and botGold >= GetItemCost('item_flask')
-						and GetItemStockCount('item_flask') > 1
-						and (not J.HasItem(bot, 'item_bottle')
-							or (J.HasItem(bot, 'item_bottle') and Item.GetItemCharges(bot, 'item_bottle') <= 0))
-						then
-							bot:ActionImmediate_PurchaseItem('item_flask')
-						end
-					end
-				else
-					if Item.GetItemCharges(bot, 'item_flask') <= 0
-					and botGold >= GetItemCost('item_flask')
-					and GetItemStockCount('item_flask') > 1
-					then
-						bot:ActionImmediate_PurchaseItem('item_flask')
-					end
-				end
-			else
-				if J.IsCore(bot)
-				then
-					if partner ~= nil
-					then
-						if partner:FindItemSlot('item_flask') < 0
-						and partner:FindItemSlot('item_tango') < 0
-						and partner ~= nil
-						and Item.GetItemCharges(bot, 'item_tango') <= 0
-						and botGold >= GetItemCost('item_tango')
-						and GetItemStockCount('item_flask') > 1
-						then
-							bot:ActionImmediate_PurchaseItem('item_tango')
-						end
-					else
-						if Item.GetItemCharges(bot, 'item_flask') <= 0
-						and GetItemStockCount('item_flask') > 1
-						and botGold >= GetItemCost('item_flask')
-						and (not J.HasItem(bot, 'item_bottle')
-							or (J.HasItem(bot, 'item_bottle') and Item.GetItemCharges(bot, 'item_bottle') <= 0))
-						then
-							bot:ActionImmediate_PurchaseItem('item_flask')
-						end
-					end
-				else
-					if Item.GetItemCharges(bot, 'item_tango') <= 0
-					and botGold >= GetItemCost('item_tango')
-					then
-						bot:ActionImmediate_PurchaseItem('item_tango')
-					end
-				end
-			end
-		end
+	if J.GetPosition(bot) >= 4 and botLevel >= 5 and Role['invisEnemyExist'] == true
+		and buyBootsStatus and botGold >= GetItemCost('item_dust') and Item.GetEmptyInventoryAmount(bot) >= 2
+		and Item.GetItemCharges(bot, 'item_dust') <= 0 and botCourierValue == 0 and not J.HasItem(bot, 'item_ward_sentry') then
+		bot:ActionImmediate_PurchaseItem('item_dust')
 	end
 
 	-- Observer and Sentry Wards
@@ -1221,25 +1112,6 @@ function SetPairedItems(itemList)
 	end
 end
 
-function IsThereHealingInStash(unit)
-	local amount = 0
-
-	for i = 9, 14
-	do
-		local item = unit:GetItemInSlot(i)
-		if item ~= nil
-		then
-			if string.find(item:GetName(), 'item_flask')
-			or string.find(item:GetName(), 'item_tango')
-			or string.find(item:GetName(), 'item_bottle')
-			then
-				amount = amount + 1
-			end
-		end
-	end
-
-	return amount > 0
-end
 
 X.ItemPurchaseThink = ItemPurchaseThink
 

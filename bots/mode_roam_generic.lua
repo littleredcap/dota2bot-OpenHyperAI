@@ -731,7 +731,7 @@ function ThinkGeneralRoaming()
 
 	if shouldGoBackToFountain then
 		if bot:HasModifier('modifier_fountain_aura_buff')
-		   or (J.GetHP(bot) > 0.8 and J.GetMP(bot) > 0.7) then
+		   or (J.GetHP(bot) > 0.8 and J.GetMP(bot) > 0.7) or J.GetLaningHoldTower(bot) then
 			shouldGoBackToFountain = false
 		end
 	end
@@ -775,7 +775,8 @@ function ThinkGeneralRoaming()
 
 	if J.GetModifierTime(bot, "modifier_flask_healing") >= 1 then
 		if #bot:GetNearbyHeroes(1000, true, BOT_MODE_NONE) >= 1 and J.GetHP(bot) < 0.8 then
-			bot:Action_MoveToLocation(J.GetTeamFountain())
+			local tower = J.GetLaningHoldTower(bot)
+			bot:Action_MoveToLocation(tower and J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300) or J.GetTeamFountain())
 			return
 		end
 	end
@@ -1438,11 +1439,11 @@ function ConsiderGeneralRoamingInConditions()
 		-- 状态不好 回泉水补给
 		if not bot:WasRecentlyDamagedByAnyHero(1.5)
 		and not J.HasHealingItem(bot)
-		and not botName == 'npc_dota_hero_huskar'
+		and botName ~= 'npc_dota_hero_huskar'
 		and (
 			(shouldGoBackToFountain and not IsInHealthyState())
 			or (J.GetHP(bot) < 0.22 or (J.GetHP(bot) < 0.3 and J.GetMP(bot) < 0.22))
-		) then
+		) and not J.GetLaningHoldTower(bot) then
 			shouldGoBackToFountain = true
 			return BOT_ACTION_DESIRE_ABSOLUTE * 1.5
 		end

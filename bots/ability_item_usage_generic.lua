@@ -566,10 +566,10 @@ local function CourierUsageComplement()
 		return
 	end
 
-	if bot.theCourier == nil
+	if bot.theCourier == nil or bot.theCourier:IsNull()
 	then
 		bot.theCourier = X.GetBotCourier( bot )
-		return
+		if bot.theCourier == nil then return end
 	end
 
 	--------* * * * * * * ----------------* * * * * * * ----------------* * * * * * * --------
@@ -588,6 +588,7 @@ local function CourierUsageComplement()
 
 	if X.IsCourierTargetedByUnit( npcCourier )
 	then
+		bot.ohaCourierUnsafeUntil = currentTime + protectCourierCD
 		if currentTime > nCourierReturnTime + protectCourierCD
 		then
 			nCourierReturnTime = currentTime
@@ -602,8 +603,8 @@ local function CourierUsageComplement()
 				bot:ActionImmediate_Courier( npcCourier, COURIER_ACTION_BURST )
 			end
 
-			return
 		end
+		return
 	end
 
 	if bot.SShopUser
@@ -616,6 +617,17 @@ local function CourierUsageComplement()
 	end
 
 
+	if bot.ohaLaneSupply then
+		local supply = require(GetScriptDirectory() .. '/FunLib/lane_supply')
+		local action, handling = supply.CourierAction(bot, npcCourier, nCourierState)
+		if handling then
+			if action and currentTime > nCourierLastActionTime + useCourierCD then
+				bot:ActionImmediate_Courier(npcCourier, action)
+				nCourierLastActionTime = currentTime
+			end
+			return
+		end
+	end
 	if ( nCourierState == COURIER_STATE_RETURNING_TO_BASE
 		or nCourierState == COURIER_STATE_AT_BASE
 		or nCourierState == COURIER_STATE_IDLE )
@@ -704,10 +716,10 @@ function X.GetBotCourier( bot )
 
 	local nPlayerID = bot:GetPlayerID()
 
-	for nCourierID = 0, 4
+	for nCourierID = 0, GetNumCouriers() - 1
 	do
 		local courier = GetCourier( nCourierID )
-		if courier:GetPlayerID() == nPlayerID
+		if courier ~= nil and not courier:IsNull() and courier:GetPlayerID() == nPlayerID
 		then
 			return courier
 		end
@@ -1926,6 +1938,7 @@ X.ConsiderItemDesire["item_clarity"] = function( hItem )
 		and not bot:HasModifier( "modifier_clarity_potion" )
 		and #nInRangeEnmyList == 0
 		and not bot:WasRecentlyDamagedByAnyHero( 4.0 )
+		and not bot:WasRecentlyDamagedByTower(3)
 	then
 		hEffectTarget = bot
 		sCastMotive = '净化自己'
@@ -1945,7 +1958,10 @@ X.ConsiderItemDesire["item_clarity"] = function( hItem )
 				and not npcAlly:IsChanneling()
 				and not npcAlly:HasModifier( "modifier_clarity_potion" )
 				and not npcAlly:WasRecentlyDamagedByAnyHero( 4.0 )
-				and npcAlly:GetMaxMana() - npcAlly:GetMana() > 350 
+				and not npcAlly:WasRecentlyDamagedByTower(3)
+				and #npcAlly:GetNearbyHeroes(800, true, BOT_MODE_NONE) == 0
+				and (npcAlly:GetMaxMana() - npcAlly:GetMana() > 350
+					or (J.IsInLaningPhase(npcAlly) and J.GetLaningManaShortfall(npcAlly, 5) ~= nil))
 			then
 				if( npcAlly:GetMana() < nNeedManaAllyMana )
 				then
@@ -2365,7 +2381,7 @@ end
 --大药
 X.ConsiderItemDesire["item_flask"] = function( hItem )
 
-	if bot:DistanceFromFountain() < 3000 then return BOT_ACTION_DESIRE_NONE end
+	if bot:DistanceFromFountain() < 2300 then return BOT_ACTION_DESIRE_NONE end
 
 	local nCastRange = 900
 	local sCastType = 'unit'
@@ -2374,9 +2390,12 @@ X.ConsiderItemDesire["item_flask"] = function( hItem )
 	local nInRangeEnmyList = J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE )
 
 
-	if bot:OriginalGetMaxHealth() - bot:OriginalGetHealth() > 500
+	local laning = J.IsInLaningPhase(bot)
+	local selfMissing = bot:OriginalGetMaxHealth() - bot:OriginalGetHealth()
+	if (selfMissing > 500 or (laning and J.GetHP(bot) < 0.65 and selfMissing >= 200))
 		and #nInRangeEnmyList == 0
 		and not bot:WasRecentlyDamagedByAnyHero( 2.2 )
+		and not bot:WasRecentlyDamagedByTower(2.2)
 		and not bot:HasModifier( "modifier_filler_heal" )
 		and not bot:HasModifier( "modifier_elixer_healing" )
 		and not bot:HasModifier( "modifier_flask_healing" )
@@ -2400,7 +2419,10 @@ X.ConsiderItemDesire["item_flask"] = function( hItem )
 			and not npcAlly:WasRecentlyDamagedByAnyHero( 3.0 )
 			and not npcAlly:IsIllusion()
 			and not npcAlly:IsChanneling()
-			and npcAlly:OriginalGetMaxHealth() - npcAlly:OriginalGetHealth() > 550 
+			and (npcAlly:OriginalGetMaxHealth() - npcAlly:OriginalGetHealth() > 550
+				or (laning and J.GetHP(npcAlly) < 0.55 and npcAlly:OriginalGetMaxHealth() - npcAlly:OriginalGetHealth() >= 250))
+			and not npcAlly:WasRecentlyDamagedByTower(3)
+			and #npcAlly:GetNearbyHeroes(800, true, BOT_MODE_NONE) == 0
 		then
 			if( npcAlly:OriginalGetHealth() < nNeedHealAllyHealth )
 			then
@@ -3122,6 +3144,12 @@ X.ConsiderItemDesire['item_lotus_orb'] = function(item)
     return BOT_ACTION_DESIRE_NONE
 end
 
+local function ShouldSpendLaneStick(item)
+	if item:GetCurrentCharges() < 6 or not J.IsInLaningPhase(bot) then return false end
+	return (J.CanRecoverWithLaneStick(bot, item, true) or J.CanRecoverWithLaneStick(bot, item, false))
+		and J.GetSafeLaneSupplyTower(bot) ~= nil
+end
+
 --魔棒
 X.ConsiderItemDesire["item_magic_stick"] = function( hItem )
 
@@ -3136,6 +3164,10 @@ X.ConsiderItemDesire["item_magic_stick"] = function( hItem )
 	local nHPrate = bot:GetHealth() / bot:GetMaxHealth()
 	local nMPrate = bot:GetMana() / bot:GetMaxMana()
 	local nCharges = hItem:GetCurrentCharges()
+
+	if nEnemyCount == 0 and ShouldSpendLaneStick(hItem) then
+		return BOT_ACTION_DESIRE_HIGH, bot, sCastType, '用魔棒恢复以继续对线'
+	end
 
 	if ( nHPrate < 0.5 or nMPrate < 0.3 ) and nEnemyCount >= 1 and nCharges >= 1
 	then
@@ -3181,6 +3213,9 @@ X.ConsiderItemDesire["item_magic_wand"] = function( hItem )
 	local nLostHP = bot:GetMaxHealth() - bot:GetHealth()
 	local nLostMP = bot:GetMaxMana() - bot:GetMana()
 	local nCharges = hItem:GetCurrentCharges()
+	if nEnemyCount == 0 and hItem:GetName() == 'item_magic_wand' and ShouldSpendLaneStick(hItem) then
+		return BOT_ACTION_DESIRE_HIGH, bot, sCastType, '用魔杖恢复以继续对线'
+	end
 
 	if ( ( nHPrate < 0.4 or nMPrate < 0.3 ) and nEnemyCount >= 1 and nCharges >= 1 )
 	then
@@ -4503,7 +4538,7 @@ X.ConsiderItemDesire["item_tango"] = function( hItem )
 			and DotaTime() > 10
 			and DotaTime() > J.Role['fLastGiveTangoTime'] + 40.0
 		then
-			local hAllyList = J.GetNearbyHeroes(bot, 800, false, BOT_MODE_NONE )
+			local hAllyList = J.GetNearbyHeroes(bot, nCastRange, false, BOT_MODE_NONE )
 			for _, npcAlly in pairs( hAllyList )
 			do
 				if npcAlly ~= bot
@@ -4517,7 +4552,7 @@ X.ConsiderItemDesire["item_tango"] = function( hItem )
 						and not J.IsMeepoClone(bot)
 						and not J.IsMeepoClone(npcAlly)
 						and J.Item.GetItemCount( npcAlly, "item_tango_single" ) == 0
-						and J.Item.GetEmptyInventoryAmount( npcAlly ) >= 4
+						and J.Item.GetEmptyInventoryAmount( npcAlly ) >= 1
 					then
 						J.Role['fLastGiveTangoTime'] = DotaTime()
 						hEffectTarget = npcAlly
@@ -4537,7 +4572,7 @@ end
 
 X.ConsiderItemDesire["item_tango_single"] = function( hItem )
 
-	if bot:DistanceFromFountain() < 3300 or bot:HasModifier( "modifier_tango_heal" ) then return 0 end
+	if bot:DistanceFromFountain() < 2300 or bot:HasModifier( "modifier_tango_heal" ) then return 0 end
 
 	local nCastRange = 300 + aetherRange
 	local sCastType = 'tree'
@@ -4978,6 +5013,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	and (bot:GetActiveMode() ~= BOT_MODE_PUSH_TOWER_TOP or bot:GetActiveMode() ~= BOT_MODE_PUSH_TOWER_MID or bot:GetActiveMode() ~= BOT_MODE_PUSH_TOWER_BOT or bot:GetActiveMode() ~= BOT_MODE_ATTACK)
 	and not J.IsInTeamFight(bot, 1000)
 	and nEnemyCount == 0
+	and J.GetLaningHoldTower(bot) == nil
 	then
 		hEffectTarget = J.GetTeamFountain()
 		sCastMotive = '撤退:1'
@@ -5187,6 +5223,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		and nModeDesire >= BOT_MODE_DESIRE_MODERATE
 		and bot:GetLevel() >= 3
 		and not bot:HasModifier( "modifier_arc_warden_tempest_double" )
+		and J.GetLaningHoldTower(bot) == nil
 	then
 
 		--第一种情况:无敌人无大药回家恢复

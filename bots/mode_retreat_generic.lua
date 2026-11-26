@@ -250,7 +250,7 @@ function GetDesireHelper()
         end
     end
 
-    if ((botMP < 0.4) and bot:DistanceFromFountain() <= 4000 and not bTeamFight) then
+    if botMP < 0.4 and bot:DistanceFromFountain() <= 4000 and not bTeamFight and J.GetLaningHoldTower(bot) == nil then
         return RemapValClamped(botHP, 0.9, 0.2, BOT_MODE_DESIRE_HIGH, BOT_MODE_DESIRE_VERYHIGH)
     end
 
@@ -302,7 +302,7 @@ function GetDesireHelper()
 
     -- try complete items
     local nCompletItemDesire = X.ConsiderCompleteItem()
-    if nCompletItemDesire > 0 then
+    if nCompletItemDesire > 0 and J.GetLaningHoldTower(bot) == nil then
         return nCompletItemDesire
     end
 
@@ -400,6 +400,7 @@ function GetDesireHelper()
     -- nDesire = nDesire + X.GetUnitDesire(1200) -- (left commented as original)
     nDesire = nDesire + X.RetreatWhenTowerTargetedDesire()
 
+    if J.GetLaningHoldTower(bot) ~= nil then return math.min(nDesire, BOT_MODE_DESIRE_MODERATE) end
     return Min(nDesire, 1.0)
 end
 

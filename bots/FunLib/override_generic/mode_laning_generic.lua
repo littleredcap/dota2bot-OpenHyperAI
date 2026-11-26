@@ -13,7 +13,6 @@ function X.OnEnd() end
 
 local assignedLane
 local tangoDesire, tangoTarget, tangoSlot
-local fNextMovementTime = 0
 
 function X.GetDesire()
 	tangoDesire, tangoTarget = ConsiderTango()
@@ -82,12 +81,17 @@ function X.Think()
 		return
 	end
 
+
+	local attackTarget = bot:GetAttackTarget()
+	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
+
 	-- Drop tower aggro (reference pattern)
 	if bot:WasRecentlyDamagedByTower(1.0) and #nEnemyCreeps > 0 then
 		local nEnemyTowersClose = bot:GetNearbyTowers(750, true)
 		if #nEnemyTowersClose > 0 then
 			for _, creep in pairs(nEnemyCreeps) do
-				if J.IsValid(creep) and GetUnitToUnitDistance(creep, nEnemyTowersClose[1]) < 700 then
+				if J.IsValid(creep) and GetUnitToUnitDistance(creep, nEnemyTowersClose[1]) < 700
+					and J.CanSupportTakeLaneLastHit(bot, creep) then
 					bot:Action_AttackUnit(creep, true)
 					return
 				end
@@ -104,40 +108,41 @@ function X.Think()
 		end
 	end
 
-	-- Last-hit with support suppression (reference: lane partner check)
-	local hitCreep = GetBestLastHitCreep(nEnemyCreeps)
-	if J.IsValid(hitCreep) then
-		local nLanePartner = J.GetLanePartner(bot)
-		-- Support defers to core lane partner if partner is alive and nearby
-		if nLanePartner == nil
-		or J.IsCore(bot)
-		or (not J.IsCore(bot) and J.IsCore(nLanePartner)
-			and (not nLanePartner:IsAlive() or not J.IsInRange(bot, nLanePartner, 800)))
-		then
-			if GetUnitToUnitDistance(bot, hitCreep) > botAttackRange then
-				bot:Action_MoveToUnit(hitCreep)
-			else
-				bot:Action_AttackUnit(hitCreep, true)
-			end
-			return
-		end
-	end
-
-	-- Deny
-	local denyCreep = GetBestDenyCreep(nAllyCreeps)
-	if J.IsValid(denyCreep) then
-		bot:Action_AttackUnit(denyCreep, true)
+	local hitCreep, moveToCreep, reserve = J.GetLaningLastHitTarget(bot, nEnemyCreeps, tEnemyTowers[1],
+		J.GetLaningAttackDamage(bot), tEnemyHeroes)
+	if hitCreep ~= nil and not moveToCreep then
+		J.IssueLaningAttack(bot, hitCreep)
 		return
 	end
 
-	-- Support harass: only when few enemy creeps nearby (low aggro risk)
-	local nCloseEnemyCreeps = bot:GetNearbyLaneCreeps(600, true)
-	if #nCloseEnemyCreeps <= 1 and not J.IsCore(bot) then
-		local harassTarget = GetHarassTarget(tEnemyHeroes)
-		if J.IsValidHero(harassTarget) then
-			bot:Action_AttackUnit(harassTarget, true)
+	-- Deny
+	local denyCreep, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, tEnemyTowers[1], tEnemyHeroes)
+	if J.IsValid(denyCreep) then
+		J.IssueLaningAttack(bot, denyCreep)
+		return
+	end
+
+	if reserve or reserveDeny then
+		J.HoldLaningAttack(bot, attackTarget)
+		return
+	end
+
+	if moveToCreep then
+		if botAssignedLane ~= LANE_MID or bot:GetAttackRange() < 400 then
+			bot:Action_MoveToUnit(hitCreep)
 			return
 		end
+		local firingPosition = J.GetRangedMidLanePosition(bot, botAssignedLane, {hitCreep}, tEnemyTowers[1], tEnemyHeroes)
+		if firingPosition ~= nil then
+			bot:Action_MoveToLocation(firingPosition)
+			return
+		end
+	end
+
+	local harassTarget = J.GetLaningHarassTarget(bot, tEnemyHeroes, tEnemyTowers[1], #bot:GetNearbyLaneCreeps(600, true))
+	if harassTarget ~= nil then
+		bot:Action_AttackUnit(harassTarget, true)
+		return
 	end
 
 	-- Positioning
@@ -146,70 +151,22 @@ function X.Think()
 		nFurthestEnemyAttackRange = math.max(botAttackRange, 330)
 	end
 
-	local fLaneFrontAmount = GetLaneFrontAmount(GetTeam(), botAssignedLane, false)
-	local fLaneFrontAmount_enemy = GetLaneFrontAmount(GetOpposingTeam(), botAssignedLane, false)
-
-	local target_loc = GetLaneFrontLocation(GetTeam(), botAssignedLane, -nFurthestEnemyAttackRange)
-	if fLaneFrontAmount_enemy < fLaneFrontAmount then
-		target_loc = GetLaneFrontLocation(GetOpposingTeam(), botAssignedLane, -nFurthestEnemyAttackRange)
+	if J.IsCore(bot) and #nAllyCreeps > 0 then
+		nFurthestEnemyAttackRange = math.max(botAttackRange, 280)
 	end
+	local target_loc = J.GetRangedMidLanePosition(bot, botAssignedLane, nEnemyCreeps, tEnemyTowers[1], tEnemyHeroes)
+		or GetLaneFrontLocation(GetTeam(), botAssignedLane, -nFurthestEnemyAttackRange)
 
-	if DotaTime() >= fNextMovementTime then
-		bot:Action_MoveToLocation(target_loc + RandomVector(300))
-		fNextMovementTime = DotaTime() + RandomFloat(0.05, 0.2)
+	if GetUnitToLocationDistance(bot, target_loc) > 100 then
+		bot:Action_MoveToLocation(target_loc)
+	else
+		J.HoldLaningAttack(bot, attackTarget)
 	end
 end
 
 --------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------
-function GetBestLastHitCreep(hCreepList)
-	local attackDamage = bot:GetAttackDamage()
-	if bot:GetItemSlotType(bot:FindItemSlot("item_quelling_blade")) == ITEM_SLOT_TYPE_MAIN then
-		if bot:GetAttackRange() > 310 or bot:GetUnitName() == "npc_dota_hero_templar_assassin" then
-			attackDamage = attackDamage + 4
-		else
-			attackDamage = attackDamage + 8
-		end
-	end
-
-	for _, creep in pairs(hCreepList) do
-		if J.IsValid(creep) and J.CanBeAttacked(creep) then
-			local nDelay = J.GetAttackProDelayTime(bot, creep)
-			if J.WillKillTarget(creep, attackDamage, DAMAGE_TYPE_PHYSICAL, nDelay) then
-				return creep
-			end
-		end
-	end
-	return nil
-end
-
-function GetBestDenyCreep(hCreepList)
-	for _, creep in pairs(hCreepList) do
-		if J.IsValid(creep)
-		and J.GetHP(creep) < 0.49
-		and J.CanBeAttacked(creep)
-		and creep:GetHealth() <= bot:GetAttackDamage()
-		then
-			return creep
-		end
-	end
-	return nil
-end
-
-function GetHarassTarget(hEnemyList)
-	for _, enemyHero in pairs(hEnemyList) do
-		if J.IsValidHero(enemyHero)
-		and J.IsInRange(bot, enemyHero, bot:GetAttackRange())
-		and J.CanBeAttacked(enemyHero)
-		and not J.IsSuspiciousIllusion(enemyHero)
-		then
-			return enemyHero
-		end
-	end
-	return nil
-end
-
 function GetFurthestEnemyAttackRange(enemyList)
 	local attackRange = 0
 	for _, enemy in pairs(enemyList) do

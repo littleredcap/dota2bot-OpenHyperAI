@@ -17,10 +17,11 @@ local nFurthestEnemyAttackRange = 0
 local nInRangeEnemy = nil
 local botAssignedLane = nil
 local botAttackRange = bot:GetAttackRange()
-local attackDamage = bot:GetAttackDamage()
-local GetBestLastHitCreep, GetBestDenyCreep, GetFurthestEnemyAttackRange
+local GetFurthestEnemyAttackRange
 local nH, enemyBots = J.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam())
 local teamHumans, teamBots = J.Utils.NumHumanBotPlayersInTeam(GetTeam())
+local firstWaveReached = false
+local laneTierOne = {[LANE_TOP] = TOWER_TOP_1, [LANE_MID] = TOWER_MID_1, [LANE_BOT] = TOWER_BOT_1}
 
 -- Announcer state
 local hasPickedOneAnnouncer      = false
@@ -30,6 +31,21 @@ local announcementGapSeconds     = 6
 local isChangePosMessageDone     = false
 
 if Utils.BuggyHeroesDueToValveTooLazy[botName] then local_mode_laning_generic = dofile( GetScriptDirectory().."/FunLib/override_generic/mode_laning_generic" ) end
+
+local function GetOpeningLaneDestination(lane, enemies)
+	local now = DotaTime()
+	if firstWaveReached or now < -5 or now > 70 or not J.IsCore(bot)
+		or GetGameMode() == GAMEMODE_MO or GetGameMode() == GAMEMODE_1V1MID then return nil end
+	local towerId = laneTierOne[lane]
+	local tower = towerId ~= nil and GetTower(GetTeam(), towerId) or nil
+	if not J.IsValidBuilding(tower) then return nil end
+	if J.IsInRange(bot, tower, 850) then
+		firstWaveReached = true
+		return nil
+	end
+	if J.IsLaningUnderPressure(bot, enemies, nil) then return nil end
+	return tower:GetLocation()
+end
 
 function GetDesire()
 	PickOneAnnouncer()
@@ -41,7 +57,7 @@ function GetDesire()
 
 	botAttackRange = bot:GetAttackRange()
 	nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
-	nEnemyCreeps = bot:GetNearbyLaneCreeps(800, true)
+	nEnemyCreeps = bot:GetNearbyLaneCreeps(math.min(1600, math.max(800, bot:GetAttackRange() + 300)), true)
 	nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
 	nFurthestEnemyAttackRange = GetFurthestEnemyAttackRange(nInRangeEnemy)
 	if local_mode_laning_generic then
@@ -49,15 +65,10 @@ function GetDesire()
 	else
 		botAssignedLane = bot:GetAssignedLane()
 	end
-	attackDamage = bot:GetAttackDamage()
-	if bot:GetItemSlotType(bot:FindItemSlot("item_quelling_blade")) == ITEM_SLOT_TYPE_MAIN then
-		if bot:GetAttackRange() > 310 or bot:GetUnitName() == "npc_dota_hero_templar_assassin" then
-			attackDamage = attackDamage + 4
-		else
-			attackDamage = attackDamage + 8
-		end
-	end
+	local enemyTower = bot:GetNearbyTowers(1200, true)[1]
+	local underPressure = J.IsLaningUnderPressure(bot, nInRangeEnemy, enemyTower)
 
+	if GetOpeningLaneDestination(botAssignedLane, nInRangeEnemy) ~= nil then return 0.72 end
 	if GetGameMode() == 23 then currentTime = currentTime * 1.65 end
 	if currentTime < 0 then return BOT_ACTION_DESIRE_NONE end
 
@@ -74,12 +85,13 @@ function GetDesire()
 	if J.GetEnemiesAroundAncient(bot, 3200) > 0 then
 		return BOT_MODE_DESIRE_NONE
 	end
+	if J.GetLaningHoldTower(bot) ~= nil then return 0.82 end
 
 	-- if J.GetDistanceFromAncient( bot, true ) < 6900 then
 	-- 	return BOT_MODE_DESIRE_NONE
 	-- end
 
-	if bot:WasRecentlyDamagedByAnyHero(5)
+	if underPressure and bot:WasRecentlyDamagedByAnyHero(5)
 	and #J.Utils.GetLastSeenEnemyIdsNearLocation(bot:GetLocation(), 800) > 0 then
 		local nLaneFrontLocation = GetLaneFrontLocation(GetTeam(), bot:GetAssignedLane(), 0)
 		local nDistFromLane = GetUnitToLocationDistance(bot, nLaneFrontLocation)
@@ -96,16 +108,16 @@ function GetDesire()
 	-- 	return 0.2
 	-- end
 
-	if local_mode_laning_generic or (J.GetPosition(bot) == 1 and J.IsPosxHuman(5)) then
-		-- last hit
-		if J.IsInLaningPhase() and not J.IsLaningUnderPressure(bot, nInRangeEnemy, bot:GetNearbyTowers(1200, true)[1]) then
-			local hitCreep, moveToCreep = GetBestLastHitCreep(nEnemyCreeps)
-			if J.IsValid(hitCreep) and not moveToCreep then
-				if J.GetPosition(bot) <= 2 or not J.IsThereNonSelfCoreNearby(700) -- this is for e.g lone druid bear as pos1-2 with core LD nearby to do last hit.
-				then
-					return 0.9
-				end
-			end
+	if J.IsInLaningPhase() and not underPressure then
+		local hitCreep, moveToCreep, reserve = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
+			J.GetLaningAttackDamage(bot), nInRangeEnemy)
+		if J.IsValid(hitCreep) and not moveToCreep and J.IsInRange(bot, hitCreep, botAttackRange + 100) then
+			if J.GetPosition(bot) <= 3 then return 0.9 end
+			if GetUnitToUnitDistance(bot, hitCreep) <= botAttackRange then return 0.55 end
+		end
+		if botAssignedLane == LANE_MID and J.IsCore(bot) then
+			local deny, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
+			if deny ~= nil or reserve or reserveDeny then return 0.7 end
 		end
 	end
 	if local_mode_laning_generic and local_mode_laning_generic.GetDesire ~= nil then return local_mode_laning_generic.GetDesire() end
@@ -137,94 +149,106 @@ function GetFurthestEnemyAttackRange(enemyList)
 	return attackRange
 end
 
-function GetBestLastHitCreep(hCreepList)
-	local dmgDelta = attackDamage * 0.7
-
-	local moveToCreep = nil
-	for _, creep in pairs(hCreepList) do
-		if J.IsValid(creep) and J.CanBeAttacked(creep) then
-			local nDelay = J.GetAttackProDelayTime(bot, creep)
-			if J.WillKillTarget(creep, attackDamage, DAMAGE_TYPE_PHYSICAL, nDelay) then
-				return creep, false
+function Think()
+	if not bot:IsAlive() or J.CanNotUseAction(bot) or bot:IsDisarmed()
+		or bot:IsUsingAbility() or bot:IsChanneling() then return end
+	nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
+	local opening = GetOpeningLaneDestination(botAssignedLane or bot:GetAssignedLane(), nInRangeEnemy)
+	if opening ~= nil then
+		bot:Action_MoveToLocation(opening)
+		return
+	end
+	local holdTower = J.GetLaningHoldTower(bot)
+	if holdTower ~= nil then
+		local wave, covered = J.GetTowerCoveredLaneCreeps(bot, holdTower, bot:GetNearbyLaneCreeps(1000, true), nInRangeEnemy)
+		local current = bot:GetAttackTarget()
+		local hold = J.AdjustLocationWithOffsetTowardsFountain(holdTower:GetLocation(), 300)
+		if #wave > 0 and not J.IsLaningUnderPressure(bot, nInRangeEnemy, nil) then
+			if J.IsFinishingLaningAttack(bot, current) then
+				for _, creep in ipairs(wave) do if current == creep then return end end
 			end
-			if J.WillKillTarget(creep, attackDamage + dmgDelta, DAMAGE_TYPE_PHYSICAL, nDelay) then
-				moveToCreep = creep
-			end
-		end
-	end
-	if moveToCreep then
-		return moveToCreep, true
-	end
-
-	return nil
-end
-
-function GetBestDenyCreep(hCreepList)
-	for _, creep in pairs(hCreepList)
-	do
-		if J.IsValid(creep)
-		and J.GetHP(creep) < 0.49
-		and J.CanBeAttacked(creep)
-		and creep:GetHealth() <= bot:GetAttackDamage()
-		then
-			return creep
-		end
-	end
-
-	return nil
-end
-
-if local_mode_laning_generic or (J.GetPosition(bot) == 1 and J.IsPosxHuman(5)) then
-	function Think()
-		if local_mode_laning_generic then
-			local_mode_laning_generic.Think()
-			return
-		end
-		if not bot:IsAlive() or J.CanNotUseAction(bot) or bot:IsDisarmed() then return end
-		nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
-		if J.IsLaningUnderPressure(bot, nInRangeEnemy, bot:GetNearbyTowers(1200, true)[1]) then
-			bot:Action_MoveToLocation(GetLaneFrontLocation(GetTeam(), botAssignedLane or bot:GetAssignedLane(), -1200))
-			return
-		end
-		nFurthestEnemyAttackRange = GetFurthestEnemyAttackRange(nInRangeEnemy)
-		nEnemyCreeps = bot:GetNearbyLaneCreeps(800, true)
-		nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
-		botAssignedLane = bot:GetAssignedLane()
-		local hitCreep, moveToCreep = GetBestLastHitCreep(nEnemyCreeps)
-		if J.IsValid(hitCreep) then
-			if J.GetPosition(bot) <= 2 or not J.IsThereNonSelfCoreNearby(700)
-			then
-				if GetUnitToUnitDistance(bot, hitCreep) > botAttackRange
-				or (moveToCreep and GetUnitToUnitDistance(bot, hitCreep) > botAttackRange * 0.8) then
-					bot:Action_MoveToUnit(hitCreep)
-					return
-				elseif not moveToCreep then
-					bot:SetTarget(hitCreep)
-					bot:Action_AttackUnit(hitCreep, true)
-					return
-				end
+			local creep, approach = J.GetLaningLastHitTarget(bot, wave, nil, J.GetLaningAttackDamage(bot), nInRangeEnemy, true)
+			if creep ~= nil and not approach then J.IssueLaningAttack(bot, creep); return end
+			if approach and #J.GetEnemiesNearLoc(creep:GetLocation(), 750) == 0 then
+				bot:Action_MoveToUnit(creep)
 				return
 			end
+			if covered then
+				local point = J.AdjustLocationWithOffsetTowardsFountain(wave[1]:GetLocation(), math.max(240, bot:GetAttackRange() - 50))
+				if IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 900) == 0 then hold = point end
+			end
 		end
+		if GetUnitToLocationDistance(bot, hold) > 90 then
+			bot:Action_MoveToLocation(hold)
+		elseif J.IsValid(current) then
+			bot:Action_ClearActions(true)
+		end
+		return
+	end
+	if local_mode_laning_generic then
+		local_mode_laning_generic.Think()
+		return
+	end
+	local enemyTower = bot:GetNearbyTowers(1200, true)[1]
+	if J.IsLaningUnderPressure(bot, nInRangeEnemy, enemyTower) then
+		bot:Action_MoveToLocation(GetLaneFrontLocation(GetTeam(), botAssignedLane or bot:GetAssignedLane(), -1200))
+		return
+	end
 
-		local denyCreep = GetBestDenyCreep(nAllyCreeps)
-		if J.IsValid(denyCreep) then
-			bot:SetTarget(denyCreep)
-			bot:Action_AttackUnit(denyCreep, true)
+	local attackTarget = bot:GetAttackTarget()
+	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
+	nFurthestEnemyAttackRange = GetFurthestEnemyAttackRange(nInRangeEnemy)
+	nEnemyCreeps = bot:GetNearbyLaneCreeps(math.min(1600, math.max(800, bot:GetAttackRange() + 300)), true)
+	nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
+	botAssignedLane = bot:GetAssignedLane()
+	local hitCreep, moveToCreep, reserve = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
+		J.GetLaningAttackDamage(bot), nInRangeEnemy)
+	if hitCreep ~= nil and not moveToCreep then
+		bot:SetTarget(hitCreep)
+		J.IssueLaningAttack(bot, hitCreep)
+		return
+	end
+
+	local denyCreep, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
+	if J.IsValid(denyCreep) then
+		bot:SetTarget(denyCreep)
+		J.IssueLaningAttack(bot, denyCreep)
+		return
+	end
+
+	if reserve or reserveDeny then
+		J.HoldLaningAttack(bot, attackTarget)
+		return
+	end
+
+	if moveToCreep then
+		if botAssignedLane ~= LANE_MID or bot:GetAttackRange() < 400 then
+			bot:Action_MoveToUnit(hitCreep)
 			return
 		end
-
-		local fLaneFrontAmount = GetLaneFrontAmount(GetTeam(), botAssignedLane, false)
-		local fLaneFrontAmount_enemy = GetLaneFrontAmount(GetOpposingTeam(), botAssignedLane, false)
-
-		local nLongestAttackRange = math.max(botAttackRange, 250, nFurthestEnemyAttackRange)
-
-		local target_loc = GetLaneFrontLocation(GetTeam(), botAssignedLane, -nLongestAttackRange)
-		if fLaneFrontAmount_enemy < fLaneFrontAmount then
-			target_loc = GetLaneFrontLocation(GetOpposingTeam(), botAssignedLane, -nLongestAttackRange)
+		local firingPosition = J.GetRangedMidLanePosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy)
+		if firingPosition ~= nil then
+			bot:Action_MoveToLocation(firingPosition)
+			return
 		end
+	end
 
-		bot:Action_MoveToLocation(target_loc + RandomVector(50))
+	local harassTarget = J.GetLaningHarassTarget(bot, nInRangeEnemy, enemyTower, #bot:GetNearbyLaneCreeps(600, true))
+	if harassTarget ~= nil then
+		bot:Action_AttackUnit(harassTarget, true)
+		return
+	end
+
+	local nLongestAttackRange = math.max(botAttackRange, 250, nFurthestEnemyAttackRange)
+	if J.IsCore(bot) and #nAllyCreeps > 0 then
+		nLongestAttackRange = math.max(botAttackRange, 280)
+	end
+	local target_loc = J.GetRangedMidLanePosition(bot, botAssignedLane, nEnemyCreeps, enemyTower, nInRangeEnemy)
+		or GetLaneFrontLocation(GetTeam(), botAssignedLane, -nLongestAttackRange)
+	if GetUnitToLocationDistance(bot, target_loc) > 100 then
+		bot:Action_MoveToLocation(target_loc)
+	else
+		J.HoldLaningAttack(bot, attackTarget)
 	end
 end
 
