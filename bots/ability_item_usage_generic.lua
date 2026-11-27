@@ -8351,6 +8351,8 @@ local function UseGlyph()
 				return
 			end
 			local fraction = tower:GetHealth() / tower:GetMaxHealth()
+			local lanes = {LANE_TOP, LANE_MID, LANE_BOT}
+			local threat = J.GetOuterTowerThreat(tower, lanes[(index - 1) % 3 + 1])
 			local contestCount, lateETA, needed = 0, 0, false
 			for _, ally in ipairs(J.GetAlliesNearLoc(tower:GetLocation(), 24000)) do
 				local defense = ally._defend
@@ -8363,15 +8365,14 @@ local function UseGlyph()
 						if defense.waveClearGather then
 							contestCount, lateETA = contestCount + 1, math.max(lateETA, eta)
 							needed = needed or defense.waveClearNeedsGlyph
-						elseif fraction < 0.50 then
+						elseif fraction < 0.50 or threat.count >= 3 and threat.damageRate > 0
+							and tower:GetHealth() / threat.damageRate <= eta + 3 then
 							coverOuter = true
 						end
 					end
 				end
 			end
 			if contestCount >= 3 then
-				local lanes = {LANE_TOP, LANE_MID, LANE_BOT}
-				local threat = J.GetOuterTowerThreat(tower, lanes[(index - 1) % 3 + 1])
 				if contestCount >= threat.count and (needed or fraction < 0.45
 					or threat.damageRate > 0 and tower:GetHealth() / threat.damageRate <= lateETA + 2) then coverOuter = true end
 			end

@@ -177,12 +177,13 @@ local glyphBot = {
 }
 local roster = {glyphBot, glyphBot, glyphBot, glyphBot}
 local ancientHP, tierOne, clearers, wave, teleports = 40, nil, {}, {}, {}
+local towerHP, damageRate = 48, 10
 local ancient = {GetHealth = function() return ancientHP end, GetMaxHealth = function() return 100 end}
 local env = setmetatable({
     bot = glyphBot,
     X = {IsTargetedByEnemy = function(building) return building == ancient end},
     J = {GetAlliesNearLoc = function() return clearers end, IsValid = yes,
-        GetOuterTowerThreat = function() return {count = 3, damageRate = 10} end,
+        GetOuterTowerThreat = function() return {count = 3, damageRate = damageRate} end,
         GetLocationToLocationDistance = function(a,b) return math.abs(a.x-b.x) end},
     DotaTime = function() return 100 end,
     GetGlyphCooldown = function() return 0 end,
@@ -206,7 +207,7 @@ roster[5] = glyphBot
 useGlyph()
 assert(glyphs == 1, 'did not defend the threatened Ancient in a full Bot roster')
 ancientHP = 100
-tierOne = {GetHealth = function() return 48 end, GetMaxHealth = function() return 100 end,
+tierOne = {GetHealth = function() return towerHP end, GetMaxHealth = function() return 100 end,
     GetLocation = function() return {x = 0} end, CanBeSeen = yes}
 tierOne.HasModifier = no
 local creep = {GetAttackTarget = function() return tierOne end, GetUnitName = function() return 'npc_dota_creep_badguys_melee' end}
@@ -242,6 +243,15 @@ assert(glyphs == 4, 'Glyph buys time for the confirmed group and an incoming def
 tierOne.HasModifier = yes
 useGlyph()
 assert(glyphs == 4, 'do not spend another charge during the same fortification')
+tierOne.HasModifier = no
+towerHP, damageRate = 62, 18
+clearers[1]._defend.waveClearGather = nil
+clearers[2], clearers[3] = nil, nil
+useGlyph()
+assert(glyphs == 5, 'use Glyph above half HP when damage rate says a committed TP would land too late')
+damageRate = 1
+useGlyph()
+assert(glyphs == 5, 'do not Glyph a healthy tower without imminent damage')
 print('PASS: Glyph tolerates missing teammates and preserves full-Bot defense')
 
 do

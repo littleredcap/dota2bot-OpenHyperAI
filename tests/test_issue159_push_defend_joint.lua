@@ -784,6 +784,18 @@ do
     opts.defending = true
     same(farm.GetDesire(), 0, 'urgent defense still overrides early recovery')
 end
+do
+    local opts = {farmBot = 1, route = true, time = 330, laning = true, direct = true,
+        farmLevel = 4, farmNetWorth = 1500, laneTower = true, farmAssignedLane = 3, tradeWaves = {3}}
+    local _, _, members, orders, lane, farm = fixture(opts)
+    local bot = members[1]
+    bot.GetLocation = function(self) return {x = self.x, y = 1100} end
+    same(farm.GetDesire(), 0.71, 'a recovered, displaced carry prioritizes its visible safe tower wave')
+    farm.Think()
+    assert(orders[1] == farm.lanes[lane.Bot], 'catch the assigned wave rather than the nearby neutral camp')
+    opts.laneThreat = true
+    assert(farm.GetDesire() ~= 0.71, 'an unsafe assigned wave must not be reclaimed')
+end
 print('PASS: an underfarmed carry can recover from a lost lane during laning')
 
 do
@@ -1002,7 +1014,7 @@ do
     local tower = buildings.outerTower
     local threat = jmz.GetOuterTowerThreat(tower, lane.Mid)
     local _, assigned = jmz.GetOuterTowerResponse(tower:GetLocation(), threat, nil, false)
-    assert(assigned[3] and not assigned[3].cover and not assigned[4], 'one safe long-range clearer can delay even with partial wave damage')
+    assert(assigned[3] and not assigned[3].cover and assigned[4] and assigned[4].cover, 'use the safe long-range clearer and a separate nearby escort against a group')
     same(defend.GetDefendDesire(members[3], lane.Mid), 0.7, 'stay in reach to delay the tower siege')
     defend.DefendThink(members[3], lane.Mid)
     assert(orders[1].x == tower.x - 800, 'use the long spell range to hold further behind the tower')

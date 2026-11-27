@@ -6308,7 +6308,9 @@ function J.GetOuterTowerThreat(tower, lane)
 			end
 		end
 	end
-	local escortedWave = advancingEscort and ((siege and waveSize >= 2) or waveSize >= 4) and eta <= 9
+	-- A visible group already rotating with a wave is actionable before the first hit.
+	local escortedWave = advancingEscort and ((siege and waveSize >= 2) or waveSize >= 4
+		or enemyCount >= 3 and waveSize >= 2) and eta <= 10
 	local wavePressure = attackingCreeps >= 2 or siegeAttacking or escortedWave
 		or (siege and waveSize >= 2 and eta <= 8) or (enemyCount == 1 and waveSize >= 3 and eta <= 5)
 	local active = activeAttackers > 0 or (enemyCount >= 2 and (waveSize > 0 or nearCount >= 2)) or wavePressure
@@ -6524,7 +6526,7 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 		return point ~= nil and IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 1650) == 0
 			and #J.GetEnemiesNearLoc(point, 1650) == 0
 	end
-	local tpPoint = approaching and J.AdjustLocationWithOffsetTowardsFountain(location, 475) or nil
+	local tpPoint = approaching and J.AdjustLocationWithOffsetTowardsFountain(location, threat.count >= 3 and 775 or 475) or nil
 	if not SafeLanding(tpPoint) then
 		tpPoint = not highGround and not threat.briefHold and SafeLanding(fallback) and fallback or nil
 	end
@@ -6599,8 +6601,17 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 		local pressured = ally:WasRecentlyDamagedByAnyHero(2)
 		if ally:IsBot() and (not pressured or J.GetHP(ally) >= 0.65) then
 			local distance = GetUnitToLocationDistance(ally, location)
+			local speed = math.max(ally:GetCurrentMovementSpeed(), 250)
 			local travelTime = GetUnitToLocationDistance(ally, fountain) <= towerFromFountain + 350
-				and distance / math.max(ally:GetCurrentMovementSpeed(), 250) or math.huge
+				and distance / speed or math.huge
+			-- A ranged clearer only needs to reach the protected casting point, not the tower.
+			local _, walkingReach = GetWaveClearScore(ally, math.min(travelTime, arrivalWindow))
+			if not highGround and walkingReach >= 1100 and travelTime < math.huge then
+				local hold = GetOuterTowerHoldPoint(location, walkingReach, false)
+				if J.CanCommitToLaneTeleport(ally, hold, true, 950) then
+					travelTime = GetUnitToLocationDistance(ally, hold) / speed
+				end
+			end
 			local landing = nil
 			if tpPoint ~= nil and distance > 2100 and travelTime > 5 and not pressured
 				and (highGround or not J.ShouldKeepLaningWave(ally, threat.lane, threat))
@@ -6654,13 +6665,18 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 	elseif needsSecond and secondary ~= nil and secondary.damage > 1 then
 		assignments[secondary.hero:GetPlayerID()] = {reach = secondary.reach, cover = false, teleport = secondary.teleport}
 	end
-	if exposed and (primary.reach < 900 or shortSecondary or not highGround and not needsSecond and not canChip) then
+	-- Even if long-range chip can start alone, try to reserve one nearby cover
+	-- hero. Never make a short-range clearer walk up unsupported.
+	if exposed and (canChip or primary.reach < 900 or shortSecondary or not highGround and not needsSecond) then
 		local cover = nil
 		for _, candidate in ipairs(candidates) do
 			if assignments[candidate.hero:GetPlayerID()] == nil and (cover == nil or candidate.cover > cover.cover) then cover = candidate end
 		end
-		if cover == nil then return defendNextTower() end
-		assignments[cover.hero:GetPlayerID()] = {reach = cover.hero:GetAttackRange(), cover = true, teleport = cover.teleport}
+		if cover == nil then
+			if not canChip or shortSecondary then return defendNextTower() end
+		else
+			assignments[cover.hero:GetPlayerID()] = {reach = cover.hero:GetAttackRange(), cover = true, teleport = cover.teleport}
+		end
 	end
 	return true, assignments
 end
