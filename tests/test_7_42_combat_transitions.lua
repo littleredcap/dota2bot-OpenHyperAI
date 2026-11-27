@@ -365,3 +365,30 @@ do
     state.time, enemy.target = state.time + 2, nil
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'one distant enemy without pressure should not force retreat')
 end
+
+do
+    local state, _, bot, core, backup, enemy, control, j = fixture(false)
+    state.time = 15 * 60
+    control.alive, control.x, core.x, backup.x, enemy.x = true, 500, 450, 450, 500
+    control.GetUnitName = function() return 'npc_dota_hero_warlock' end
+    local oldHP = j.GetHP
+    j.GetHP = function(unit) if unit == control then return 0.62 end; return oldHP(unit) end
+    core.target, backup.retreating = enemy, false
+    assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == control,
+        'switch from a tank to an exposed major control caster that teammates can reach')
+    control.IsSilenced = yes
+    assert(j.GetSupportedFightTarget(bot, {control, enemy}, {backup, core}) == enemy,
+        'a visibly silenced caster does not get a spell-threat bonus')
+    control.IsSilenced, control.IsChanneling = no, yes
+    assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == control,
+        'prioritize a reachable control caster already channeling')
+    control.visible = false
+    assert(j.GetSupportedFightTarget(bot, {control, enemy}, {backup, core}) == enemy,
+        'a threat in fog cannot be selected')
+    control.visible, control.x = true, 1250
+    assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == enemy,
+        'do not march alone to a high-priority caster outside contact range')
+    core.target = nil
+    assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == nil,
+        'do not turn a focus rule into a new teamfight with no commitment')
+end

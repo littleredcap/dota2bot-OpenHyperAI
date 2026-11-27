@@ -5948,29 +5948,86 @@ function J.CanCommitToLaneTeleport(bot, location, requireClear, radius)
 	return backup >= threatCount - 1 and J.GetHP(bot) >= 0.55
 end
 
+-- Explicit, conservative roster knowledge. Never infer that an unseen ultimate is ready.
+-- Values are spacing heuristics, not spell radii: these spells have different shapes.
+local fightControlSpacing = {
+	warlock = 640, enigma = 570, faceless_void = 650, magnataur = 530,
+	earthshaker = 620, tidehunter = 720, sand_king = 620, centaur = 500,
+	disruptor = 540, mars = 640, phoenix = 640, dark_seer = 540,
+	treant = 650, axe = 460, slardar = 450, elder_titan = 550,
+}
+
+local function FightHeroKey(hero)
+	return string.gsub(hero:GetUnitName(), '^npc_dota_hero_', '')
+end
+
+local function IsFightFocusCandidate(enemy)
+	return J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and not J.IsSuspiciousIllusion(enemy)
+		and not enemy:HasModifier('modifier_skeleton_king_reincarnation_scepter_active')
+		and not (J.CannotBeKilled and J.CannotBeKilled(nil, enemy))
+end
+
+local function CanProvideFightContact(ally)
+	return J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally) and J.GetHP(ally) >= 0.38
+		and not J.IsRetreating(ally) and not ally:HasModifier('modifier_teleporting')
+		and not ally:IsChanneling() and not ally:IsStunned() and not ally:IsHexed()
+		and not ally:IsNightmared() and not ally:IsDisarmed()
+end
+
+local function HasFightContact(unit, enemy, buffer)
+	return J.IsInRange(unit, enemy, unit:GetAttackRange() + (unit:IsRooted() and 0 or buffer))
+end
+
 function J.GetSupportedFightTarget(bot, enemies, allies)
-	if DotaTime() < 8 * 60 or #enemies == 0 or J.GetHP(bot) < 0.45 or J.IsRetreating(bot) then return nil end
-	local reach = bot:GetAttackRange() + 450
-	local tower = bot:GetNearbyTowers(1600, true)[1]
-	local best, bestScore = nil, 0
+	if DotaTime() < 8 * 60 or J.GetHP(bot) < 0.45 or not CanProvideFightContact(bot) then return nil end
+	local towers = bot:GetNearbyTowers(1600, true)
+	local ready = {}
+	local engaged = false
+	for _, ally in ipairs(allies) do
+		if ally ~= bot and CanProvideFightContact(ally) then
+			ready[#ready + 1] = ally
+			local target = ally:GetAttackTarget()
+			if J.IsValidHero(target) and target:GetTeam() ~= ally:GetTeam() and not J.IsSuspiciousIllusion(target)
+				and HasFightContact(ally, target, 250) then engaged = true end
+		end
+	end
+	if not engaged then return nil end
+
+	local best, bestScore = nil, -math.huge
 	for _, enemy in ipairs(enemies) do
-		if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and not J.IsSuspiciousIllusion(enemy)
-			and not enemy:HasModifier('modifier_skeleton_king_reincarnation_scepter_active')
-			and J.IsInRange(bot, enemy, reach)
-			and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 800)) then
-			local committed = 0
-			for _, ally in ipairs(allies) do
-				if ally ~= bot and J.IsValidHero(ally) and not J.IsRetreating(ally)
-					and not ally:HasModifier('modifier_teleporting') and not ally:IsChanneling()
-					and not ally:IsStunned() and not ally:IsHexed() and not ally:IsNightmared() and not ally:IsDisarmed()
-					and ally:GetAttackTarget() == enemy and J.IsInRange(ally, enemy, ally:GetAttackRange() + 250) then
-					committed = committed + 1
-				end
+		if IsFightFocusCandidate(enemy) and HasFightContact(bot, enemy, 450) then
+			local safe = true
+			for _, tower in ipairs(towers) do
+				if J.IsValidBuilding(tower) and J.IsInRange(enemy, tower, 800) then safe = false; break end
 			end
-			local location = enemy:GetLocation()
-			if committed > 0 and J.GetAvailableFightAllies(bot, location, 1250) + 1 >= #J.GetEnemiesNearLoc(location, 1250) then
-				local score = committed + (1 - J.GetHP(enemy)) * 2 + math.min(enemy:GetAttackDamage() / 250, 1)
-				if score > bestScore then best, bestScore = enemy, score end
+			if safe then
+				local committed, inRange = 0, 0
+				for _, ally in ipairs(ready) do
+					if HasFightContact(ally, enemy, 250) then
+						inRange = inRange + 1
+						if ally:GetAttackTarget() == enemy then committed = committed + 1 end
+					end
+				end
+				local name = FightHeroKey(enemy)
+				local dangerousChannel = enemy:IsChanneling() and fightControlSpacing[name] ~= nil
+				local hardDisabled = enemy:IsStunned() or enemy:IsHexed() or enemy:IsNightmared()
+				local canCast = not hardDisabled and not (enemy.IsSilenced and enemy:IsSilenced())
+				local spellThreat = fightControlSpacing[name] and canCast and 1.45 or 0
+				local damageThreat = math.min(enemy:GetAttackDamage() / 250, 1.5)
+				local location = enemy:GetLocation()
+				local exposed = HasFightContact(bot, enemy, 120) and inRange > 0
+					and (J.GetHP(enemy) <= 0.72 or dangerousChannel)
+				-- Do not drag the team toward a full-health backline just because of its roster role.
+				if inRange > 0 and (committed > 0 or exposed and (spellThreat > 0 or damageThreat >= 1))
+					and J.GetAvailableFightAllies(bot, location, 1250) + 1 >= #J.GetEnemiesNearLoc(location, 1250) then
+					local score = math.min(committed, 2) * 0.5 + (1 - J.GetHP(enemy)) * 1.8
+						+ damageThreat + spellThreat + (dangerousChannel and 1.15 or 0)
+						+ (HasFightContact(bot, enemy, 75) and 0.25 or 0)
+					if bot.ohaFightFocus == enemy and (bot.ohaFightFocusUntil or 0) > DotaTime() then score = score + 0.3 end
+					if score > bestScore or (score == bestScore and enemy:GetPlayerID() < best:GetPlayerID()) then
+						best, bestScore = enemy, score
+					end
+				end
 			end
 		end
 	end

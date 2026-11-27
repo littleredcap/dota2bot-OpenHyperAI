@@ -307,6 +307,9 @@ local function CancelFocusOrder()
         bot:SetTarget(nil)
         if not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
     end
+    if bot.ohaFightFocus == issuedFocusTarget then
+        bot.ohaFightFocus, bot.ohaFightFocusUntil = nil, nil
+    end
     issuedFocusTarget = nil
 end
 
@@ -336,6 +339,9 @@ function Think()
         local location = bot:GetLocation()
         if (not IsSupport or CanSupportCommitToTarget(focusEnemy))
             and J.GetSupportedFightTarget(bot, J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)) == focusEnemy then
+            if bot.ohaFightFocus ~= focusEnemy then
+                bot.ohaFightFocus, bot.ohaFightFocusUntil = focusEnemy, DotaTime() + 1.25
+            end
             bot:SetTarget(focusEnemy)
             bot:Action_AttackUnit(focusEnemy, true)
             issuedFocusTarget = focusEnemy
