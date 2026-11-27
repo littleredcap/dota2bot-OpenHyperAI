@@ -395,7 +395,9 @@ local function baseCreepPriority(creep, ancient, left, right)
     if distance > BASE_THREAT_RADIUS then return 0 end
     local target = creep:GetAttackTarget()
     if target == ancient or left ~= nil and target == left or right ~= nil and target == right then return 2 end
-    return distance <= 1800 and string.find(creep:GetUnitName(), "upgraded_mega", 1, true)
+    local name = creep:GetUnitName()
+    return distance <= 1800 and string.find(name, "npc_dota_creep_", 1, true)
+        and string.find(name, "_upgraded", 1, true)
         and (distance <= 950 or creep:IsFacingLocation(ancient:GetLocation(), 55)) and 1 or 0
 end
 function GetBaseCreepThreatCount(ancient)
@@ -417,7 +419,9 @@ function GetBaseCreepDefender(ancientLoc, alreadyAssigned)
         local i = 1
         while i <= #GetTeamPlayers(nTeam) do
             local member = GetTeamMember(i)
-            if member and member:IsBot() and jmz.IsValidHero(member) and not member:IsIllusion() then
+            if member and member:IsBot() and jmz.IsValidHero(member) and not member:IsIllusion()
+                and not member:IsStunned() and not member:IsHexed() and not member:IsNightmared()
+                and not member:IsDisarmed() and not member:IsChanneling() and not member:HasModifier("modifier_teleporting") then
                 local eligible = true
                 for ____, other in ipairs(alreadyAssigned) do
                     if other:GetPlayerID() == member:GetPlayerID() then

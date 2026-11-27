@@ -66,9 +66,10 @@ local function fixture(opts)
     for i=1,(opts.attackers or 0) do
         local x = opts.creepX or i*100
         creeps[i] = {x=x, IsCreep=yes, IsAncientCreep=no, visible=opts.visible ~= false,
-            GetUnitName=function() return opts.mega and 'npc_dota_creep_badguys_melee_upgraded_mega' or 'npc_dota_creep_badguys_melee' end,
+            GetUnitName=function() return opts.mega and 'npc_dota_creep_badguys_melee_upgraded_mega'
+                or opts.super and 'npc_dota_creep_badguys_melee_upgraded' or 'npc_dota_creep_badguys_melee' end,
             IsFacingLocation=function() return not opts.movingAway end,
-            GetAttackTarget=function() if not opts.mega then return opts.t4 and t4 or ancient end end}
+            GetAttackTarget=function() if not opts.mega and not opts.super then return opts.t4 and t4 or ancient end end}
     end
     for i=1,(opts.towerCreeps or 0) do
         creeps[i] = {x=outerTower.x, IsCreep=yes, IsAncientCreep=no,
@@ -503,7 +504,7 @@ local function fixture(opts)
         farm.lanes, farm.camps = lanes, {closeCamp, farCamp}
     end
     return push,defend,members,orders,Lan,farm,
-        {ancient=enemy, melee=melee, ranged=ranged, outerTower=outerTower, counterTower=counterTower, fightTower=fightTower}, jmz, advanceTime
+        {ancient=enemy, ourAncient=ancient, melee=melee, ranged=ranged, outerTower=outerTower, counterTower=counterTower, fightTower=fightTower}, jmz, advanceTime
 end
 
 local function same(actual, expected, label)
@@ -558,7 +559,18 @@ do
     push.PushThink(members[1],lane.Mid)
     assert(#orders==0)
 end
-print('PASS: 22 joint #159/#176 generated push and defense scenarios')
+do
+    local opts = {x=1200, attackers=1, super=true, creepX=1500}
+    local _, defend, members, _, _, _, buildings = fixture(opts)
+    local anchor = members[1]
+    assert(defend.GetBaseCreepResponse(anchor, buildings.ourAncient), 'approaching super creep needs one responder')
+    anchor.IsChanneling = function() return true end
+    assert(not defend.GetBaseCreepResponse(anchor, buildings.ourAncient), 'do not rely on a channeling responder')
+    assert(defend.GetBaseCreepResponse(members[2], buildings.ourAncient), 'next available hero takes over')
+    opts.movingAway = true
+    assert(not defend.GetBaseCreepResponse(members[2], buildings.ourAncient), 'no recall for super creep moving away')
+end
+print('PASS: joint push and defense, including super creep response')
 
 do
     local opts = {x=9500,direct=true,localAllies=true,wave=true,captureTargets=true}

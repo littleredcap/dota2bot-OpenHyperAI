@@ -106,6 +106,12 @@ local function bot(id, x, opts)
         hero=true, core=opts.core or false, x=x, alive=opts.alive ~= false,
         IsBot=function() return opts.human ~= true end,
         IsIllusion=function() return opts.illusion == true end,
+        IsStunned=function() return opts.stunned == true end,
+        IsHexed=function() return false end,
+        IsNightmared=function() return false end,
+        IsDisarmed=function() return opts.disarmed == true end,
+        IsChanneling=function() return opts.channeling == true end,
+        HasModifier=function(_, name) return name == "modifier_teleporting" and opts.teleporting == true end,
         GetCurrentMovementSpeed=function() return opts.speed or 300 end,
         GetPlayerID=function() return id end,
     }

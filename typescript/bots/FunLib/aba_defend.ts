@@ -289,7 +289,8 @@ function baseCreepPriority(creep: Unit, ancient: Unit, left: Unit | null, right:
     if (distance > BASE_THREAT_RADIUS) return 0;
     const target = creep.GetAttackTarget();
     if (target === ancient || (left != null && target === left) || (right != null && target === right)) return 2;
-    return distance <= 1800 && creep.GetUnitName().includes("upgraded_mega")
+    const name = creep.GetUnitName();
+    return distance <= 1800 && name.includes("npc_dota_creep_") && name.includes("_upgraded")
         && (distance <= 950 || creep.IsFacingLocation(ancient.GetLocation(), 55)) ? 1 : 0;
 }
 
@@ -324,7 +325,9 @@ function GetBaseCreepDefender(ancientLoc: Vector, alreadyAssigned: Unit[]): Unit
     let bestETA = math.huge;
     for (let i = 1; i <= GetTeamPlayers(nTeam).length; i++) {
         const member = GetTeamMember(i);
-        if (member && member.IsBot() && jmz.IsValidHero(member) && !member.IsIllusion()) {
+        if (member && member.IsBot() && jmz.IsValidHero(member) && !member.IsIllusion()
+            && !member.IsStunned() && !member.IsHexed() && !member.IsNightmared()
+            && !member.IsDisarmed() && !member.IsChanneling() && !member.HasModifier("modifier_teleporting")) {
             let eligible = true;
             for (const other of alreadyAssigned) {
                 if (other.GetPlayerID() === member.GetPlayerID()) eligible = false;
