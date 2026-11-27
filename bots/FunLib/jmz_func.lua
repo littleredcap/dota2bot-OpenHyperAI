@@ -1356,7 +1356,7 @@ function J.GetSafeLaneSupplyTower(bot)
     local enemies = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
     if J.IsLaningUnderPressure(bot, enemies, bot:GetNearbyTowers(1200, true)[1]) then return nil end
     local hp = J.GetHP(bot)
-    local partner = lane ~= LANE_MID and J.IsCore(bot) and J.GetLanePartner(bot) or nil
+    local partner = hp < 0.48 and lane ~= LANE_MID and J.IsCore(bot) and J.GetLanePartner(bot) or nil
     local hold = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
     local sheltered = partner ~= nil and J.IsValidHero(partner) and J.GetHP(partner) >= 0.62
         and not J.IsRetreating(partner) and not J.IsDisabled(partner) and not partner:HasModifier('modifier_teleporting')
@@ -1365,7 +1365,7 @@ function J.GetSafeLaneSupplyTower(bot)
         and not bot:WasRecentlyDamagedByAnyHero(2)
         and #J.GetEnemiesNearLoc(hold, 1000) == 0 and #J.GetLastSeenEnemiesNearLoc(hold, 1000) == 0
         and #J.GetHeroesTargetingUnit(enemies, bot) == 0
-    return SafeLaneTower(bot, tower, enemies, hp, partner, sheltered)
+    return SafeLaneTower(bot, tower, enemies, hp, sheltered and partner or nil, sheltered)
 end
 
 function J.GetLaningPeelTarget(bot, ally, enemies, castRange)
