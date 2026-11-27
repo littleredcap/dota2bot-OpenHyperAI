@@ -1689,19 +1689,39 @@ local function CanReserveLaneCreepShot(creep, damage, impact, nextImpact, attack
     return false
 end
 
+local function GetSupportLastHitStep(bot, creep, distance, tower, enemies)
+    local range, lane = bot:GetAttackRange(), bot:GetAssignedLane()
+    if range < 310 or (lane ~= LANE_TOP and lane ~= LANE_BOT) or not J.IsInLaningPhase(bot)
+        or J.GetHP(bot) < 0.65 or J.IsRetreating(bot)
+        or bot:WasRecentlyDamagedByAnyHero(2) or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
+    local origin = bot:GetLocation()
+    local point = J.VectorTowards(origin, creep:GetLocation(), distance - range + 20)
+    if not IsLocationPassable(point) or GetHeightLevel(point) ~= GetHeightLevel(origin)
+        or (J.IsValidBuilding(tower) and GetUnitToLocationDistance(tower, point) <= 850)
+        or #J.GetLastSeenEnemiesNearLoc(point, 650) > 0 then return nil end
+    for _, enemy in ipairs(enemies or {}) do
+        if J.IsValidHero(enemy) and GetUnitToLocationDistance(enemy, point) <= math.max(650, enemy:GetAttackRange() + 150) then
+            return nil
+        end
+    end
+    for _, ally in ipairs(bot:GetNearbyLaneCreeps(1000, false)) do
+        if J.IsValid(ally) and J.IsInRange(ally, creep, 500) then return point end
+    end
+end
+
 function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, coveringLane)
     if #creeps == 0 then return nil, false, false end
     local range = bot:GetAttackRange()
     local core = J.IsCore(bot)
     local attackers = GetLaneAttackers(bot, bot:GetNearbyTowers(1600, false)[1], enemies or {},
         bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE))
-    local holdsAttack = false
+    local holdsAttack, supportStep = false, nil
     local best, bestScore, approach, approachScore, urgentApproach = nil, -math.huge, nil, -math.huge, false
     for _, creep in ipairs(creeps) do
         if J.IsValid(creep) and J.CanBeAttacked(creep) and J.CanSupportTakeLaneLastHit(bot, creep) then
             local distance = GetUnitToUnitDistance(bot, creep)
             local inRange = distance <= range
-            if inRange or ((core or coveringLane) and distance <= range + 425
+            if inRange or (distance <= range + ((core or coveringLane) and 425 or 120)
                 and not (J.IsValidBuilding(tower) and J.IsInRange(creep, tower, 825))) then
                 local delay, _, wait = J.GetAttackProDelayTime(bot, creep)
                 -- Includes approach, attack recovery, turn allowance and flight once.
@@ -1724,15 +1744,21 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
                         holdsAttack = CanReserveLaneCreepShot(creep, damage, delay,
                             delay + math.min(0.55, bot:GetSecondsPerAttack() * 0.5), attackers)
                     elseif not inRange and remaining <= damage * 1.45 and score > approachScore then
-                        approach, approachScore = creep, score
-                        urgentApproach = remaining <= damage
+                        local step
+                        if not core and not coveringLane and remaining <= damage then
+                            step = GetSupportLastHitStep(bot, creep, distance, tower, enemies)
+                        end
+                        if core or coveringLane or step then
+                            approach, approachScore, supportStep = creep, score, step
+                            urgentApproach = remaining <= damage
+                        end
                     end
                 end
             end
         end
     end
     if best ~= nil then return best, false end
-    return approach, approach ~= nil, holdsAttack, urgentApproach
+    return approach, approach ~= nil, holdsAttack, urgentApproach, supportStep
 end
 
 -- Drag nearby enemy melee creeps backwards with an attack order that never
@@ -1885,9 +1911,25 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
     local ally = J.GetLanePartner(bot)
     local allyCreeps = bot:GetNearbyLaneCreeps(1150, false)
     local enemyCreeps = bot:GetNearbyLaneCreeps(850, true)
-    if not J.IsValidHero(ally) or not J.IsCore(ally) or not J.IsInRange(bot, ally, 850)
-        or #allyCreeps < math.max(2, #enemyCreeps - 1) or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
+    if #allyCreeps < math.max(2, #enemyCreeps - 1) or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
     local evenWave = #allyCreeps >= #enemyCreeps
+    -- A longer-ranged support can punish a committed last hit or deny from its
+    -- current position even when its own core is elsewhere.
+    local solo = #enemies == 1 and enemies[1] or nil
+    if solo and evenWave and J.GetHP(bot) >= 0.75 and not bot:WasRecentlyDamagedByAnyHero(2)
+        and J.IsValidHero(solo) and not J.IsSuspiciousIllusion(solo) and J.CanBeAttacked(solo)
+        and not solo:IsInvulnerable() and solo:GetAttackRange() >= 310
+        and J.IsInRange(bot, solo, range) and not J.IsInRange(bot, solo, solo:GetAttackRange() + 65)
+        and J.IsAttacking(solo) then
+        local creep = solo:GetAttackTarget()
+        if J.IsValid(creep) and creep:IsCreep()
+            and (J.IsKeyWordUnit('npc_dota_creep_', creep) or J.IsKeyWordUnit('_siege', creep))
+            and J.IsInRange(creep, solo, solo:GetAttackRange() + 50) and #bot:GetNearbyLaneCreeps(650, false) > 0
+            and J.IsInRange(bot, creep, 800) and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(solo:GetLocation())
+            and (not J.IsValidBuilding(tower) or not (J.IsInRange(solo, tower, 900) or J.IsInRange(bot, tower, 850)))
+            and #J.GetLastSeenEnemiesNearLoc(solo:GetLocation(), 1000) <= 1 then return solo end
+    end
+    if not J.IsValidHero(ally) or not J.IsCore(ally) or not J.IsInRange(bot, ally, 850) then return nil end
     local best, score = nil, math.huge
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)

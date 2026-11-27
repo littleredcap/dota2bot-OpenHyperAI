@@ -138,12 +138,13 @@ function GetDesire()
 			return 0.74
 		end
 		if J.HasPendingLaningLastHit(bot) then return J.IsCore(bot) and 0.9 or 0.55 end
-		local hitCreep, moveToCreep, reserve, urgentApproach = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
+		local hitCreep, moveToCreep, reserve, urgentApproach, supportStep = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
 			J.GetLaningAttackDamage(bot), nInRangeEnemy)
 		if J.IsValid(hitCreep) and not moveToCreep and J.IsInRange(bot, hitCreep, botAttackRange + 100) then
 			if J.GetPosition(bot) <= 3 then return 0.9 end
 			if GetUnitToUnitDistance(bot, hitCreep) <= botAttackRange then return 0.55 end
 		end
+		if supportStep then return 0.55 end
 		if urgentApproach and J.IsCore(bot)
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
 		local deny, reserveDeny, urgentDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
@@ -281,7 +282,7 @@ local function ThinkLane()
 	nEnemyCreeps = bot:GetNearbyLaneCreeps(botAttackRange < 310 and 1200 or math.min(1600, math.max(800, botAttackRange + 300)), true)
 	nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
 	botAssignedLane = bot:GetAssignedLane()
-	local hitCreep, moveToCreep, reserve, urgentApproach = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
+	local hitCreep, moveToCreep, reserve, urgentApproach, supportStep = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
 		J.GetLaningAttackDamage(bot), nInRangeEnemy)
 	-- Trace inputs as decision evidence, not as a claim that a creep was missed.
 	if J.IsCore(bot) and #nEnemyCreeps == 0 then TraceLaneDecision('no-near-wave')
@@ -300,8 +301,8 @@ local function ThinkLane()
 		return
 	end
 
-	local firingPosition = moveToCreep
-		and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) or nil
+	local firingPosition = supportStep or (moveToCreep
+		and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true)) or nil
 	-- A recovering core should enter last-hit range before an optional deny
 	-- can pin it behind the next enemy creep. Never walk without a safe point.
 	if firingPosition ~= nil and (urgentApproach or J.IsCore(bot)) then

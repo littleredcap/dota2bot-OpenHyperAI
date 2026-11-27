@@ -624,3 +624,40 @@ do
     assert(not j.ShouldPreserveCoreFightTrade(bot, {enemy, other}), 'visible extra life prevents a worthwhile trade')
 end
 print('PASS: recognize direct core focus, peel in range, and preserve only an already committed valuable trade')
+
+do
+    local state, mode, bot, core, _, enemy, _, j = fixture(true)
+    local onLane, laning = true, true
+    local wave = setmetatable({x = 870}, {__index = enemy})
+    wave.GetUnitName = function() return 'npc_dota_creep_badguys_flagbearer' end
+    wave.IsHero = no
+    local imp = setmetatable({x = 350}, {__index = wave})
+    imp.GetUnitName = function() return 'npc_dota_warlock_minor_imp' end
+    mode.LANE_TOP, mode.LANE_MID, mode.LANE_BOT = 1, 2, 3
+    mode.GetAmountAlongLane = function() return {distance = onLane and 200 or 1900} end
+    bot.GetAssignedLane = function() return mode.LANE_BOT end
+    local creeps = {wave}
+    bot.GetNearbyCreeps = function() return creeps end
+    enemy.target, enemy.alive, core.retreating = nil, false, false
+    wave.alive, imp.alive = true, true
+    j.IsInLaningPhase = function() return laning end
+    j.IsInTeamFight, j.IsRoshan, j.IsTormentor = no, no, no
+    j.GetAttackProDelayTime, j.WillKillTarget = function() return 0.5 end, yes
+    j.CanSupportTakeLaneLastHit = yes
+    j.GetSupportedFightTarget = function() end
+    assert(mode.GetDesire() == 0, 'team roam leaves a ranged support side-lane wave timing to lane mode')
+    creeps = {wave, imp}
+    assert(mode.GetDesire() > 0, 'a nearby summon remains selectable when a lane creep is first in the list')
+    mode.Think()
+    assert(state.orders[1] == imp)
+    creeps, onLane = {wave}, false
+    assert(mode.GetDesire() > 0, 'being assigned a side lane does not claim the entire map')
+    onLane = true
+    mode.Think()
+    assert(#state.orders == 1, 'discard a stale roaming creep order after returning to the side lane')
+    laning, j.IsThereCoreNearby = false, no
+    assert(mode.GetDesire() > 0)
+    mode.Think()
+    assert(state.orders[2] == wave, 'after laning the same roaming last hit still executes')
+end
+print('PASS: side-lane creep orders use lane mode while roaming keeps non-wave targets')

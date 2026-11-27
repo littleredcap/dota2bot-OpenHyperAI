@@ -408,6 +408,22 @@ function GetDesireHelper()
     end
 
     if J.IsInLaningPhase() then
+        -- After breaking contact, a solo melee core can be far from the
+        -- opponents who still control its next wave. Use actual HP here.
+        if botHealth < bot:GetMaxHealth() * 0.30 and bot:GetAttackRange() < 310 and J.IsCore(bot)
+            and not bTeamFight and not bot:IsChanneling() and not bot:IsUsingAbility()
+            and not bot:IsCastingAbility() and not bot:HasModifier('modifier_teleporting') then
+            local lane = bot:GetAssignedLane()
+            if lane == LANE_TOP or lane == LANE_BOT then
+                local front = GetLaneFrontLocation(bot:GetTeam(), lane, 0)
+                if GetUnitToLocationDistance(bot, front) <= 4000 then
+                    local threats = #J.GetLastSeenEnemiesNearLoc(front, 1200)
+                    if threats > 0 and threats > J.GetAvailableFightAllies(bot, front, 850) then
+                        return BOT_MODE_DESIRE_ABSOLUTE
+                    end
+                end
+            end
+        end
         if not bot:WasRecentlyDamagedByAnyHero(3.0)
             and botHP > 0.25
             and bot:DistanceFromFountain() > 4000

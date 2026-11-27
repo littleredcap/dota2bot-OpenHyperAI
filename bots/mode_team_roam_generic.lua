@@ -48,6 +48,15 @@ local IsAvoidingAbilityZone = false
 
 local hTargetCreep = nil
 
+-- The lane mode owns the timing and safe approach for these creeps, including denies.
+local function IsSideLaneMicroTarget(unit)
+    local name = unit:GetUnitName()
+    if not string.find(name, 'npc_dota_creep_', 1, true) and not string.find(name, '_siege', 1, true) then return false end
+    if not J.IsInLaningPhase(bot) then return false end
+    local lane = bot:GetAssignedLane()
+    return (lane == LANE_TOP or lane == LANE_BOT) and GetAmountAlongLane(lane, bot:GetLocation()).distance <= 900
+end
+
 local function CanSupportCommitToTarget(target)
     return not J.IsInLaningPhase(bot) or not J.IsValidHero(target) or J.HasLaneFightFollowUp(bot, target)
 end
@@ -195,7 +204,8 @@ function GetDesireHelper()
         end
 
         if bot:IsAlive() and bot:DistanceFromFountain() > 4600 then
-            if towerTime ~= 0 and X.IsValid(towerCreep) and DotaTime() < towerTime + towerCreepTime then
+            if towerTime ~= 0 and X.IsValid(towerCreep) and not IsSideLaneMicroTarget(towerCreep)
+                and DotaTime() < towerTime + towerCreepTime then
                 return RemapValClamped(J.GetHP(bot), 0, 0.4, BOT_MODE_DESIRE_NONE, 0.9)
             else
                 towerTime, towerCreepMode = 0, false
@@ -229,6 +239,7 @@ function X.GetLastHitCreep()
 	for _, creep in pairs(nEnemyCreeps) do
 		if J.IsValid(creep)
 		and J.CanBeAttacked(creep)
+		and not IsSideLaneMicroTarget(creep)
 		and J.IsInRange(bot, creep, bot:GetAttackRange() + 300)
 		and not J.IsRoshan(creep)
 		and not J.IsTormentor(creep)
@@ -376,7 +387,7 @@ function Think()
     end
     CancelRescueOrder()
 
-	if J.IsValid(hTargetCreep) and J.CanSupportTakeLaneLastHit(bot, hTargetCreep) then
+	if J.IsValid(hTargetCreep) and not IsSideLaneMicroTarget(hTargetCreep) and J.CanSupportTakeLaneLastHit(bot, hTargetCreep) then
 		bot:Action_AttackUnit(hTargetCreep, true)
 		return
 	end
@@ -407,7 +418,7 @@ function Think()
         AttackSpecialUnit.Think()
     end
 
-    if towerCreepMode then
+    if towerCreepMode and X.IsValid(towerCreep) and not IsSideLaneMicroTarget(towerCreep) then
         bot:Action_AttackUnit(towerCreep, false)
         return
     end
@@ -963,6 +974,7 @@ end
 function X.CanBeAttacked(unit)
     return unit ~= nil and unit:IsAlive() and unit:CanBeSeen() and not unit:IsNull()
         and not unit:IsAttackImmune() and not unit:IsInvulnerable()
+        and not IsSideLaneMicroTarget(unit)
         and not unit:HasModifier("modifier_fountain_glyph")
         and (unit:GetTeam() == team or not unit:HasModifier("modifier_crystal_maiden_frostbite"))
         and (unit:GetTeam() ~= team or (unit:GetUnitName() ~= "npc_dota_wraith_king_skeleton_warrior"

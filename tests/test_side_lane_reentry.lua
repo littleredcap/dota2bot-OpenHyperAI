@@ -89,3 +89,61 @@ assert(not j.GetSideLaneYieldPoint(bot,{attacker}),'a low core still commits to 
 state.hp=0.59
 state.fog=true
 assert(not j.GetSideLaneYieldPoint(bot,{attacker}),'do not select a short retreat into fog')
+
+do
+    local health, enemiesAtWave, availableAllies, recentHit = 178, 2, 0, 13
+    local position, waveFront, attackRange, lane = 0, 3082, 150, 3
+    local function yes() return true end
+    local function none() end
+    local function constant(value) return function() return value end end
+    local hero = {
+        GetTeam=constant(2), GetAssignedLane=function() return lane end, GetActiveMode=constant(5), IsAlive=yes,
+        GetUnitName=constant('npc_dota_hero_skeleton_king'), GetLevel=constant(4),
+        GetHealth=function() return health end, GetMaxHealth=constant(980), GetHealthRegen=constant(5),
+        GetMana=constant(205), GetMaxMana=constant(300), GetManaRegen=constant(1),
+        GetLocation=function() return position end, DistanceFromFountain=constant(6000),
+        GetNearbyTowers=empty, GetNearbyLaneCreeps=empty, GetNearbyCreeps=empty, GetNearbyBarracks=empty,
+        GetAttackRange=function() return attackRange end, GetAttackDamage=constant(80),
+        HasModifier=noop, IsChanneling=noop, IsUsingAbility=noop, IsCastingAbility=noop,
+        WasRecentlyDamagedByAnyHero=function(_,seconds) return recentHit <= seconds end,
+    }
+    local j=setmetatable({
+        Utils={HasModifierContainsName=noop}, IsCore=yes, IsInLaningPhase=yes,
+        GetHP=function() return health/980 end, GetMP=constant(205/300),
+        GetModifierTime=constant(0), GetEnemyList=empty, GetAllyList=empty, GetHeroesTargetingUnit=empty,
+        GetNumOfAliveHeroes=constant(5), GetDistanceFromEnemyFountain=constant(15000),
+        GetLaningHoldTower=none, GetSideLaneReturnPoint=none, GetSideLaneYieldPoint=none,
+        GetLastSeenEnemiesNearLoc=function(point)
+            assert(point==waveFront)
+            local ids={}; for i=1,enemiesAtWave do ids[i]=i end; return ids
+        end,
+        GetAvailableFightAllies=function(_,point) assert(point==waveFront); return availableAllies end,
+    },{__index=function() return noop end})
+    local env=setmetatable({ GetBot=constant(hero),GetTeam=constant(2),GetOpposingTeam=constant(3),
+        GetAncient=none, GetUnitList=empty, GetTeamPlayers=empty, GetDroppedItemList=empty,
+        GetLaneFrontLocation=function(team,ln) assert(team==2 and ln==lane); return waveFront end,
+        GetUnitToLocationDistance=function(u,point) return math.abs(u:GetLocation()-point) end,
+        GetUnitToUnitDistance=constant(15000), Min=math.min, DotaTime=constant(242),
+        GetScriptDirectory=constant('bots'), require=function(name) return name:find('jmz_func') and j or {} end,
+        LANE_TOP=1, LANE_MID=2, LANE_BOT=3, BOT_MODE_LANING=5,
+        BOT_MODE_DESIRE_NONE=0, BOT_MODE_DESIRE_MODERATE=0.5,BOT_MODE_DESIRE_VERYHIGH=0.9,BOT_MODE_DESIRE_ABSOLUTE=1,
+    },{__index=_G})
+    setfenv(assert(loadfile('bots/mode_retreat_generic.lua')),env)()
+    assert(env.GetDesire()>=0.9,'continue recovery after leaving two opponents at the next wave with only 178/980 health')
+    position,health=2600,257
+    assert(env.GetDesire()>=0.9,'stay out of the same defended wave at 257/980')
+    enemiesAtWave=0
+    assert(env.GetDesire()<0.9,'a previously unsafe wave that has cleared does not force a retreat')
+    enemiesAtWave,availableAllies=2,2
+    assert(env.GetDesire()<0.9,'available allies already screening that wave allow ordinary lane decisions')
+    availableAllies,health=0,500
+    assert(env.GetDesire()<0.9,'a recovered core can return to normal lane selection')
+    health,position=178,-2000
+    assert(env.GetDesire()<0.9,'remote pressure in the assigned lane does not dictate movement across the map')
+    position,lane=0,2
+    assert(env.GetDesire()<0.9,'keep the usual mid-lane retreat decision')
+    lane,attackRange=3,600
+    assert(env.GetDesire()<0.9,'a ranged hero can use its ordinary spacing')
+    attackRange,hero.IsChanneling=150,yes
+    assert(env.GetDesire()<0.9,'do not replace an existing channel with the lane recovery decision')
+end

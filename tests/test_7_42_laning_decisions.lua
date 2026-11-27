@@ -963,3 +963,58 @@ do
     expect(state, mode, 'attack', ranged)
 end
 print('PASS: duo deny divides targets only while an earlier allied lethal swing is committed')
+
+for _, overridden in ipairs({false, true}) do
+    local state, mode, creep, enemy, bot = fixture(false, overridden)
+    local j = mode.J
+    creep.x, creep.GetLocation = 520, function(self) return self.x end
+    state.allies = {setmetatable({x = 420, GetTeam = function() return 2 end}, {__index = creep})}
+    j.VectorTowards = function(origin, dest, distance) return origin + (dest > origin and distance or -distance) end
+    local function step(tower, enemies)
+        return select(5, j.GetLaningLastHitTarget(bot, {creep}, tower, 50, enemies or {}))
+    end
+    assert(step() == 90, 'close only the shortfall behind an allied creep')
+    assert(mode.GetDesire() == 0.55)
+    expect(state, mode, 'move', 90)
+    bot.x = 90
+    expect(state, mode, 'attack', creep)
+    bot.x = 0
+    state.partner = true
+    j.GetLanePartner(bot).x = 510
+    assert(not step(), 'leave a reachable lethal shot to the core')
+    state.partner = false
+    assert(not step(nil, {enemy}), 'no forward step into a defender')
+    state.towerIdle = true
+    assert(not step(bot:GetNearbyTowers(1200, true)[1]), 'no enemy tower approach')
+    state.towerIdle, state.towerDive = false, true
+    assert(not step(), 'respect last seen danger')
+    state.towerDive, state.wasHit = false, true
+    assert(not step(), 'do not reenter after taking hero damage')
+    state.wasHit, state.allies = false, {}
+    assert(not step(), 'keep the wave in front')
+    state.allies = {creep}
+    creep.x = 600
+    assert(not step(), 'do not chase a distant creep')
+end
+print('PASS: side supports finish an unclaimed creep after a short covered step')
+
+do
+    local state, mode, creep, enemy, bot = fixture(false, false)
+    local j = mode.J
+    bot.GetAttackRange = function() return 600 end
+    enemy.GetAttackRange = function() return 400 end
+    enemy.x = 525
+    state.creepHP, state.enemy, state.enemyWindup = 320, true, true
+    state.enemyCreep, state.allies = creep, {creep, creep}
+    assert(mode.GetDesire() == 0.71, 'contest a ranged deny while the allied core is away')
+    expect(state, mode, 'attack', enemy)
+    state.enemyWindup = false
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 600), 'wait for a real creep attack')
+    state.enemyWindup, state.towerDive = true, true
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 600), 'respect a second last-seen opponent')
+    state.towerDive, enemy.x = false, 420
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 600), 'avoid an even-range trade alone')
+    enemy.x, state.creepHP = 525, 30
+    expect(state, mode, 'attack', creep)
+end
+print('PASS: punish a ranged creep attack from a covered range advantage and still take the immediate last hit')
