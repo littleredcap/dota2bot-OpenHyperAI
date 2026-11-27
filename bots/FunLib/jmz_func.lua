@@ -1427,6 +1427,65 @@ function J.GetLaningHoldTower(bot)
     return J.GetSideLaneHoldTower(bot) or GetPressuredMidLaneTower(bot)
 end
 
+-- A side core can recover contact without waiting for the wave to enter the
+-- local last-hit scan. This is a walk to experience range, not a commit.
+function J.GetSideLaneReturnPoint(bot, lane)
+    local now = DotaTime()
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 40 or now >= 600
+        or not J.IsInLaningPhase(bot) or not J.IsCore(bot) or J.GetHP(bot) < 0.64
+        or not bot.DistanceFromFountain or bot:DistanceFromFountain() < 1350 or bot:WasRecentlyDamagedByAnyHero(3)
+        or bot:HasModifier('modifier_teleporting') or J.IsDisabled(bot)
+        or (bot.ohaOuterTowerHoldUntil or 0) > now or not GetUnitList then return nil end
+    local supply = bot.ohaLaneSupply
+    if supply and supply.waitUntil > now then return nil end
+    local origin, team = bot:GetLocation(), bot:GetTeam()
+    local tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+    if not J.IsValidBuilding(tower) then return nil end
+    local hub, wave, distance = tower:GetLocation(), nil, 6000
+    local front = GetLaneFrontLocation(team, lane, 0)
+    -- Don't turn a distant recovery route into a chase into enemy territory.
+    for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
+        if J.IsValid(creep) and creep:CanBeSeen() and string.find(creep:GetUnitName(), 'npc_dota_creep_', 1, true)
+            and GetAmountAlongLane(lane, creep:GetLocation()).distance <= 525
+            and GetUnitToUnitDistance(creep, tower) <= 3200
+            and GetUnitToLocationDistance(creep, front) <= 1600 then
+            local d = GetUnitToUnitDistance(bot, creep)
+            if d < distance then wave, distance = creep, d end
+        end
+    end
+    if wave == nil or distance <= math.max(600, bot:GetAttackRange() + 370) then return nil end
+    local point = wave:GetLocation()
+    local partner = J.GetLanePartner(bot, true)
+    local covered = J.IsValidHero(partner) and J.GetHP(partner) >= 0.50 and not J.IsDisabled(partner)
+        and not partner:HasModifier('modifier_teleporting') and not J.IsRetreating(partner)
+        and GetUnitToLocationDistance(partner, point) <= 1050
+    local hasLaneCover = false
+    for _, creep in ipairs(GetUnitList(UNIT_LIST_ALLIED_CREEPS)) do
+        if J.IsValid(creep) and string.find(creep:GetUnitName(), 'npc_dota_creep_', 1, true)
+            and GetUnitToLocationDistance(creep, point) <= 700 then hasLaneCover = true; break end
+    end
+    if not hasLaneCover and not covered and GetUnitToLocationDistance(wave, hub) > 1050 then return nil end
+    local threatRadius = covered and 775 or 950
+    local enemyTower = GetTower(GetOpposingTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+    local distanceToTower = J.GetLocationToLocationDistance(point, hub)
+    for _, offset in ipairs({covered and 500 or 825, 1125, 1325}) do
+        local step = distanceToTower > offset + 70 and J.GetLocationTowardDistanceLocation(point, hub, offset) or hub
+        local travel = GetUnitToLocationDistance(bot, step)
+        local mid = J.VectorTowards(origin, step, travel * 0.5)
+        if travel > 225
+            and GetUnitToLocationDistance(bot, step) + 90 < distance
+            and IsLocationPassable(step) and IsLocationPassable(mid) and IsLocationVisible(step)
+            and (not J.IsValidBuilding(enemyTower) or GetUnitToLocationDistance(enemyTower, step) > 1050)
+            and #J.GetEnemiesNearLoc(origin, threatRadius) == 0
+            and #J.GetEnemiesNearLoc(mid, threatRadius) == 0
+            and #J.GetLastSeenEnemiesNearLoc(mid, threatRadius) == 0
+            and #J.GetEnemiesNearLoc(step, threatRadius) == 0
+            and #J.GetLastSeenEnemiesNearLoc(step, threatRadius) == 0 then
+            return step
+        end
+    end
+end
+
 function J.GetLaningManaShortfall(bot, seconds)
     if bot:GetMaxMana() <= 0 or J.GetMP(bot) >= 0.40 or bot:HasModifier('modifier_clarity_potion') then return nil end
     local projected = bot:GetMana() + bot:GetManaRegen() * seconds
@@ -7370,6 +7429,97 @@ local function CanJoinTowerFight(hero)
 		and not J.IsRetreating(hero) and not J.IsDisabled(hero)
 end
 
+local ShortFightWindow
+local function GetShortFightWindow()
+    if not ShortFightWindow then
+        ShortFightWindow = require(GetScriptDirectory() .. '/FunLib/short_fight_window')
+    end
+    return ShortFightWindow
+end
+
+local function ShortDamageProfile(attacker, target, horizon, eta, friendly)
+    local distance = GetUnitToUnitDistance(attacker, target)
+    local range = attacker:GetAttackRange()
+    local speed = math.max(220, attacker:GetCurrentMovementSpeed())
+    local contact = math.max(0, eta or 0, (distance - range) / speed)
+    if attacker:IsRooted() and distance > range then contact = horizon + 1 end
+    local attack = attacker:IsDisarmed() and 0
+        or target:GetActualIncomingDamage(attacker:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+    local best
+    if friendly and not attacker:IsSilenced() then
+        for slot = 0, 8 do
+            local spell = attacker:GetAbilityInSlot(slot)
+            if J.CanCastAbilitySoon(spell, horizon) and spell:GetCastRange() >= 200
+                and attacker:GetMana() >= spell:GetManaCost()
+                and not target:IsMagicImmune() then
+                -- The generic API does not expose reliable damage types,
+                -- delayed hits, or combination metadata for all spells.
+                -- Only take reported innate damage as a possible first spell.
+                local raw = spell:GetAbilityDamage() or 0
+                local cast = math.max(0.15, spell:GetCastPoint())
+                local ready = math.max(eta or 0, (distance - spell:GetCastRange()) / speed,
+                    spell:GetCooldownTimeRemaining()) + cast
+                if raw >= 50 and ready <= horizon
+                    and J.Utils.AbilityBehaviorHasFlag(spell:GetBehavior(), ABILITY_BEHAVIOR_UNIT_TARGET) then
+                    local damage = target:GetActualIncomingDamage(raw, DAMAGE_TYPE_MAGICAL)
+                    if not best or damage > best.damage then best = {eta = ready, damage = damage, cast = cast} end
+                end
+            end
+        end
+    end
+    return GetShortFightWindow().Profile({
+        horizon = horizon, contact = contact, attack = attack, period = attacker:GetSecondsPerAttack(),
+        windup = 0.35, spell = best,
+        -- Never inspect enemy spell handles or real cooldowns. A visible
+        -- enemy with mana and plausible reach widens the upper bound.
+        unknownSpell = not friendly and distance <= 1100 and attacker:GetMana() >= 65
+            and not attacker:IsSilenced() and math.max(120, attack * 1.8) or nil,
+    })
+end
+
+local function ShortTowerTrade(bot, tower, threat, allies)
+    if #allies < 2 or not tower.GetAttackTarget or tower:GetHealth() < tower:GetMaxHealth() * 0.20 then return nil end
+    local target = tower:GetAttackTarget()
+    if not J.IsValidHero(target) or not target:CanBeSeen() or target:IsInvulnerable()
+        or J.IsSuspiciousIllusion(target) or not J.CanBeAttacked(target)
+        or GetUnitToUnitDistance(bot, target) > bot:GetAttackRange()
+        or GetUnitToUnitDistance(tower, target) > tower:GetAttackRange() then return nil end
+    local window, mid = 2.7, GetShortFightWindow()
+    local damage = mid.TowerDamage(true, target:GetActualIncomingDamage(tower:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL),
+        tower:GetSecondsPerAttack(), window)
+    local attackers, incoming, coreHP, coreThreat = 0, 0, nil, 0
+    for _, row in ipairs(allies) do
+        local ally = row.hero
+        if GetUnitToUnitDistance(ally, target) <= math.max(ally:GetAttackRange() + 75, 525) then
+            local v = ShortDamageProfile(ally, target, window, 0, true)
+            if v.typical > 0 then
+                attackers = attackers + 1
+                for _, key in ipairs({'low', 'typical', 'high'}) do damage[key] = damage[key] + v[key] end
+                if J.IsCore(ally) then
+                    local estimate = 0
+                    for _, enemy in ipairs(threat.enemies) do
+                        if J.IsValidHero(enemy) and enemy:CanBeSeen() then estimate = estimate + ShortDamageProfile(enemy, ally, window, 0, false).high end
+                    end
+                    if not coreHP or estimate / ally:GetHealth() > coreThreat / coreHP then
+                        coreHP, coreThreat = ally:GetHealth(), estimate
+                    end
+                end
+            end
+        end
+    end
+    for _, enemy in ipairs(threat.enemies) do
+        if J.IsValidHero(enemy) and enemy:CanBeSeen() then incoming = incoming + ShortDamageProfile(enemy, bot, window, 0, false).high end
+    end
+    -- Keep the core-risk test separate from the acting support's risk.
+    if coreHP and coreThreat >= coreHP * 0.80 then return nil end
+    if mid.CanTrade({locked = true, attackers = attackers, unseen = math.max(0, threat.count - #threat.enemies),
+        enemyHealth = target:GetHealth() + target:GetHealthRegen() * window, damage = damage,
+        incomingHigh = incoming, selfHealth = bot:GetHealth(), canRiskSupport = not J.IsCore(bot),
+        targetWorthwhile = target:GetLevel() >= bot:GetLevel() + 2 and target:GetAttackTarget() == tower}) then
+        return target
+    end
+end
+
 local function TowerFightPower(hero)
 	local dps = hero:GetAttackDamage() / math.max(0.25, hero:GetSecondsPerAttack())
 	return (0.6 + 0.045 * hero:GetLevel() + 0.004 * math.min(300, dps))
@@ -7860,6 +8010,19 @@ function J.RunOuterTowerContest(bot, tower, threat, state)
 				bot:Action_AttackUnit(target, true)
 				return true
 			end
+		end
+	end
+	-- If a straight fight fails, this branch permits only one in-range hit
+	-- at a time; the check is rerun when aggro, control or positions change.
+	if state.waveClearScreen and not bot:IsDisarmed() and J.GetHP(bot) >= 0.48 then
+		local target = ShortTowerTrade(bot, tower, threat, allies)
+		if target and #J.GetEnemiesNearLoc(bot:GetLocation(), 550) < 2 then
+			if J.Customize and J.Customize.TraceLaneDecisions and (bot.ohaShortTradeTrace or 0) < DotaTime() then
+				bot.ohaShortTradeTrace = DotaTime() + 3
+				print('[OHA tower trade]', DotaTime(), bot:GetPlayerID(), target:GetPlayerID())
+			end
+			bot:Action_AttackUnit(target, true)
+			return true
 		end
 	end
 	if #J.GetEnemiesNearLoc(gather, state.waveClearScreen and 550 or 800) >= 2 or bot:WasRecentlyDamagedByAnyHero(2)

@@ -311,14 +311,28 @@ function X.ConsiderQ()
 	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
 	if not holdTower and DotaTime() >= 240 and DotaTime() <= 960 then holdTower = J.GetEarlyMidSiegeDefense(bot) end
 	if holdTower ~= nil then
-		if waveLocation ~= nil and nCanHurtCreepCount >= 2
-			and GetUnitToLocationDistance(holdTower, waveLocation) <= 1050
-			and not X.IsAbiltyQCastedHere(waveLocation, nRadius) then
-			return BOT_ACTION_DESIRE_HIGH, waveLocation
-		end
-		-- FindAoELocation can pick a larger cluster elsewhere. Look at the
-		-- visible lane creeps approaching our assigned tower independently.
+		-- Compare the generic AoE center with the visible units that can
+		-- actually hit the tower. A large pack elsewhere has lower priority.
 		local aim, count, distance = nil, 1, math.huge
+		local function ConsiderDefensePoint(point, hits, siege)
+			if point == nil or (hits < 2 and not siege)
+				or GetUnitToLocationDistance(bot, point) > nCastRange or X.IsAbiltyQCastedHere(point, nRadius) then return end
+			local fromTower = GetUnitToLocationDistance(holdTower, point)
+			local priority = hits
+			for _, unit in ipairs(nEnemysLaneCreepsInSkillRange) do
+				if J.IsValid(unit) and GetUnitToUnitDistance(unit, holdTower) <= 1250
+					and J.GetLocationToLocationDistance(J.GetCorrectLoc(unit, impactDelay), point) <= nRadius - 25 then
+					if unit.GetAttackTarget and unit:GetAttackTarget() == holdTower then priority = priority + 1.25 end
+					if J.IsKeyWordUnit('_siege', unit) then priority = priority + 2 end
+				end
+			end
+			if priority > count or priority == count and fromTower < distance then
+				aim, count, distance = point, priority, fromTower
+			end
+		end
+		if waveLocation and GetUnitToLocationDistance(holdTower, waveLocation) <= 1050 then
+			ConsiderDefensePoint(waveLocation, nCanHurtCreepCount, false)
+		end
 		for _, creep in ipairs(nEnemysLaneCreepsInSkillRange) do
 			if J.IsValid(creep) then
 				local point = J.GetCorrectLoc(creep, impactDelay)
@@ -327,11 +341,7 @@ function X.ConsiderQ()
 					local hits = J.GetInLocLaneCreepCount(bot, 1600, nRadius - 25, point)
 					local siegeNow = J.IsKeyWordUnit and J.IsKeyWordUnit('_siege', creep)
 						and (creep:GetAttackTarget() == holdTower or fromTower <= 900)
-					local priority = hits + (siegeNow and 2 or 0)
-					if (hits >= 2 or siegeNow) and (priority > count or priority == count and fromTower < distance)
-						and not X.IsAbiltyQCastedHere(point, nRadius) then
-						aim, count, distance = point, priority, fromTower
-					end
+					ConsiderDefensePoint(point, hits, siegeNow)
 				end
 			end
 		end
