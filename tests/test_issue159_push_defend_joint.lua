@@ -852,6 +852,9 @@ do
     same(farm.GetDesire(), 0.49, 'support can collect an unclaimed safe wave')
     opts.waveOwner = true
     same(farm.GetDesire(), 0, 'yield the wave to a nearby core')
+    members[2].IsChanneling = function() return true end
+    same(farm.GetDesire(), 0.49, 'a channeling core cannot reserve the wave')
+    members[2].IsChanneling = function() return false end
     members[2].ohaOuterTowerHoldUntil = 610
     same(farm.GetDesire(), 0.49, 'a core assigned to defend elsewhere cannot reserve a support wave')
     farm.Think()
@@ -861,7 +864,14 @@ do
     assert(orders[2] == 'cancel' and not members[1].ohaWaveClaim, 'give the wave back when the carry is available again')
     opts.waveOwner, opts.laneThreat = false, true
     same(farm.GetDesire(), 0, 'do not collect a wave into recent enemies')
-    opts.laneThreat, opts.farmPosition, opts.supportWave = false, 3, false
+    opts.laneThreat = false
+    same(farm.GetDesire(), 0.49, 'reserve a new safe wave once the danger is gone')
+    farm.Think()
+    assert(members[1].ohaWaveClaim and orders[3] == 'attack', 'a live wave remains claimable')
+    opts.supportWave = false
+    farm.Think()
+    assert(orders[4] == 'cancel' and not members[1].ohaWaveClaim, 'a vanished wave releases its claim at the destination')
+    opts.farmPosition = 3
     members[1].ohaIdleRecoveryUntil = 605
     same(farm.GetDesire(), 0.65, 'idle core can rejoin safe income')
 end

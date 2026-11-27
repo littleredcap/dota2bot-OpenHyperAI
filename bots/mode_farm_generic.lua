@@ -92,8 +92,10 @@ local function IsFarmLocationSafe(location)
 end
 
 local function CanReserveWave(ally)
-	return ally ~= bot and J.IsValidHero(ally) and not J.IsRetreating(ally)
+	return ally ~= bot and J.IsValidHero(ally) and not ally:IsIllusion() and J.GetHP(ally) >= 0.40
+		and not J.IsRetreating(ally) and not ally:IsChanneling() and not J.IsDisabled(ally)
 		and (ally.ohaOuterTowerHoldUntil or 0) <= DotaTime() and not ally:HasModifier('modifier_teleporting')
+		and not (J.IsDefending(ally) and ally:GetActiveModeDesire() >= 0.75)
 		and not J.IsGoingOnSomeone(ally) and not J.IsDoingRoshan(ally) and not J.IsDoingTormentor(ally)
 end
 
@@ -986,6 +988,22 @@ function Think()
 	end
 
 	hLaneCreepList = bot:GetNearbyLaneCreeps(900, true) -- always refresh to avoid stale data
+	if collectingWave and farmLaneLocation ~= nil then
+		local claimedWave = {}
+		for _, creep in ipairs(hLaneCreepList or {}) do
+			if J.IsValid(creep) and GetUnitToLocationDistance(creep, farmLaneLocation) <= 700 then
+				claimedWave[#claimedWave + 1] = creep
+			end
+		end
+		hLaneCreepList = claimedWave
+		if #claimedWave == 0 and GetUnitToLocationDistance(bot, farmLaneLocation) <= 650 then
+			bot.ohaWaveClaim = nil
+			farmLaneLocation = nil
+			collectingWave = false
+			CancelFarmOrder()
+			return
+		end
+	end
 	if hLaneCreepList ~= nil and #hLaneCreepList > 0 and J.IsValid(hLaneCreepList[1]) then
 		local farmTarget = J.Site.GetFarmLaneTarget(hLaneCreepList);
 		local nSearchRange = bot:GetAttackRange() + 180
