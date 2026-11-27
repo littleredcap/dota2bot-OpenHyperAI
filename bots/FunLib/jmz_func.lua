@@ -1586,6 +1586,49 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
     return best, reserve
 end
 
+-- Reapply safe pressure when an injured melee opponent comes back to last hit.
+-- No chase, extra movement, or sacrifice of the lane partner's last hits.
+function J.GetSideLanePressureTarget(bot, enemies, tower, range)
+    local lane = bot:GetAssignedLane()
+    if #enemies == 0 or (lane ~= LANE_TOP and lane ~= LANE_BOT)
+        or J.IsCore(bot) or J.GetHP(bot) < 0.65 or J.IsRetreating(bot)
+        or not J.IsInLaningPhase(bot) then return nil end
+    local now = DotaTime()
+    if now < 30 or now > 10 * 60 or GetGameMode() == GAMEMODE_1V1MID or GetGameMode() == GAMEMODE_MO
+        or J.IsLaningUnderPressure(bot, enemies, tower) then return nil end
+
+    if not J.IsValidBuilding(tower) then
+        local enemyTeam = GetOpposingTeam()
+        tower = GetTower(enemyTeam, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+        if not J.IsValidBuilding(tower) then
+            tower = GetTower(enemyTeam, lane == LANE_TOP and TOWER_TOP_2 or TOWER_BOT_2)
+        end
+    end
+    local ally = J.GetLanePartner(bot)
+    local allyCreeps = bot:GetNearbyLaneCreeps(1150, false)
+    local enemyCreeps = bot:GetNearbyLaneCreeps(850, true)
+    if not J.IsValidHero(ally) or not J.IsCore(ally) or not J.IsInRange(bot, ally, 850)
+        or #allyCreeps < math.max(2, #enemyCreeps) or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
+    local best, score = nil, math.huge
+    for _, enemy in ipairs(enemies) do
+        if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
+            and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310 and J.GetHP(enemy) <= 0.65
+            and J.IsInRange(bot, enemy, range) and J.CanFollowLaneFight(ally, enemy)
+            and (not J.IsValidBuilding(tower) or not (J.IsInRange(enemy, tower, 900) or J.IsInRange(bot, tower, 850)))
+            and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(enemy:GetLocation()) then
+            local onWave = false
+            for _, creep in ipairs(allyCreeps) do
+                if J.IsValid(creep) and J.IsInRange(creep, enemy, 375) then onWave = true; break end
+            end
+            if onWave and #J.GetEnemiesNearLoc(enemy:GetLocation(), 900) <= 2 then
+                local priority = J.GetHP(enemy)
+                if priority < score then best, score = enemy, priority end
+            end
+        end
+    end
+    return best
+end
+
 function J.GetLaningHarassTarget(bot, enemies, tower, enemyCreepCount)
     local range = bot:GetAttackRange()
     local core = J.IsCore(bot)

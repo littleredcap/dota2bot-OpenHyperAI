@@ -36,6 +36,7 @@ local function fixture(core, overridden, startMid)
         GetAttackCombatProficiency = function() return 1 end,
         GetAttackDamage = function() return state.enemyDamage or 50 end,
         GetLastAttackTime = function() return state.enemyLastAttackTime or state.time - 1 end}
+    enemy.IsInvulnerable = no
     local tower = {x = 700, GetAttackTarget = function() return state.tower and bot or nil end}
     local openingTower = {x = 1600, IsAlive = yes, GetLocation = function(self) return self.x end}
     bot.GetPlayerID = function() return state.playerID or 1 end
@@ -107,6 +108,7 @@ local function fixture(core, overridden, startMid)
         end,
         GetEnemiesNearLoc = empty,
         GetLanePartner = function() return state.partner and partner or nil end,
+        CanFollowLaneFight = function() return state.partner and not state.partnerRetreat end,
         IsInRange = function(a, b, range) return math.abs(a.x - b.x) <= range end,
         IsKeyWordUnit = function(word, unit) return unit:GetUnitName():find(word, 1, true) ~= nil end,
         GetLocationTowardDistanceLocation = function(unit, _, distance) return unit.x - distance end,
@@ -448,6 +450,26 @@ do
     point = nil
     mode.GetDesire()
     expect(state, mode, 'attack', deny)
+end
+do
+    local state, mode, creep, enemy, bot, tower = fixture(false, false)
+    state.partner, state.partnerHP, state.enemy = true, 0.9, true
+    state.creepHP, state.allies = 250, {creep, creep}
+    enemy.GetAttackRange = function() return 150 end
+    local j, hp = mode.J, mode.J.GetHP
+    j.GetHP = function(unit) if unit == enemy then return 0.45 end; return hp(unit) end
+    assert(mode.GetDesire() == 0.68, 'stay in lane for pressure with friendly creeps and local core')
+    expect(state, mode, 'attack', enemy)
+    state.partnerRetreat = true
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'do not pressure alone')
+    state.partnerRetreat = false
+    tower.x = enemy.x + 560
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, tower, 450), 'do not pressure within enemy tower range')
+    enemy.x = 640
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'no walk-up to attack')
+    enemy.x = 260
+    state.allies = {creep}
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'no pressure without a friendly wave')
 end
 print('PASS: both lane modes prefer reachable ranged creeps, preserve attack windups and respect tower pressure')
 

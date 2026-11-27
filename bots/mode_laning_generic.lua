@@ -135,6 +135,8 @@ function GetDesire()
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
 		local deny, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if deny ~= nil or reserveDeny then return 0.7 end
+		if not local_mode_laning_generic
+			and J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.68 end
 		if botAssignedLane == LANE_MID and J.IsCore(bot) and (reserve or moveToCreep) then
 			return 0.7
 		end
@@ -271,7 +273,8 @@ local function ThinkLane()
 	end
 
 	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
-	local harassTarget = J.GetLaningHarassTarget(bot, nInRangeEnemy, enemyTower, #bot:GetNearbyLaneCreeps(600, true))
+	local harassTarget = J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
+		or J.GetLaningHarassTarget(bot, nInRangeEnemy, enemyTower, #bot:GetNearbyLaneCreeps(600, true))
 	if harassTarget ~= nil then
 		bot:Action_AttackUnit(harassTarget, true)
 		return

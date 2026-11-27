@@ -276,9 +276,10 @@ function X.SkillsComplement()
 	end
 
 
-	castWDesire, castWTarget = X.ConsiderW()
+	local pressLane
+	castWDesire, castWTarget, pressLane = X.ConsiderW()
 	castQDesire = BOT_ACTION_DESIRE_NONE
-	if castWDesire <= 0 or castWTarget:GetTeam() ~= bot:GetTeam() then
+	if not pressLane and (castWDesire <= 0 or castWTarget:GetTeam() ~= bot:GetTeam()) then
 		castQDesire, castQTarget = X.ConsiderQ()
 	end
 	if ( castQDesire > 0 )
@@ -456,6 +457,15 @@ function X.ConsiderW()
 		ConsiderHeal(ally)
 	end
 	if healTarget ~= nil then return BOT_ACTION_DESIRE_HIGH, healTarget end
+
+	if laning then
+		local pressureTarget = J.GetSideLanePressureTarget(bot,
+			J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE), bot:GetNearbyTowers(1500, true)[1], nCastRange)
+		if pressureTarget and J.CanCastOnNonMagicImmune(pressureTarget) and J.CanCastOnTargetAdvanced(pressureTarget)
+			and not pressureTarget:HasModifier('modifier_warlock_shadow_word') then
+			return BOT_ACTION_DESIRE_HIGH, pressureTarget, true
+		end
+	end
 
 	if J.IsInTeamFight( bot, 1200 )
 	then

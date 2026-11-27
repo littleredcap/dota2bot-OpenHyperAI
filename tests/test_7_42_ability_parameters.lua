@@ -583,7 +583,8 @@ print('PASS: Sniper balances last hits, lane pressure and distinct Shrapnel zone
 do
     local orders, laning = {}, true
     local enemyWarlock = {GetUnitName=function()return 'npc_dota_hero_warlock' end}
-    local enemyWarlockPresent = false
+    local enemyWarlockPresent, pressLane = false, false
+    local pressureEnemy = {GetTeam = function() return 3 end, HasModifier = no}
     local function ally(hp, core, pressured)
         local unit = {hp = hp, core = core, pressured = pressured, GetTeam = function() return 2 end}
         unit.IsIllusion = no
@@ -593,13 +594,15 @@ do
         return unit
     end
     local warlockBot, laneCore = ally(0.9, false, false), ally(0.76, true, true)
-    warlockBot.IsInvisible, warlockBot.GetLevel = no, function() return 5 end
+    warlockBot.IsInvisible, warlockBot.GetLevel, warlockBot.GetNearbyTowers = no, function() return 5 end, empty
     warlockBot.GetMana, warlockBot.GetMaxMana = function() return 400 end, function() return 500 end
     warlockBot.GetHealth, warlockBot.GetMaxHealth = function() return 540 end, function() return 600 end
     warlockBot.ActionQueue_UseAbilityOnEntity = function(_, spell, target) orders[#orders + 1] = {spell, target} end
     local word, bonds = ability({}), ability({})
     local warlock = loadHero('warlock', {warlock_shadow_word = word, warlock_fatal_bonds = bonds}, warlockBot, {
         IsInLaningPhase = function() return laning end, IsInTeamFight = no, IsGoingOnSomeone = no,
+        GetSideLanePressureTarget = function() return pressLane and pressureEnemy or nil end,
+        CanCastOnNonMagicImmune = yes, CanCastOnTargetAdvanced = yes,
         IsValidHero = yes, GetHP = function(unit) return unit.hp end, IsCore = function(unit) return unit.core end,
         GetNearbyHeroes = function(_, _, hostile)
             if hostile then return enemyWarlockPresent and {enemyWarlock} or {} end
@@ -628,6 +631,13 @@ do
     warlock.SkillsComplement()
     assert(orders[5][1] == word and orders[5][2] == laneCore,
         'a shared modifier name does not prove an active heal on a dying ally recently harmed by a visible enemy Warlock')
+    pressLane, laning, laneCore.healing, laneCore.hp = true, true, false, 0.76
+    warlock.SkillsComplement()
+    assert(orders[6][2] == laneCore, 'defensive heal takes precedence even during a safe pressure window')
+    laneCore.hp = 0.95
+    warlock.SkillsComplement()
+    assert(orders[7][1] == word and orders[7][2] == pressureEnemy,
+        'apply Shadow Word to a returning melee opponent instead of pushing the wave with Bonds')
 end
 print('PASS: Warlock learns and prioritizes useful lane healing')
 

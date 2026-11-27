@@ -1,0 +1,5 @@
+# Side-lane pressure regression: 9107144732 and 9107123606
+
+At 5:18 in 9107144732, Radiant DK stunned Dire WK and Warlock helped. At 5:30 WK was down to about 95 HP, but then added four last hits between 6:30 and 8:00. Radiant WK got no last hits between 7:30 and 10:00. Over the first ten minutes the DK/Warlock duo did about 5,099 damage to Radiant WK and 3,094 to Dire WK; the split in 9107123606 was 4,619 vs 2,495. This is evidence about pressure over the lane, not proof that more damage by itself wins it.
+
+An injured melee hero back on the current wave can be pressured by a healthy support, only in actual spell/attack range, with a healthy core able to follow, a friendly creep screen, and no tower dive, uphill approach or local numerical disadvantage. Do not abandon a pending last hit or heal, spend Bonds before a safe targeted Shadow Word, or script a chase order. No hero name in the decision. Count the opposing melee laner's last hits on the following waves after a trade; compare both sides at 5, 8 and 10 minutes, with deaths, resets and lane matchup noted.
