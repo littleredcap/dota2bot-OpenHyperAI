@@ -1666,7 +1666,7 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
     local range = bot:GetAttackRange()
     local damage = bot:GetAttackDamage()
     local attackers = GetLaneAttackers(bot, tower, enemies or {}, {})
-    local best, score, reserve = nil, -math.huge, false
+    local best, score, reserve, urgent = nil, -math.huge, false, false
     for _, creep in ipairs(creeps) do
         if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsInRange(bot, creep, range) and J.GetHP(creep) < 0.5 then
             local delay, _, wait = J.GetAttackProDelayTime(bot, creep)
@@ -1676,8 +1676,9 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
             local candidate = priority - remaining / math.max(1, actual)
             if remaining > 0 and remaining <= actual then
                 if (wait or 0) <= 0.17 then
-                    if GetLaneCreepHealthAt(creep, delay + 0.18, attackers) <= 0 then candidate = candidate + 2 end
-                    if candidate > score then best, score = creep, candidate end
+                    local dying = GetLaneCreepHealthAt(creep, delay + 0.18, attackers) <= 0
+                    if dying then candidate = candidate + 2 end
+                    if candidate > score then best, score, urgent = creep, candidate, dying or priority > 0 end
                 elseif wait <= 0.48 then
                     reserve = true
                 end
@@ -1687,7 +1688,7 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
             end
         end
     end
-    return best, reserve
+    return best, reserve, urgent
 end
 
 -- An enemy about to take a creep is a trading window even at full HP.
@@ -1752,14 +1753,15 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
     local allyCreeps = bot:GetNearbyLaneCreeps(1150, false)
     local enemyCreeps = bot:GetNearbyLaneCreeps(850, true)
     if not J.IsValidHero(ally) or not J.IsCore(ally) or not J.IsInRange(bot, ally, 850)
-        or #allyCreeps < math.max(2, #enemyCreeps) or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
+        or #allyCreeps < math.max(2, #enemyCreeps - 1) or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
+    local evenWave = #allyCreeps >= #enemyCreeps
     local best, score = nil, math.huge
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
             and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310
             and J.IsInRange(bot, enemy, range)
             and (HasCoveredSideLaneAngle(bot, ally, enemy, enemies, allyCreeps)
-                or (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(ally) >= 0.70
+                or evenWave and (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(ally) >= 0.70
                     and IsContestForLaneCreep(enemy, bot:GetTeam()))) and J.CanFollowLaneFight(ally, enemy))
             and (not J.IsValidBuilding(tower) or not (J.IsInRange(enemy, tower, 900) or J.IsInRange(bot, tower, 850)))
             and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(enemy:GetLocation()) then
@@ -1975,6 +1977,22 @@ function J.CanSupportTakeLaneLastHit(bot, creep)
 
     local allies = J.GetAlliesNearLoc(creep:GetLocation(), 1200)
     local attackers
+    local function laneAttackers()
+        attackers = attackers or GetLaneAttackers(bot, bot:GetNearbyTowers(1600, false)[1],
+            bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE), allies)
+        return attackers
+    end
+    -- An attack already released retains ownership, even if the core now backs off.
+    for _, shot in ipairs(creep:GetIncomingTrackingProjectiles()) do
+        local ally = shot.caster
+        if shot.is_attack and ally ~= nil and ally ~= bot and J.IsValidHero(ally)
+            and ally:GetTeam() == bot:GetTeam() and J.IsCore(ally) then
+            local impact = GetUnitToLocationDistance(creep, shot.location) / math.max(1, ally:GetAttackProjectileSpeed())
+            local damage = LaneAttackDamage(ally, creep, J.GetLaningAttackDamage(ally))
+            local health = GetLaneCreepHealthAt(creep, impact, laneAttackers(), ally)
+            if health > 0 and health <= damage then return false end
+        end
+    end
     for _, ally in ipairs(allies) do
         if ally ~= bot and J.IsValidHero(ally) and J.IsCore(ally)
             and not ally:IsDisarmed() and not J.IsDisabled(ally) and not J.IsRetreating(ally)
@@ -1983,23 +2001,18 @@ function J.CanSupportTakeLaneLastHit(bot, creep)
         then
             local displacement = (ally.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
                 and not J.IsInRange(ally, creep, ally:GetAttackRange() + 230)
-            if not displacement and not (J.GetHP(ally) < 0.48 and ally:WasRecentlyDamagedByAnyHero(4)) then
-                attackers = attackers or GetLaneAttackers(bot, bot:GetNearbyTowers(1600, false)[1],
-                    bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE), allies)
+            local reach = ally:GetAttackRange()
+            -- An uncommitted core outside practical reach is not a reservation.
+            -- In range, or already attacking the creep, retain the normal timing check.
+            local canTake = J.IsInRange(ally, creep, reach + 125) or ally:GetAttackTarget() == creep
+            if canTake and not displacement and not (J.GetHP(ally) < 0.48 and ally:WasRecentlyDamagedByAnyHero(4)) then
+                laneAttackers()
                 local delay = J.GetAttackProDelayTime(ally, creep)
                 local damage = LaneAttackDamage(ally, creep, J.GetLaningAttackDamage(ally))
                 local health = GetLaneCreepHealthAt(creep, delay, attackers, ally)
                 if (health > 0 and health <= damage) or (health > damage
                     and CanReserveLaneCreepShot(creep, damage, delay, delay + math.min(1.3, ally:GetSecondsPerAttack()), attackers, ally)) then
                     return false
-                end
-                -- If the core has already released the lethal projectile, leave it the kill.
-                for _, projectile in ipairs(creep:GetIncomingTrackingProjectiles()) do
-                    if projectile.is_attack and projectile.caster == ally then
-                        local impact = GetUnitToLocationDistance(creep, projectile.location) / math.max(1, ally:GetAttackProjectileSpeed())
-                        local atImpact = GetLaneCreepHealthAt(creep, impact, attackers, ally)
-                        if atImpact > 0 and atImpact <= damage then return false end
-                    end
                 end
             end
         end

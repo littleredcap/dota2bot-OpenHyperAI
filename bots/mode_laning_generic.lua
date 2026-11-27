@@ -122,10 +122,6 @@ function GetDesire()
 			return 0.74
 		end
 		if J.HasPendingLaningLastHit(bot) then return J.IsCore(bot) and 0.9 or 0.55 end
-		if bot.ohaLaneCamp ~= nil then
-			campPlan = LaneCamp.Plan(bot, botAssignedLane)
-			if campPlan ~= nil then return 0.63 end
-		end
 		local hitCreep, moveToCreep, reserve, urgentApproach = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
 			J.GetLaningAttackDamage(bot), nInRangeEnemy)
 		if J.IsValid(hitCreep) and not moveToCreep and J.IsInRange(bot, hitCreep, botAttackRange + 100) then
@@ -134,6 +130,8 @@ function GetDesire()
 		end
 		if urgentApproach and J.IsCore(bot)
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
+		local deny, reserveDeny, urgentDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
+		if urgentDeny and not local_mode_laning_generic then return 0.76 end
 		if not local_mode_laning_generic and hitCreep == nil and not reserve
 			and J.GetSideLaneCreepDrag(bot, nInRangeEnemy, enemyTower) then return 0.73 end
 		if not local_mode_laning_generic
@@ -144,7 +142,6 @@ function GetDesire()
 			if J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.71 end
 			if J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.68 end
 		end
-		local deny, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if deny ~= nil or reserveDeny then return 0.7 end
 		if botAssignedLane == LANE_MID and J.IsCore(bot) and (reserve or moveToCreep) then
 			return 0.7
@@ -228,9 +225,9 @@ local function ThinkLane()
 	local attackTarget = bot:GetAttackTarget()
 	local underPressure = J.IsLaningUnderPressure(bot, nInRangeEnemy, enemyTower)
 	if not underPressure and J.HasPendingLaningLastHit(bot) then return end
-	if campPlan ~= nil and not underPressure and not J.IsFinishingLaningAttack(bot, attackTarget)
-		and LaneCamp.Think(bot, campPlan) then return end
 	if local_mode_laning_generic then
+		if campPlan ~= nil and not underPressure and not J.IsFinishingLaningAttack(bot, attackTarget)
+			and LaneCamp.Think(bot, campPlan) then return end
 		local_mode_laning_generic.Think()
 		return
 	end
@@ -247,6 +244,7 @@ local function ThinkLane()
 	local hitCreep, moveToCreep, reserve, urgentApproach = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
 		J.GetLaningAttackDamage(bot), nInRangeEnemy)
 	if hitCreep ~= nil and not moveToCreep then
+		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'last-hit-now') end
 		bot:SetTarget(hitCreep)
 		J.IssueLaningAttack(bot, hitCreep)
 		return
@@ -261,9 +259,26 @@ local function ThinkLane()
 	-- A recovering core should enter last-hit range before an optional deny
 	-- can pin it behind the next enemy creep. Never walk without a safe point.
 	if firingPosition ~= nil and (urgentApproach or J.IsCore(bot)) then
+		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'safe-core-last-hit') end
 		bot:Action_MoveToLocation(firingPosition)
 		return
 	end
+
+	local denyCreep, reserveDeny, urgentDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
+	if urgentDeny and J.IsValid(denyCreep) then
+		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'deny-now') end
+		bot:SetTarget(denyCreep)
+		J.IssueLaningAttack(bot, denyCreep)
+		return
+	end
+	local cover = J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower)
+	if cover and not J.IsFinishingLaningAttack(bot, attackTarget) then
+		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'protect-core-now') end
+		bot:Action_AttackUnit(cover, true)
+		return
+	end
+	if campPlan ~= nil and not J.IsFinishingLaningAttack(bot, attackTarget)
+		and LaneCamp.Think(bot, campPlan) then return end
 
 	if not J.IsFinishingLaningAttack(bot, attackTarget) then
 		local finish = J.GetSideLaneFinishTarget(bot, nInRangeEnemy, enemyTower)
@@ -273,14 +288,12 @@ local function ThinkLane()
 	-- Real last hits remain first. Pressure the returning offlaner before an
 	-- optional support deny, and only move a short distance with lane cover.
 	if not J.IsCore(bot) and not J.IsFinishingLaningAttack(bot, attackTarget) then
-		local press = J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower)
-			or J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
+		local press = J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
 		if press ~= nil then bot:Action_AttackUnit(press, true); return end
 		local step = J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower)
 		if step ~= nil then bot:Action_MoveToLocation(step); return end
 	end
 	if firingPosition == nil and J.RunSideLaneCreepDrag(bot, nInRangeEnemy, enemyTower, false) then return end
-	local denyCreep, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 	if J.IsValid(denyCreep) then
 		bot:SetTarget(denyCreep)
 		J.IssueLaningAttack(bot, denyCreep)

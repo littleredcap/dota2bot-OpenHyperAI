@@ -118,7 +118,8 @@ local function fixture(core, overridden, startMid)
     local modules = {['bots/FunLib/utils'] = utils, ['bots/FunLib/jmz_func'] = j,
         ['bots/FunLib/version'] = {}, ['bots/FunLib/localization'] = {Get = empty},
         ['bots/FunLib/lane_camp'] = {
-            Plan = function() return state.campPlan end, Cancel = function() end,
+            Plan = function() return state.campPlan end,
+            Cancel = function(unit, reason) unit.ohaLaneCamp=nil; state.cancelCamp=reason end,
             Think = function(_, plan) state.orders[#state.orders + 1] = {'camp', plan}; return true end,
         },
         ['game/botsinit'] = {CreateGeneric = empty}}
@@ -873,3 +874,44 @@ do
     assert(mode.J.GetSideLaneFinishTarget(bot, {enemy}) == nil, 'do not chase a low enemy out of reach')
 end
 print('PASS: take an immediate safe finishing hit without dropping a real last hit')
+
+do
+    local state, mode, creep, _, bot = fixture(true, false)
+    state.campPlan, bot.ohaLaneCamp = {kind='pull'}, {kind='pull'}
+    assert(mode.GetDesire() == 0.9, 'an active pull does not hide an immediate core last hit')
+    mode.Think()
+    assert(state.orders[1][1] == 'attack' and state.orders[1][2] == creep
+        and state.cancelCamp == 'last-hit-now', 'issue the last hit, not the camp order')
+end
+
+do
+    local state, mode, creep, _, bot = fixture(false, false)
+    state.noCreeps, state.deniable = true, true
+    local ranged = setmetatable({x=170, GetTeam=function() return 2 end,
+        GetUnitName=function() return 'npc_dota_creep_goodguys_ranged' end}, {__index=creep})
+    state.allies = {ranged}
+    state.campPlan, bot.ohaLaneCamp = {kind='pull'}, {kind='pull'}
+    mode.J.GetSideLanePressureTarget = function() return {x=350} end
+    assert(mode.GetDesire() == 0.76, 'make a reachable ranged deny compete correctly')
+    mode.Think()
+    assert(state.orders[1][1] == 'attack' and state.orders[1][2] == ranged
+        and state.cancelCamp == 'deny-now', 'deny the ranged creep before an optional pull or poke')
+end
+
+do
+    local state, mode, creep, _, bot = fixture(false, false)
+    local j = mode.J
+    state.partner = true
+    local partner = j.GetLanePartner(bot)
+    partner.x = creep.x + 400
+    partner.GetTeam = function() return 2 end
+    partner.GetAttackProjectileSpeed = function() return 1000 end
+    assert(j.CanSupportTakeLaneLastHit(bot, creep), 'do not reserve the last hit for a distant uncommitted core')
+    partner.GetAttackTarget = function() return creep end
+    assert(not j.CanSupportTakeLaneLastHit(bot, creep), 'respect a committed core order when the timing still works')
+    state.partnerRetreat = true
+    assert(j.CanSupportTakeLaneLastHit(bot, creep), 'release a retreating core reservation')
+    creep.GetIncomingTrackingProjectiles = function() return {{caster=partner, is_attack=true, location=100}} end
+    assert(not j.CanSupportTakeLaneLastHit(bot, creep), 'do not steal a lethal projectile already fired by the retreating core')
+end
+print('PASS: 9107324797 lane arbitration: queued pull, ranged deny, and last-hit ownership')
