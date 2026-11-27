@@ -11,6 +11,8 @@ This is the **dota2bot-OpenHyperAI** project -- Lua bot scripts for Dota 2 that 
 
 **Read these docs FIRST before making any changes.** They contain everything needed to make targeted updates without scanning the entire repo.
 
+For client Bot testing, follow [the match recording standard](docs/BOT_MATCH_RECORDING.md) after every match.
+
 ## Common Tasks
 
 ### Check for New Patches
