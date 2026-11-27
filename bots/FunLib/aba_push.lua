@@ -792,19 +792,38 @@ local function GetEarlyMidTowerChip(bot, lane, gameState)
         or bot:WasRecentlyDamagedByTower(2) then return end
     local tower = GetTower(gameState.enemyTeam, Tower.Mid1)
     if not jmz.IsValidBuilding(tower) or not tower:CanBeSeen()
-        or not jmz.IsInRange(bot, tower, bot:GetAttackRange())
-        or tower:HasModifier('modifier_fountain_glyph') or ____exports.HasBackdoorProtect(tower) then return end
+        or tower:HasModifier('modifier_fountain_glyph') or ____exports.HasBackdoorProtect(tower)
+        or (bot.ohaLaningAttackTarget ~= nil and jmz.HasPendingLaningLastHit(bot)) then return end
+    local gap = GetUnitToUnitDistance(bot, tower) - bot:GetAttackRange()
+    if gap > 260 then return end
     local tank = tower:GetAttackTarget()
     if not jmz.IsValid(tank) or tank:GetTeam() ~= bot:GetTeam()
         or not jmz.IsKeyWordUnit('npc_dota_creep_', tank)
         or tank:GetHealth() <= math.max(100, tower:GetAttackDamage()) then return end
-    local count = 0
+    local count, siege = 0, false
     for _, creep in ipairs(bot:GetNearbyLaneCreeps(1400, false)) do
-        if jmz.IsValid(creep) and jmz.IsInRange(creep, tower, 850) then count = count + 1 end
+        if jmz.IsValid(creep) and jmz.IsInRange(creep, tower, 850) then
+            count = count + 1
+            siege = siege or jmz.IsKeyWordUnit('_siege', creep)
+        end
     end
     if count < 2 or #jmz.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 1200) > 1 then return end
     for _, enemy in ipairs(jmz.GetEnemiesNearLoc(tower:GetLocation(), 1650)) do
         if jmz.IsInRange(bot, enemy, math.max(725, enemy:GetAttackRange() + 150)) then return end
+    end
+    if gap > 0 then
+        -- Only step into range while a real catapult has company and plenty
+        -- of tank health; give up the step if another wave needs last hits.
+        if not siege or tank:GetHealth() <= 2 * math.max(100, tower:GetAttackDamage())
+            or #bot:GetNearbyLaneCreeps(1000, true) > 0 then return end
+        local origin = bot:GetLocation()
+        local staging = jmz.VectorTowards(origin, tower:GetLocation(), gap + 25)
+        local halfway = jmz.VectorTowards(origin, tower:GetLocation(), (gap + 25) / 2)
+        if not IsLocationPassable(staging) or not IsLocationVisible(staging)
+            or not jmz.CanCommitToLaneTeleport(bot, tower:GetLocation(), true, 1650)
+            or not jmz.CanCommitToLaneTeleport(bot, staging, true, 1400)
+            or not jmz.CanCommitToLaneTeleport(bot, halfway, true, 1200) then return end
+        return {tower = tower, staging = staging, earlyMidChip = true}
     end
     return {tower = tower, earlyMidChip = true}
 end
@@ -1321,7 +1340,8 @@ function ____exports.PushThink(bot, lane)
         end
         if opportunity.earlyMidChip then
             bot._ohaIssuedPushOrder = true
-            if bot:GetAttackTarget() ~= opportunity.tower then bot:Action_AttackUnit(opportunity.tower, true) end
+            if opportunity.staging then bot:Action_MoveToLocation(opportunity.staging)
+            elseif bot:GetAttackTarget() ~= opportunity.tower then bot:Action_AttackUnit(opportunity.tower, true) end
             return
         end
         RunOuterTowerPlan(bot, opportunity)

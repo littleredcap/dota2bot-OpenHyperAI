@@ -920,6 +920,20 @@ do
     hp = 40
     push.PushThink(bot, lane.Mid)
     assert(not bot.ohaOuterTowerPush and orders[#orders] == 'cancel', 'cancel the actual attack when creep cover is about to die')
+    local siege = {x=tower.x+100}
+    hp, bot.x = 350, 5200
+    bot.GetNearbyLaneCreeps = function(_, _, enemy) return enemy and (opts.contestedLastHit and {tank} or {}) or {tank, siege} end
+    jmz.IsKeyWordUnit = function(key, unit) return (key == 'npc_dota_creep_' and unit == tank) or (key == '_siege' and unit == siege) end
+    jmz.VectorTowards = function(point, _, offset) return {x=point.x+offset} end
+    getfenv(push.PushThink).IsLocationVisible = function() return not opts.hiddenStep end
+    same(push.GetPushDesire(bot, lane.Mid), 0.8, 'a catapult covering a clear lane permits a short approach')
+    push.PushThink(bot, lane.Mid)
+    assert(orders[#orders].x == 5375, 'walk just into attack range, not all the way to the tower')
+    opts.contestedLastHit = true
+    push.PushThink(bot, lane.Mid)
+    assert(orders[#orders] == 'cancel', 'stop the approach when the next enemy wave needs attention')
+    opts.contestedLastHit, opts.hiddenStep = false, true
+    assert(push.GetPushDesire(bot, lane.Mid) ~= 0.8, 'no step to a fogged position')
 end
 
 do

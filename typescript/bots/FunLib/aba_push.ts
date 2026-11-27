@@ -661,18 +661,37 @@ function GetEarlyMidTowerChip(bot: Unit, lane: Lane, gameState: ReturnType<typeo
         || bot.GetAttackRange() < 550 || !jmz.IsCore(bot) || jmz.GetHP(bot) < 0.65 || bot.IsDisarmed()
         || jmz.IsRetreating(bot) || bot.WasRecentlyDamagedByAnyHero(2) || bot.WasRecentlyDamagedByTower(2)) return;
     const tower = GetTower(gameState.enemyTeam, Tower.Mid1);
-    if (!tower || !jmz.IsValidBuilding(tower) || !tower.CanBeSeen() || !jmz.IsInRange(bot, tower, bot.GetAttackRange())
-        || tower.HasModifier("modifier_fountain_glyph") || HasBackdoorProtect(tower)) return;
+    if (!tower || !jmz.IsValidBuilding(tower) || !tower.CanBeSeen()
+        || tower.HasModifier("modifier_fountain_glyph") || HasBackdoorProtect(tower)
+        || ((bot as any).ohaLaningAttackTarget && jmz.HasPendingLaningLastHit(bot))) return;
+    const gap = GetUnitToUnitDistance(bot, tower) - bot.GetAttackRange();
+    if (gap > 260) return;
     const tank = tower.GetAttackTarget();
     if (!tank || !jmz.IsValid(tank) || tank.GetTeam() !== bot.GetTeam() || !jmz.IsKeyWordUnit("npc_dota_creep_", tank)
         || tank.GetHealth() <= Math.max(100, tower.GetAttackDamage())) return;
     let count = 0;
+    let siege = false;
     for (const creep of bot.GetNearbyLaneCreeps(1400, false)) {
-        if (jmz.IsValid(creep) && jmz.IsInRange(creep, tower, 850)) count++;
+        if (jmz.IsValid(creep) && jmz.IsInRange(creep, tower, 850)) {
+            count++;
+            siege = siege || jmz.IsKeyWordUnit("_siege", creep);
+        }
     }
     if (count < 2 || jmz.GetLastSeenEnemiesNearLoc(tower.GetLocation(), 1200).length > 1) return;
     for (const enemy of jmz.GetEnemiesNearLoc(tower.GetLocation(), 1650)) {
         if (jmz.IsInRange(bot, enemy, Math.max(725, enemy.GetAttackRange() + 150))) return;
+    }
+    if (gap > 0) {
+        if (!siege || tank.GetHealth() <= 2 * Math.max(100, tower.GetAttackDamage())
+            || bot.GetNearbyLaneCreeps(1000, true).length > 0) return;
+        const origin = bot.GetLocation();
+        const staging = jmz.VectorTowards(origin, tower.GetLocation(), gap + 25);
+        const halfway = jmz.VectorTowards(origin, tower.GetLocation(), (gap + 25) / 2);
+        if (!IsLocationPassable(staging) || !IsLocationVisible(staging)
+            || !jmz.CanCommitToLaneTeleport(bot, tower.GetLocation(), true, 1650)
+            || !jmz.CanCommitToLaneTeleport(bot, staging, true, 1400)
+            || !jmz.CanCommitToLaneTeleport(bot, halfway, true, 1200)) return;
+        return { tower, staging, earlyMidChip: true };
     }
     return { tower, earlyMidChip: true };
 }
@@ -1305,7 +1324,8 @@ export function PushThink(bot: Unit, lane: Lane): void {
         }
         if (opportunity.earlyMidChip) {
             (bot as any)._ohaIssuedPushOrder = true;
-            if (bot.GetAttackTarget() !== opportunity.tower) bot.Action_AttackUnit(opportunity.tower, true);
+            if (opportunity.staging) bot.Action_MoveToLocation(opportunity.staging);
+            else if (bot.GetAttackTarget() !== opportunity.tower) bot.Action_AttackUnit(opportunity.tower, true);
             return;
         }
         RunOuterTowerPlan(bot, opportunity);

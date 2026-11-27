@@ -102,6 +102,7 @@ declare function GetOuterTowerThreat(tower: Unit, lane: Lane): OuterTowerThreat;
 declare function GetOuterTowerResponse(location: Vector, threat: OuterTowerThreat, fallback?: Vector, highGround?: boolean): LuaMultiReturn<[boolean, Record<number, {reach: number, cover: boolean, teleport?: Vector, rally?: Vector, gather?: Vector, needsGlyph?: boolean} | undefined>]>;
 declare function RunOuterTowerHold(bot: Unit, location: Vector, reach: number, cover: boolean): boolean;
 declare function RunOuterTowerContest(bot: Unit, tower: Unit, threat: OuterTowerThreat, state: {waveClearGather?: Vector, waveClearReach?: number}): boolean;
+declare function HasPendingLaningLastHit(bot: Unit): boolean;
 declare function CanCommitToLaneTeleport(bot: Unit, location: Vector, requireClear?: boolean, radius?: number): boolean;
 declare function ShouldRetreatFromEnemyReinforcements(bot: Unit): boolean;
 declare function GetAlliesNearLoc(location: Vector, radius: number): Unit[];
