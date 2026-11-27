@@ -1665,7 +1665,8 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
     if #creeps == 0 then return nil, false end
     local range = bot:GetAttackRange()
     local damage = bot:GetAttackDamage()
-    local attackers = GetLaneAttackers(bot, tower, enemies or {}, {})
+    -- Account for an allied deny windup as well as the existing projectile pass.
+    local attackers = GetLaneAttackers(bot, tower, enemies or {}, bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE))
     local best, score, reserve, urgent = nil, -math.huge, false, false
     for _, creep in ipairs(creeps) do
         if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsInRange(bot, creep, range) and J.GetHP(creep) < 0.5 then

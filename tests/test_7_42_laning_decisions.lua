@@ -915,3 +915,26 @@ do
     assert(not j.CanSupportTakeLaneLastHit(bot, creep), 'do not steal a lethal projectile already fired by the retreating core')
 end
 print('PASS: 9107324797 lane arbitration: queued pull, ranged deny, and last-hit ownership')
+
+do
+    local state, mode, creep, _, bot = fixture(false, false)
+    local j = mode.J
+    state.noCreeps, state.deniable, state.partner = true, true, true
+    local partner = j.GetLanePartner(bot)
+    local ranged = setmetatable({x=165, GetTeam=function() return 2 end,
+        GetUnitName=function() return 'npc_dota_creep_goodguys_ranged' end}, {__index=creep})
+    local melee = setmetatable({x=175, GetTeam=function() return 2 end}, {__index=creep})
+    state.allies = {ranged, melee}
+    local winding = true
+    local previousDelay = j.GetAttackProDelayTime
+    partner.GetAttackTarget = function() return winding and ranged or nil end
+    j.GetAttackProDelayTime = function(unit, target)
+        if unit == partner then return 0.15, 0.10, 0 end
+        return previousDelay(unit, target)
+    end
+    j.IsAttacking = function(unit) return unit == partner and winding end
+    expect(state, mode, 'attack', melee)
+    winding = false
+    expect(state, mode, 'attack', ranged)
+end
+print('PASS: duo deny divides targets only while an earlier allied lethal swing is committed')
