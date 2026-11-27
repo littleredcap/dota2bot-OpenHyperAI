@@ -954,6 +954,7 @@ local function UseConsideredItem(choice)
 		J.SetReportMotive(bDebugMode, choice.name .. '→' .. choice.motive)
 	end
 	X.SetUseItem(choice.item, choice.target, choice.castType)
+	if choice.name == 'item_tpscroll' then J.TraceLaneTeleport(bot, choice.motive, choice.target) end
 	local fade = concealmentFade[choice.name]
 	if fade ~= nil or choice.name == 'item_trickster_cloak' then
 		local recipient = choice.castType == 'unit' and choice.target or bot
@@ -4797,19 +4798,18 @@ function X.GetLaningTPLocation( bot, nMinTPDistance, botLocation )
 		return nil, false
 	end
 
-	local laneToTP = bot:GetAssignedLane()
+	local laneToTP = J.GetTeleportHomeLane(bot)
 	local tp = false
-	if laneToTP ~= LANE_TOP and laneToTP ~= LANE_MID and laneToTP ~= LANE_BOT then
-		local position = J.GetPosition(bot)
-		if position == 2 then
-			laneToTP = LANE_MID
-		elseif position == 1 or position == 5 then
-			laneToTP = team == TEAM_RADIANT and LANE_BOT or LANE_TOP
-		elseif position == 3 or position == 4 then
-			laneToTP = team == TEAM_RADIANT and LANE_TOP or LANE_BOT
-		else
-			return nil, false
-		end
+	if J.IsInLaningPhase(bot) then
+		if DotaTime() < 0 or bot:DistanceFromFountain() > 1400 then return nil, false end
+		local towers = laneToTP == LANE_TOP and {TOWER_TOP_1, TOWER_TOP_2}
+			or (laneToTP == LANE_MID and {TOWER_MID_1, TOWER_MID_2} or {TOWER_BOT_1, TOWER_BOT_2})
+		local tower = GetTower(team, towers[1])
+		if not J.IsValidBuilding(tower) then tower = GetTower(team, towers[2]) end
+		if not J.IsValidBuilding(tower) then return nil, false end
+		local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 250)
+		if J.CanReturnToLaneByTeleport(bot, point, nMinTPDistance - 900) then return point, true end
+		return nil, false
 	end
 
 	local botAmount = GetAmountAlongLane(laneToTP, botLocation)
@@ -4851,7 +4851,7 @@ function X.GetDefendTPLocation( nLane )
 		local tower = GetTower(team, id)
 		if J.IsValidBuilding(tower) then
 			local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
-			if IsLocationPassable(point) and J.CanCommitToLaneTeleport(bot, point, true) then return point end
+			if IsLocationPassable(point) and J.CanCommitToLaneTeleport(bot, point, true) then return point, tower end
 		end
 	end
 	local ancient = GetAncient(team)
@@ -5026,6 +5026,7 @@ if bot.ProphetTPLocation == nil then bot.ProphetTPLocation = bot:GetLocation() e
 X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 	local nMode = bot:GetActiveMode()
+	local laning = J.IsInLaningPhase(bot)
 	if nMode == BOT_MODE_RUNE
 		or ( bot:IsRooted() )
 		or ( bot:HasModifier( "modifier_item_armlet_unholy_strength" ) )
@@ -5056,7 +5057,6 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local nNearbyEnemyTowers = bot:GetNearbyTowers( 888, true )
 	if #nNearbyEnemyTowers > 0 then return BOT_ACTION_DESIRE_NONE end
 
-	local tpLoc = nil
 	local sCastType = 'ground'
 	local hEffectTarget = nil
 	local sCastMotive = nil
@@ -5086,18 +5086,23 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		local location = J.GetHighGroundResponseTeleport(bot, response.stage, anchors)
 		if location then return BOT_ACTION_DESIRE_ABSOLUTE, location, sCastType, 'high-ground-response' end
 	end
+	local function RememberDefense(lane)
+		return function() bot.ohaLaneDefenseTP = { lane = lane, time = DotaTime() } end
+	end
 	local defense = bot._defend
 	local plannedDefense = defense and defense.waveClearLane ~= nil and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
 		and defense.waveClearTeleport ~= nil and J.IsValidBuilding(defense.waveClearRearTower or defense.waveClearTower)
 	if plannedDefense and J.IsDefending(bot) and nEnemyCount == 0
 		and not J.ShouldKeepLaningWave(bot, defense.waveClearLane)
 		and GetUnitToLocationDistance(bot, defense.waveClearTeleport) > 1800
-		and J.CanCommitToLaneTeleport(bot, defense.waveClearTeleport, true, defense.waveClearGather and 1250 or nil) then
+		and J.CanCommitToLaneTeleport(bot, defense.waveClearTeleport, true, defense.waveClearGather and 1250 or nil)
+		and J.CanTakeLaneDefenseTeleport(bot, defense.waveClearLane, defense.waveClearTeleport,
+			defense.waveClearTower, defense.waveClearRearTower, true, defense.waveClearReach) then
 		return BOT_ACTION_DESIRE_ABSOLUTE, defense.waveClearTeleport, sCastType,
-			defense.waveClearGather and '集结守塔' or '提前转线清兵守塔'
+			'planned-lane-defense:' .. tostring(defense.waveClearLane), RememberDefense(defense.waveClearLane)
 	end
 
-	if postFightDuty and nEnemyCount == 0 then
+	if not laning and postFightDuty and nEnemyCount == 0 then
 		local assignment = postFightDuty == 'clear' and postFightPlan.primary or postFightPlan.backup
 		if assignment and assignment.teleport and J.CanCommitToLaneTeleport(bot, assignment.teleport, true, 1050) then
 			return BOT_ACTION_DESIRE_ABSOLUTE, assignment.teleport, sCastType, 'post-fight-cover'
@@ -5110,6 +5115,8 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		and bot:DistanceFromFountain() < 1400 and botHP >= 0.82 and botMP >= 0.40
 		and nEnemyCount == 0 and J.IsInLaningPhase(bot)
 	if nMode == BOT_MODE_LANING or recoveringSideCore
+		or laning and nMode == BOT_MODE_FARM and nEnemyCount == 0
+		and not midCover and bot:DistanceFromFountain() <= 1400
 	then
 		local shouldTp
 		hEffectTarget, shouldTp = X.GetLaningTPLocation(bot, nMinTPDistance, botLocation)
@@ -5133,7 +5140,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	end
 
 	-- Go complete items
-	if not midCover and X.IsInvFull(bot) and X.GetNumStashItem(bot) >= 1
+	if not laning and not midCover and X.IsInvFull(bot) and X.GetNumStashItem(bot) >= 1
 	and (X.IsThereRecipeInStash(bot) or (bot:GetStashValue() >= 1000 and bot:GetGold() > 1100))
 	and not J.IsPushing(bot) and not J.IsGoingOnSomeone(bot)
 	and not J.IsInTeamFight(bot, 1000)
@@ -5161,7 +5168,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	end
 
 	-- Roshan
-	if J.IsDoingRoshan(bot)
+	if not laning and J.IsDoingRoshan(bot)
 	and nEnemyCount == 0
 	and not J.IsRoshanCloseToChangingSides()
 	then
@@ -5192,7 +5199,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	end
 
 	--Tormentor
-	if bot:GetActiveMode() == BOT_MODE_SIDE_SHOP
+	if not laning and bot:GetActiveMode() == BOT_MODE_SIDE_SHOP
 	and nEnemyCount == 0
 	and (not J.IsInTeamFight(bot, 1200)
 		or not J.IsGoingOnSomeone(bot)
@@ -5225,6 +5232,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		and nModeDesire > BOT_MODE_DESIRE_MODERATE
 		and nEnemyCount == 0
 	then
+		local tpLoc, tower
 		local nDefendLane, sLane = LANE_MID, 'tower_mid'
 		if nMode == BOT_MODE_DEFEND_TOWER_TOP then nDefendLane, sLane = LANE_TOP, 'tower_top' end
 		if nMode == BOT_MODE_DEFEND_TOWER_BOT then nDefendLane, sLane = LANE_BOT, 'tower_bot' end
@@ -5237,13 +5245,14 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 			local botAmount = GetAmountAlongLane(nDefendLane, botLocation)
 			local laneFront = GetLaneFrontAmount(team, nDefendLane, false)
 			if botAmount.distance > nMinTPDistance or botAmount.amount < laneFront / 5 then
-				tpLoc = X.GetDefendTPLocation(nDefendLane)
+				tpLoc, tower = X.GetDefendTPLocation(nDefendLane)
 			end
 		end
 
 		if tpLoc ~= nil
 			and GetUnitToLocationDistance(bot, tpLoc) > nMinTPDistance - 500
 			and J.CanCommitToLaneTeleport(bot, tpLoc)
+			and J.CanTakeLaneDefenseTeleport(bot, nDefendLane, tpLoc, tower)
 		then
 			hEffectTarget = tpLoc
 			sCastMotive = '前往守塔:'..sLane
@@ -5260,16 +5269,17 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 				end
 			end
 
-			return BOT_ACTION_DESIRE_ABSOLUTE, hEffectTarget, sCastType, sCastMotive
+			return BOT_ACTION_DESIRE_ABSOLUTE, hEffectTarget, sCastType, sCastMotive, RememberDefense(nDefendLane)
 		end
 	end
 
 
 	--推塔
-	if not highGroundResponse and not midCover and J.IsPushing( bot )
+	if not laning and not highGroundResponse and not midCover and J.IsPushing( bot )
 		and nModeDesire >= BOT_MODE_DESIRE_MODERATE
 		and nEnemyCount == 0
 	then
+		local tpLoc
 		local nPushLane, sLane = LANE_MID, 'tower_mid'
 		if nMode == BOT_MODE_PUSH_TOWER_TOP then nPushLane, sLane = LANE_TOP, 'tower_top' end
 		if nMode == BOT_MODE_PUSH_TOWER_BOT then nPushLane, sLane = LANE_BOT, 'tower_bot' end
@@ -5310,11 +5320,12 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 
 	--保人
-	if nMode == BOT_MODE_DEFEND_ALLY
+	if not laning and nMode == BOT_MODE_DEFEND_ALLY
 		and nModeDesire >= BOT_MODE_DESIRE_MODERATE
 		and J.Role.CanBeSupport( botName )
 		and nEnemyCount == 0
 	then
+		local tpLoc
 		local target = bot:GetTarget()
 		if target ~= nil
 			and target:IsHero()
@@ -5376,7 +5387,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 			and not bot:HasModifier( "modifier_item_spirit_vessel_heal" )
 			and bot:DistanceFromFountain() > nMinTPDistance
 		then
-			tpLoc = J.GetTeamFountain()
+			local tpLoc = J.GetTeamFountain()
 			sCastMotive = '撤退:1'
 
 			if botName == 'npc_dota_hero_furion'
@@ -5411,7 +5422,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 			and not bot:HasModifier( "modifier_juggernaut_healing_ward_heal" )
 			and bot:DistanceFromFountain() > nMinTPDistance - 600
 		then
-			tpLoc = J.GetTeamFountain()
+			local tpLoc = J.GetTeamFountain()
 			sCastMotive = '撤退:2'
 
 			if botName == 'npc_dota_hero_furion'
@@ -5451,7 +5462,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 			and not bot:HasModifier( "modifier_tango_heal" )
 			and bot:DistanceFromFountain() > nMinTPDistance - 600
 		then
-			tpLoc = J.GetTeamFountain()
+			local tpLoc = J.GetTeamFountain()
 			sCastMotive = '撤退:3'
 
 			if botName == 'npc_dota_hero_furion'
@@ -5472,12 +5483,13 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 
 	--TP出去发育
-	if nMode == BOT_MODE_FARM
+	if not laning and nMode == BOT_MODE_FARM
 		and bot:DistanceFromFountain() < 800
 		and not X.IsBaseTowerDestroyed()
 		and botHP > 0.9
 		and botMP > 0.8
 	then
+		local tpLoc
 		local mostFarmDesireLane, mostFarmDesire = J.GetMostFarmLaneDesire(bot)
 
 		if mostFarmDesire > 0.1
@@ -5517,7 +5529,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 
 	--TP发育带线
-	if bot:GetLevel() >= 10
+	if not laning and bot:GetLevel() >= 10
 		and nMode ~= BOT_MODE_ROSHAN
 		and not X.IsBaseTowerDestroyed()
 		and J.GetAllyCount( bot, 1600 ) <= 2
@@ -5531,6 +5543,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		local nCreeps= bot:GetNearbyCreeps( 1600, true )
 		local mostFarmDesireLane, mostFarmDesire = J.GetMostFarmLaneDesire(bot)
 		
+		local tpLoc
 		local isTravelBootsAvailable = false
 		if J.IsItemAvailable( "item_travel_boots" )
 			or J.IsItemAvailable( "item_travel_boots_2" )

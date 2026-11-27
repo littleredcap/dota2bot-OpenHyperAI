@@ -1,4 +1,5 @@
 local J = {}
+local LaneTeleportPolicy = require(GetScriptDirectory() .. '/FunLib/lane_teleport_policy')
 
 local bDebugMode = ( 1 == 10 )
 local tAllyIDList = GetTeamPlayers( GetTeam() )
@@ -6285,6 +6286,102 @@ function J.CanCommitToLaneTeleport(bot, location, requireClear, radius)
 	return backup >= threatCount - 1 and J.GetHP(bot) >= 0.55
 end
 
+local function LaneTower(teamId, lane, tier)
+	local ids = lane == LANE_TOP and {TOWER_TOP_1, TOWER_TOP_2, TOWER_TOP_3}
+		or (lane == LANE_MID and {TOWER_MID_1, TOWER_MID_2, TOWER_MID_3}
+		or (lane == LANE_BOT and {TOWER_BOT_1, TOWER_BOT_2, TOWER_BOT_3}))
+	return ids and GetTower(teamId, ids[tier])
+end
+
+function J.GetTeleportHomeLane(bot)
+	local lane = bot:GetAssignedLane()
+	if lane == LANE_TOP or lane == LANE_MID or lane == LANE_BOT then return lane end
+	local role = J.GetPosition(bot)
+	if role == 2 then return LANE_MID end
+	if role == 1 or role == 5 then return bot:GetTeam() == TEAM_RADIANT and LANE_BOT or LANE_TOP end
+	return bot:GetTeam() == TEAM_RADIANT and LANE_TOP or LANE_BOT
+end
+
+function J.CanReturnToLaneByTeleport(bot, location, minimum)
+	return LaneTeleportPolicy.ReturnToLane({
+		started = DotaTime() >= 0, fromBase = bot:DistanceFromFountain() <= 1400,
+		healthy = J.GetHP(bot) >= 0.80 and J.GetMP(bot) >= 0.35,
+		safeAnchor = IsLocationPassable(location) and J.CanCommitToLaneTeleport(bot, location, true, 1100),
+		distance = GetUnitToLocationDistance(bot, location), minimum = minimum,
+	})
+end
+
+function J.TraceLaneTeleport(bot, motive, location)
+	if not J.Customize or not J.Customize.TraceLaneDecisions or location == nil then return end
+	print(string.format('[OHA tp] %.2f player=%d hero=%s home=%d reason=%s from=%.0f,%.0f to=%.0f,%.0f',
+		DotaTime(), bot:GetPlayerID(), bot:GetUnitName(), J.GetTeleportHomeLane(bot), tostring(motive),
+		bot:GetLocation().x, bot:GetLocation().y, location.x, location.y))
+end
+
+local function HasSourceLaneOpportunity(bot, lane)
+	if not J.IsCore(bot) or J.GetHP(bot) < 0.55 or bot:DistanceFromFountain() < 1400 then return false end
+	if J.ShouldKeepLaningWave(bot) or J.ShouldKeepMidOpportunity(bot) then return true end
+	local tower = LaneTower(bot:GetTeam(), lane, 1)
+	local front = GetLaneFrontLocation(bot:GetTeam(), lane, 0)
+	local distance = GetUnitToLocationDistance(bot, front)
+	return J.IsValidBuilding(tower) and GetAmountAlongLane(lane, bot:GetLocation()).distance <= 1300
+		and distance <= 2200 and #J.GetEnemiesNearLoc(bot:GetLocation(), 1100) < 2
+end
+
+-- Both planned and legacy defense must justify spending the scroll. Follow-up
+-- claims are written only after the item action is issued.
+function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, reach)
+	if not J.IsInLaningPhase(bot) then return true end
+	if not J.IsValidBuilding(tower) or landing == nil then return false end
+	local threat = J.GetOuterTowerThreat(tower, lane)
+	local home = J.GetTeleportHomeLane(bot)
+	local hub = tower:GetLocation()
+	local speed = math.max(bot:GetCurrentMovementSpeed(), 250)
+	local ready = math.max(bot:GetAttackRange(), reach or 0, 250)
+	local arrival = 4.5 + math.max(0, J.GetLocationToLocationDistance(landing, hub) - ready) / speed
+	local urgent = threat.heroAttacking and (threat.count >= 2 or threat.waveSize >= 2)
+		or threat.count >= 2 and threat.waveSize >= 3 and threat.eta <= 6
+		or threat.underAttack and threat.towerHP <= 0.30
+	local pressure = urgent or threat.underAttack and threat.waveSize >= 3
+		or threat.waveSize >= 2 and threat.siege and threat.eta <= 6
+	-- Don't spend a core's early scroll on one unescorted siege unit.
+	if threat.count == 0 and threat.waveSize < 2 and not urgent then pressure = false end
+	if rear ~= nil and rear ~= tower then
+		-- A rear rally is not a chance to save the front tower. During lane
+		-- phase keep the core home unless the rear tower itself needs help.
+		return false
+	end
+	local coverage, covered = {}, 0
+	local limit = planned and threat.count >= 3 and 2 or 1
+	for _, tp in ipairs(GetIncomingTeleports()) do
+		if tp.playerid ~= nil and tp.playerid ~= bot:GetPlayerID() and tp.location ~= nil
+			and tp.time_remaining ~= nil and tp.time_remaining >= 0 and tp.time_remaining <= 5
+			and GetTeamForPlayer(tp.playerid) == bot:GetTeam()
+			and J.GetLocationToLocationDistance(tp.location, hub) <= 1150 then coverage[tp.playerid] = true end
+	end
+	for _, ally in ipairs(J.GetAlliesNearLoc(hub, 1450)) do
+		if ally ~= bot and J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally)
+			and not J.IsRetreating(ally) and not J.IsDisabled(ally) and J.GetHP(ally) >= 0.55 then
+			local started = ally.ohaLaneDefenseTP
+			local covers = ally:GetAttackRange() >= 450 or ally:GetAssignedLane() == lane
+				or started and started.lane == lane and DotaTime() - started.time < 10
+			if covers then coverage[ally:GetPlayerID()] = true end
+		end
+	end
+	for _ in pairs(coverage) do covered = covered + 1 end
+	local prior = bot.ohaLaneDefenseTP
+	return LaneTeleportPolicy.Defense({
+		observed = threat.heroAttacking or threat.waveSize > 0,
+		pressure = pressure,
+		arrival = arrival,
+		timeToFall = threat.damageRate > 0 and tower:GetHealth() / threat.damageRate or math.huge,
+		covered = covered >= limit,
+		sourceValuable = home ~= lane and HasSourceLaneOpportunity(bot, home),
+		urgent = urgent,
+		reversing = prior ~= nil and prior.lane ~= lane and DotaTime() - prior.time < 105,
+	})
+end
+
 -- Route only on information our team can observe. Sample a corridor rather than
 -- treating an empty destination as proof that the way there is clear.
 function J.IsHighGroundResponseThreat(threat)
@@ -7534,7 +7631,8 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 			if tpPoint ~= nil and distance > 2100 and travelTime > 5 and not pressured
 				and (highGround or not J.ShouldKeepLaningWave(ally, threat.lane, threat))
 				and (ally:HasModifier('modifier_teleporting') or J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')))
-				and #J.GetEnemiesNearLoc(ally:GetLocation(), 1200) == 0 and J.CanCommitToLaneTeleport(ally, tpPoint, true) then
+				and #J.GetEnemiesNearLoc(ally:GetLocation(), 1200) == 0 and J.CanCommitToLaneTeleport(ally, tpPoint, true)
+				and (highGround or J.CanTakeLaneDefenseTeleport(ally, threat.lane, tpPoint, threat.tower, nil, true, walkingReach)) then
 				local fromLanding = math.max(0, J.GetLocationToLocationDistance(tpPoint, location) - 575)
 				travelTime, landing = 4.5 + fromLanding / math.max(ally:GetCurrentMovementSpeed(), 250), tpPoint
 			end

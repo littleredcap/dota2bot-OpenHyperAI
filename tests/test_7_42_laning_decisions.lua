@@ -781,7 +781,17 @@ do
     bot.GetActualIncomingDamage = function(_, damage) return damage end
     env.GetLaneFrontAmount = function() return 0.5 end
     env.GetAmountAlongLane = function(lane) state.destinationLane = lane; return {amount=0, distance=6000} end
-    j.CanCommitToLaneTeleport = function() return not state.unsafe end
+    j.CanCommitToLaneTeleport = function(_, at, requireClear)
+        return not state.unsafe and (not requireClear or #j.GetLastSeenEnemiesNearLoc(at, 1100) == 0)
+    end
+    local utilFile = assert(io.open('bots/FunLib/jmz_func.lua', 'rb'))
+    local util = utilFile:read('*a')
+    utilFile:close()
+    local a = assert(util:find('function J.GetTeleportHomeLane(', 1, true))
+    local b = assert(util:find('function J.TraceLaneTeleport(', a, true))
+    env.LaneTeleportPolicy = dofile('bots/FunLib/lane_teleport_policy.lua')
+    env.GetUnitToLocationDistance = function(_, at) return state.atBase and 6000 or math.abs(bot.x-at) end
+    setfenv(assert(loadstring(util:sub(a, b-1))), env)()
     setfenv(assert(loadstring(source:sub(laneStart, laneEnd-1) .. source:sub(tpStart, tpEnd-1))), env)()
     local teleport = env.X.ConsiderItemDesire.item_tpscroll
     env.GetTower().x = 300
@@ -796,7 +806,7 @@ do
     state.atBase, state.mode, state.hp, state.pressure = true, 8, 1, false
     bot.GetAssignedLane = function() return env.LANE_TOP end
     desire, destination = teleport()
-    assert(desire > 0 and state.destinationLane == env.LANE_TOP and destination == 100,
+    assert(desire > 0 and destination == 50,
         'return to the actual side lane behind the T1 even when the default role lane differs')
     bot.ohaCarryLaneRecoveryUntil = state.time + 20
     j.GetLastSeenEnemiesNearLoc = function() return {6, 7} end
@@ -817,6 +827,8 @@ do
     env.GetAmountAlongLane = function() return {amount=0.5, distance=0} end
     assert(teleport() == 0, 'keep a safe wave even if a recipe is still in the stash')
     state.sourceWave = false
+    assert(teleport() == 0, 'stash upgrade cannot spend a scroll during the lane phase')
+    j.IsInLaningPhase = no
     desire, destination = teleport()
     assert(desire > 0 and destination == j.GetTeamFountain(), 'can complete the item after the safe wave is gone')
 

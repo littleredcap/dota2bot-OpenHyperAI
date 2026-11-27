@@ -1075,6 +1075,7 @@ ThinkLaneGank = function()
 	if plan.landing ~= nil then
 		if J.CanCastAbility(TPScroll) and J.CanCommitToLaneTeleport(bot, plan.landing, true) then
 			bot:Action_UseAbilityOnLocation(TPScroll, plan.landing)
+			if J.TraceLaneTeleport then J.TraceLaneTeleport(bot, 'observed-lane-gank', plan.landing) end
 		else
 			EndLaneGank()
 		end

@@ -275,6 +275,9 @@ local function fixture(opts)
     env.J = jmz
     setfenv(assert(loadstring(source:sub(first, last - 1))), env)()
     local response = assert(source:find('function J.IsHighGroundResponseThreat(', last, true))
+    local tpPolicy = assert(source:find('local function LaneTower(', last, true))
+    env.LaneTeleportPolicy = dofile('bots/FunLib/lane_teleport_policy.lua')
+    setfenv(assert(loadstring(source:sub(tpPolicy, response - 1))), env)()
     local responseEnd = assert(source:find('-- Explicit, conservative roster knowledge.', response, true))
     setfenv(assert(loadstring(source:sub(response, responseEnd - 1))), env)()
     if not opts.outerSiege then jmz.GetOuterTowerThreat = function() return {score=0} end end
