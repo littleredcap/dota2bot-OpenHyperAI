@@ -898,7 +898,7 @@ do
     assert(orders[#orders] == tower)
     hp = 40
     push.PushThink(bot, lane.Mid)
-    assert(not bot.ohaOuterTowerPush, 'cancel the scoped chip when creep cover is about to die')
+    assert(not bot.ohaOuterTowerPush and orders[#orders] == 'cancel', 'cancel the actual attack when creep cover is about to die')
 end
 
 do

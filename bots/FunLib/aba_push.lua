@@ -1239,7 +1239,8 @@ function ____exports.PushThink(bot, lane)
             return
         end
         if opportunity.earlyMidChip then
-            bot:Action_AttackUnit(opportunity.tower, true)
+            bot._ohaIssuedPushOrder = true
+            if bot:GetAttackTarget() ~= opportunity.tower then bot:Action_AttackUnit(opportunity.tower, true) end
             return
         end
         RunOuterTowerPlan(bot, opportunity)

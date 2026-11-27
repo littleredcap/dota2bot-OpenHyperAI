@@ -1229,7 +1229,8 @@ export function PushThink(bot: Unit, lane: Lane): void {
             return;
         }
         if (opportunity.earlyMidChip) {
-            bot.Action_AttackUnit(opportunity.tower, true);
+            (bot as any)._ohaIssuedPushOrder = true;
+            if (bot.GetAttackTarget() !== opportunity.tower) bot.Action_AttackUnit(opportunity.tower, true);
             return;
         }
         RunOuterTowerPlan(bot, opportunity);
