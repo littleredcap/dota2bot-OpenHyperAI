@@ -19,6 +19,8 @@ local lastCampRefreshMinute = 0
 local preferedCamp = nil;
 local farmLaneLocation = nil
 local idleRally, collectingWave
+local sideWaveTask, sideWaveDesire, sideWaveCandidate
+local sideWaveScanAt = -math.huge
 local waveScanAt, visibleWaves = -math.huge, {}
 local recoveringLane = false
 local tradingTowerLocation = nil
@@ -449,6 +451,169 @@ local function CanCollectWave(location, distance)
 	return true
 end
 
+-- Prepare one unattended side wave before a shared push. Do not send a
+-- hero who is already part of the push or turn this into a split-push mode.
+local function SideWaveUnit(unit)
+	if not J.IsValid(unit) or not unit:CanBeSeen() then return false end
+	local name = unit:GetUnitName()
+	return string.find(name, 'npc_dota_creep_', 1, true) ~= nil
+		or name == 'npc_dota_goodguys_siege' or name == 'npc_dota_badguys_siege'
+end
+
+local function SideWaveMidpoint(a, b)
+	return Vector((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2)
+end
+
+local function SideWavePathSafe(a, b, radius)
+	local mid = SideWaveMidpoint(a, b)
+	return IsLocationPassable(b) and IsLocationPassable(mid)
+		and J.CanCommitToLaneTeleport(bot, b, true, radius)
+		and J.CanCommitToLaneTeleport(bot, mid, true, radius)
+end
+
+local function SideWaveHeroReady(hero)
+	return J.IsValidHero(hero) and not hero:IsIllusion() and not J.IsMeepoClone(hero)
+		and not hero:HasModifier('modifier_arc_warden_tempest_double')
+		and not J.IsRetreating(hero) and not J.IsDisabled(hero) and not hero:IsChanneling()
+		and not hero:HasModifier('modifier_teleporting')
+end
+
+local function GetSideWaveRally(members)
+	local pushModes = {[LANE_TOP] = BOT_MODE_PUSH_TOWER_TOP, [LANE_MID] = BOT_MODE_PUSH_TOWER_MID, [LANE_BOT] = BOT_MODE_PUSH_TOWER_BOT}
+	local best, bestCount = nil, 2
+	for _, lane in ipairs(nLaneList) do
+		local mode = pushModes[lane]
+		if mode ~= nil then
+			for _, lead in ipairs(members) do
+				if SideWaveHeroReady(lead) and lead:GetActiveMode() == mode and lead:GetActiveModeDesire() >= 0.64
+					and GetAmountAlongLane(lane, lead:GetLocation()).distance <= 800 then
+					local n, core = 0, false
+					for _, ally in ipairs(members) do
+						if SideWaveHeroReady(ally) and ally:GetActiveMode() == mode and ally:GetActiveModeDesire() >= 0.64
+							and GetUnitToUnitDistance(ally, lead) <= 1250 then
+							n = n + 1
+							core = core or J.GetPosition(ally) <= 2
+						end
+					end
+					if core and n > bestCount and not lead:WasRecentlyDamagedByAnyHero(2) then
+						best, bestCount = {lane = lane, anchor = lead, location = lead:GetLocation()}, n
+					end
+				end
+			end
+		end
+	end
+	if not best or not J.CanCommitToLaneTeleport(bot, best.location, true, 1800) then return nil end
+	for _, ally in ipairs(members) do
+		if J.IsValidHero(ally) and GetUnitToUnitDistance(ally, best.anchor) <= 1550
+			and (ally:WasRecentlyDamagedByAnyHero(2) or ally:GetActiveMode() == BOT_MODE_ATTACK) then return nil end
+	end
+	return best
+end
+
+local function GetRallySideWavePlan(onlyLane)
+	local now = DotaTime()
+	if now < 14 * 60 or J.GetHP(bot) < 0.55 or J.IsInTeamFight(bot, 1200)
+		or bot:WasRecentlyDamagedByAnyHero(2) then return nil end
+	local members = {}
+	for i = 1, #GetTeamPlayers(team) do
+		local ally = GetTeamMember(i)
+		if J.IsValidHero(ally) then
+			local claim = ally.ohaRallySideWave
+			if ally ~= bot and claim and claim.expires > now then return nil end
+			members[#members + 1] = ally
+		end
+	end
+	local rally = GetSideWaveRally(members)
+	if not rally then return nil end
+	local candidate
+	local direction = team == TEAM_RADIANT and 1 or -1
+	for _, lane in ipairs({LANE_TOP, LANE_BOT}) do
+		if lane ~= rally.lane and (onlyLane == nil or onlyLane == lane) then
+			local point = GetLaneFrontLocation(team, lane, 0)
+			local own, opposing = GetAncient(team), GetAncient(GetOpposingTeam())
+			if own and opposing and GetUnitToLocationDistance(own, point) + 550 < GetUnitToLocationDistance(opposing, point)
+				and IsLocationVisible(point) and SideWavePathSafe(point, rally.location, 1250)
+				and J.CanCommitToLaneTeleport(bot, point, true, 1350) then
+				local pack, health, support = {}, 0, 0
+				local front = GetAmountAlongLane(lane, point).amount * direction
+				for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
+					if SideWaveUnit(creep) and GetUnitToLocationDistance(creep, point) <= 730
+						and GetAmountAlongLane(lane, creep:GetLocation()).distance <= 420 then
+						pack[#pack + 1] = creep
+						health = health + creep:GetHealth()
+					end
+				end
+				for _, creep in ipairs(GetUnitList(UNIT_LIST_ALLIED_CREEPS)) do
+					if SideWaveUnit(creep) and GetUnitToLocationDistance(creep, point) <= 1050 then
+						local track = GetAmountAlongLane(lane, creep:GetLocation())
+						local ahead = track.amount * direction - front
+						if track.distance <= 420 and ahead < 0.043 and ahead > -0.060 then support = support + 1 end
+					end
+				end
+				if #pack >= 2 and support >= 2 then
+					for _, hero in ipairs(members) do
+						local active = hero:GetActiveMode()
+						if hero:IsBot() and SideWaveHeroReady(hero) and J.GetPosition(hero) >= 3 and J.GetHP(hero) >= 0.62
+							and not hero:IsDisarmed() and not hero:IsRooted()
+							and active ~= BOT_MODE_ATTACK and active ~= BOT_MODE_TEAM_ROAM and active ~= BOT_MODE_WARD
+							and active ~= BOT_MODE_RUNE and active ~= BOT_MODE_SECRET_SHOP and active ~= BOT_MODE_OUTPOST
+							and not J.IsDefending(hero) and not J.IsPushing(hero) and not J.IsDoingRoshan(hero) and not J.IsDoingTormentor(hero)
+							and not J.IsGoingOnSomeone(hero) and not hero:WasRecentlyDamagedByAnyHero(2)
+							and ((hero.ohaNextRallySideWaveAt or 0) <= now
+								or (hero.ohaRallySideWave and hero.ohaRallySideWave.expires > now))
+							and (hero.ohaOuterTowerHoldUntil or 0) <= now and GetUnitToUnitDistance(hero, rally.anchor) >= 1150 then
+							local speed = math.max(1, hero:GetCurrentMovementSpeed())
+							local toWave = GetUnitToLocationDistance(hero, point)
+							local toRally = J.GetLocationToLocationDistance(point, rally.location)
+							local damage = math.max(1, hero:GetAttackDamage() / math.max(0.3, hero:GetSecondsPerAttack()))
+							local clear = health / (damage * 0.82 + support * 24)
+							local returnETA = 1.2 * math.max(0, toRally - 550) / speed
+							local total = toWave * 1.17 / speed + clear + returnETA
+							if toWave <= 900 and clear <= 8 and returnETA <= 8 and total <= 15
+								and SideWavePathSafe(hero:GetLocation(), point, 1050)
+								and (not candidate or total < candidate.cost or total == candidate.cost and hero:GetPlayerID() < candidate.hero:GetPlayerID()) then
+								candidate = {hero = hero, lane = lane, mainLane = rally.lane, location = point,
+									rally = rally.anchor, targetPack = pack, cost = total}
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	if candidate and candidate.hero == bot then return candidate end
+end
+
+local function GetSideWaveReturnPoint(task)
+	local anchor = task.rally
+	if not J.IsValidHero(anchor) or J.GetHP(bot) < 0.55 or bot:WasRecentlyDamagedByAnyHero(2)
+		or GetUnitToUnitDistance(bot, anchor) <= 900 or #J.GetAlliesNearLoc(anchor:GetLocation(), 1350) < 2
+		or #J.GetEnemiesNearLoc(bot:GetLocation(), 900) > 0 then return nil end
+	local point = J.AdjustLocationWithOffsetTowardsFountain(anchor:GetLocation(), 525)
+	if SideWavePathSafe(bot:GetLocation(), point, 850) then return point end
+end
+
+local function AttackSideWave(plan)
+	local best, bestScore = nil, -math.huge
+	for _, creep in ipairs(plan.targetPack) do
+		if SideWaveUnit(creep) and GetUnitToLocationDistance(creep, plan.location) <= 730 then
+			local name = creep:GetUnitName()
+			local priority = string.find(name, '_siege', 1, true) and 900
+				or string.find(name, '_ranged', 1, true) and 650 or 0
+			local score = priority - creep:GetHealth() * 0.6 - GetUnitToUnitDistance(bot, creep) * 0.15
+			if score > bestScore then best, bestScore = creep, score end
+		end
+	end
+	if not best then return false end
+	if GetUnitToUnitDistance(bot, best) > bot:GetAttackRange() + 275 then
+		if GetUnitToLocationDistance(bot, plan.location) > 300 then MoveToFarm(plan.location); return true end
+		return false
+	end
+	if bot:GetAttackTarget() == best and J.IsAttacking and J.IsAttacking(bot) then return true end
+	AttackFarmTarget(best)
+	return true
+end
+
 local function GetUnclaimedWaveDesire()
 	if DotaTime() < 8 * 60 or J.IsCore(bot) and J.IsInLaningPhase(bot) or J.GetHP(bot) < 0.55
 		or J.IsInTeamFight(bot, 1200) or J.IsGoingOnSomeone(bot) or bot:WasRecentlyDamagedByAnyHero(2)
@@ -484,6 +649,7 @@ end
 
 function GetDesireHelper()
 	idleRally, collectingWave = nil, false
+	sideWaveDesire = nil
 	farmLaneLocation = nil
 	recoveringLane = false
 	tradingTowerLocation = nil
@@ -563,6 +729,18 @@ function GetDesireHelper()
 	RefreshFarmCamps()
 	local tradeDesire = GetOuterTowerRecoveryDesire()
 	if tradeDesire > BOT_MODE_DESIRE_NONE then return tradeDesire end
+	local now = DotaTime()
+	if sideWaveTask then
+		sideWaveDesire = sideWaveTask
+		return 0.73
+	end
+	if (bot.ohaNextRallySideWaveAt or 0) <= now then
+		if now < sideWaveScanAt or now - sideWaveScanAt >= 0.45 then
+			sideWaveScanAt, sideWaveCandidate = now, GetRallySideWavePlan()
+		end
+		sideWaveDesire = sideWaveCandidate
+		if sideWaveDesire then return 0.73 end
+	end
 	local unclaimedWave = GetUnclaimedWaveDesire()
 	if unclaimedWave > BOT_MODE_DESIRE_NONE then return unclaimedWave end
 	if (bot.ohaIdleRecoveryUntil or 0) > DotaTime() and J.GetHP(bot) >= 0.55
@@ -865,6 +1043,7 @@ function OnStart()
 end
 
 function OnEnd()
+	sideWaveTask, sideWaveDesire, bot.ohaRallySideWave = nil, nil, nil
 	bot.ohaWaveClaim = nil
 	if issuedFarmOrder and not bot:IsUsingAbility() and not bot:IsChanneling() then CancelFarmOrder() end
 	issuedFarmOrder = false
@@ -942,8 +1121,37 @@ function Think()
 	end
 
 	if ShouldYieldForBaseDefense() or (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then
+		sideWaveTask, sideWaveDesire, bot.ohaRallySideWave = nil, nil, nil
 		bot.ohaOuterFarmClaim = nil
 		bot.ohaFarmCampClaim = nil
+		CancelFarmOrder()
+		return
+	end
+	if sideWaveDesire then
+		local now = DotaTime()
+		local plan = (not sideWaveTask or not sideWaveTask.returning and sideWaveTask.clearUntil > now)
+			and GetRallySideWavePlan(sideWaveDesire.lane) or nil
+		if plan and (not sideWaveTask or sideWaveTask.mainLane == plan.mainLane) then
+			if not sideWaveTask then
+				sideWaveTask = {lane = plan.lane, mainLane = plan.mainLane, rally = plan.rally, clearUntil = now + 8, expires = now + 15}
+				bot.ohaRallySideWave = sideWaveTask
+				bot.ohaNextRallySideWaveAt = now + 26
+				if Customize.TraceRallySideWave then
+					print('[OHA side wave] start', now, bot:GetPlayerID(), plan.lane, plan.mainLane)
+				end
+			end
+			sideWaveTask.rally = plan.rally
+			if AttackSideWave(plan) then return end
+		end
+		if sideWaveTask and sideWaveTask.expires > now then
+			if not sideWaveTask.returning and Customize.TraceRallySideWave then
+				print('[OHA side wave] return', now, bot:GetPlayerID(), sideWaveTask.lane)
+			end
+			sideWaveTask.returning = true
+			local point = GetSideWaveReturnPoint(sideWaveTask)
+			if point then MoveToFarm(point); return end
+		end
+		sideWaveTask, sideWaveDesire, bot.ohaRallySideWave = nil, nil, nil
 		CancelFarmOrder()
 		return
 	end
