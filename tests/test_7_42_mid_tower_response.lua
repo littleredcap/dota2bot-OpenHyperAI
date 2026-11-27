@@ -154,6 +154,43 @@ end
 
 
 do
+    objective=true
+    enemiesAlive,reinforcement,wave=4,6,{waveSize=3,eta=5,count=2}
+    towers={}
+    bot.x,ally.x=-750,-840
+    local clear=env.GetWaveClearScore
+    env.GetWaveClearScore=function(hero, travel)
+        if hero==ally then return 0,0,0 end
+        return clear(hero, travel)
+    end
+    local plan=j.GetPostFightCoverage(2)
+    assert(plan.primary.hero==bot and plan.backup.hero==ally,
+        'a nearby screen counts even when it cannot clear the wave')
+    ally.x=-3900
+    plan=j.GetPostFightCoverage(2)
+    assert(not plan.backup, 'a screen that cannot arrive does not grant coverage')
+    spare.x=4000
+    env.IsLocationVisible,env.IsLocationPassable=yes,yes
+    assert(j.CanTakePostFightTrip(spare,4100,false,true), 'a distant unassigned bot can take safe nearby resources')
+    assert(not j.CanTakePostFightTrip(spare,4100,false), 'normal rotations still need coverage')
+    assert(not j.CanTakePostFightTrip(spare,4100,true,true), 'this exception does not spend a teleport')
+    assert(not j.CanTakePostFightTrip(spare,4850,false,true), 'this exception cannot justify a distant route')
+    assert(not j.CanTakePostFightTrip(bot,4100,false,true), 'a primary defender cannot use the exception')
+    spare.x=900
+    assert(not j.CanTakePostFightTrip(spare,1550,false,true),
+        'an unassigned bot still capable of covering uses the normal local budget')
+    spare.x=4000
+    env.IsLocationVisible=no
+    assert(not j.CanTakePostFightTrip(spare,4100,false,true), 'no new farming order into fog')
+    env.IsLocationVisible=yes
+    j.CanCommitToLaneTeleport=function(_,point) return point~=4050 end
+    assert(not j.CanTakePostFightTrip(spare,4100,false,true), 'reject an unsafe midpoint')
+    j.CanCommitToLaneTeleport=yes
+    env.GetWaveClearScore=clear
+end
+print('PASS: time shared screens separately; only distant unassigned heroes may walk to short safe resources')
+
+do
     local function v(x) return {x=x,y=0} end
     local function u(x,id,wealth)
         local hero=unit(x,.9,id)

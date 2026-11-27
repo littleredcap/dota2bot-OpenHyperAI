@@ -1062,7 +1062,7 @@ function ____exports.GetDefendDesireHelper(bot, lane)
         if plan and role then
             if lane ~= (plan.lane or Lane.Mid) then return BotModeDesire.VeryLow end
             guard, building, reach = bot, plan.building, role == 'clear' and plan.primary.reach or bot:GetAttackRange()
-            staging = role == 'clear' and plan.primary.staging or nil
+            staging = role == 'clear' and (plan.primary.staging or plan.hold) or nil
         elseif not plan and lane == Lane.Mid then
             guard, building, reach = jmz.GetExposedMidCover(team)
         end
@@ -1498,7 +1498,7 @@ function ____exports.DefendThink(bot, lane)
             end
             return
         end
-        jmz.RunOuterTowerHold(bot, response.stage, bot:GetAttackRange(), false, response.stage)
+        jmz.RunOuterTowerHold(bot, response.tower:GetLocation(), bot:GetAttackRange(), false, response.stage)
         return
     end
     local guard = bot.ohaMidCover

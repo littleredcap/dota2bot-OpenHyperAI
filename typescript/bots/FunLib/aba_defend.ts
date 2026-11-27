@@ -806,7 +806,7 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         if (role && plan) {
             if (lane !== plan.lane) return BotModeDesire.VeryLow;
             const reach = role === "clear" ? plan.primary!.reach : bot.GetAttackRange();
-            const staging = role === "clear" ? plan.primary?.staging : undefined;
+            const staging = role === "clear" ? plan.primary?.staging ?? plan.hold : undefined;
             (bot as any).ohaMidCover = {tower: plan.building, lane, reach, cover: role === "cover", staging, expires: DotaTime() + 1};
             bot.laneToDefend = lane;
             return (role === "cover" ? 0.80 : 0.83) as BotModeDesire;
@@ -1150,7 +1150,7 @@ export function DefendThink(bot: Unit, lane: Lane) {
             }
             return;
         }
-        jmz.RunOuterTowerHold(bot, response.stage, bot.GetAttackRange(), false, response.stage);
+        jmz.RunOuterTowerHold(bot, response.tower.GetLocation(), bot.GetAttackRange(), false, response.stage);
         return;
     }
     const guard = (bot as any).ohaMidCover;

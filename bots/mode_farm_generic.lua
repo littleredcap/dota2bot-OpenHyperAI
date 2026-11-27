@@ -78,7 +78,7 @@ local function ShouldYieldForBaseDefense()
 end
 
 local function IsFarmLocationSafe(location)
-	if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, location) then return false end
+	if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, location, false, true) then return false end
 	if #J.GetEnemiesNearLoc(location, 1400) > 0
 		or (recoveringLane and #J.GetLastSeenEnemiesNearLoc(location, 1400) > 0) then return false end
 	if tradingTowerLocation == nil then return true end
@@ -128,13 +128,13 @@ local function CancelFarmOrder()
 end
 
 local function MoveToFarm(location)
-	if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, location) then CancelFarmOrder(); return end
+	if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, location, false, true) then CancelFarmOrder(); return end
 	bot:Action_MoveToLocation(location)
 	issuedFarmOrder = true
 end
 
 local function AttackFarmTarget(target)
-	if J.CanTakePostFightTrip and target.GetLocation and not J.CanTakePostFightTrip(bot, target:GetLocation()) then
+	if J.CanTakePostFightTrip and target.GetLocation and not J.CanTakePostFightTrip(bot, target:GetLocation(), false, true) then
 		CancelFarmOrder()
 		return
 	end

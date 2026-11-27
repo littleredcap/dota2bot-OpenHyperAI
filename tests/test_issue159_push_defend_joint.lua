@@ -1869,6 +1869,7 @@ do
     j.GetPostFightCoverage=function() return plan end
     assert(j.GetPostFightDuty(members[1])=='clear' and j.GetPostFightDuty(members[2])=='cover')
     assert(defend.GetDefendDesire(members[1],lane.Mid)==0.83,'reserve clearer through defense entry point')
+    assert(members[1].ohaMidCover.staging==plan.hold,'use the planned safe point instead of choosing a different stance at execution')
     assert(defend.GetDefendDesire(members[2],lane.Mid)==0.80,'reserve distinct backup through same entry point')
     assert(push.GetPushDesire(members[1],lane.Top)==0 and push.GetPushDesire(members[2],lane.Top)==0,
         'push cannot steal the live coverage roles')

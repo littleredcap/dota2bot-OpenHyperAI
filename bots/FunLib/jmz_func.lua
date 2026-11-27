@@ -7360,7 +7360,7 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 						onSite = onSite and GetUnitToLocationDistance(ally, actionablePoint) <= reach
 					end
 					local row = {hero=ally, id=ally:GetPlayerID(), walk=not tp and safe and walk or math.huge,
-						arrival=impact, teleport=teleport, reach=reach, canClear=damage > 0,
+						arrival=impact, coverArrival=arrival, teleport=teleport, reach=reach, canClear=damage > 0,
 						staging=clearStage ~= hold and clearStage or nil,
 						onStation=onSite and castLead <= 2 and impact <= deadline,
 						score=score - math.min(24, impact) * 34 - (J.GetPosition(ally) == 1 and 100 or 0)}
@@ -7465,8 +7465,11 @@ function J.GetPostFightCoverage(team)
 		plan.backup=nil
 		if plan.needsBackup and plan.primary then
 			for _,row in ipairs(plan.candidates or {}) do
-				if not claimed[row.id] and row.arrival<=plan.deadline and (not plan.backup
-					or row.arrival<plan.backup.arrival or row.arrival==plan.backup.arrival and row.id<plan.backup.id) then
+				-- A screen need not be able to clear the wave itself. Still
+				-- require a safe, timely walking or confirmed TP route.
+				if not claimed[row.id] and row.coverArrival <= plan.deadline and (not plan.backup
+					or row.coverArrival < plan.backup.coverArrival
+					or row.coverArrival == plan.backup.coverArrival and row.id < plan.backup.id) then
 					plan.backup=row
 				end
 			end
@@ -7505,7 +7508,7 @@ function J.GetPostFightDuty(bot)
 	return nil, plan
 end
 
-function J.CanTakePostFightTrip(bot, point, spendTeleport)
+function J.CanTakePostFightTrip(bot, point, spendTeleport, localResource)
 	local role, plan = J.GetPostFightDuty(bot)
 	if not plan then return true end
 	local covered, nearestDeadline = true, plan
@@ -7530,6 +7533,30 @@ function J.CanTakePostFightTrip(bot, point, spendTeleport)
 	local returnTime = math.max(0, reach - 550) / speed * 1.25
 	if role == 'clear' then
 		return not spendTeleport and reach <= 850 and outbound + returnTime <= currentPlan.deadline
+	end
+	if role == nil and not spendTeleport and localResource then
+		-- An unassigned bot cannot be treated as the backup for a tower
+		-- it can't reach in time. Only reopen short, safe collection; a
+		-- long rotation or TP still needs the normal coverage budget.
+		local origin = bot:GetLocation()
+		local gap = GetUnitToLocationDistance(bot, point)
+		local canStillHelp = false
+		for _, other in ipairs(plan.lanes or {plan}) do
+			if GetUnitToLocationDistance(bot, other.hold) <= 550 + speed * other.deadline / 1.25 then
+				local primary, backup = other.primary, other.backup
+				if not primary or not primary.onStation or other.needsBackup and (not backup or backup.walk > other.deadline) then
+					canStillHelp = true
+					break
+				end
+			end
+		end
+		if not canStillHelp and gap <= 650 and not bot:WasRecentlyDamagedByAnyHero(2)
+			and IsLocationVisible(point) and IsLocationPassable(point)
+			and J.CanCommitToLaneTeleport(bot, point, true, 1200)
+			and J.CanCommitToLaneTeleport(bot, origin, true, 1000) then
+			local mid = gap > 25 and J.VectorTowards(origin, point, gap * 0.5) or origin
+			if IsLocationPassable(mid) and J.CanCommitToLaneTeleport(bot, mid, true, 1050) then return true end
+		end
 	end
 	if reach <= 850 and not spendTeleport then return outbound + returnTime < currentPlan.deadline end
 	return outbound + action + returnTime + 1 < currentPlan.deadline
@@ -7574,7 +7601,7 @@ function J.GetScheduledFarmWaveOwner(bot, location)
 						and J.GetHP(ally)>=0.48 and not J.IsRetreating(ally) and not J.IsDisabled(ally)
 						and not ally:IsChanneling() and not ally:HasModifier('modifier_teleporting')
 						and not J.IsGoingOnSomeone(ally) and not J.IsDoingRoshan(ally) and not J.IsDoingTormentor(ally)
-						and not J.GetPostFightDuty(ally) and J.CanTakePostFightTrip(ally,wave.point) then
+						and not J.GetPostFightDuty(ally) and J.CanTakePostFightTrip(ally,wave.point,false,true) then
 						local distance=GetUnitToLocationDistance(ally,wave.point)
 						local eta=distance/math.max(250,ally:GetCurrentMovementSpeed())
 						local recovery=J.IsCore(ally) and math.min(2.5,math.max(0,wealth-ally:GetNetWorth())/2600) or -2.5
@@ -8167,9 +8194,14 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 	if #hostile >= 2 or bot:WasRecentlyDamagedByAnyHero(2) and #J.GetEnemiesNearLoc(bot:GetLocation(), 750) >= 2
 		or (#hostile == 1 and bot:WasRecentlyDamagedByAnyHero(2)
 		and (#J.GetAlliesNearLoc(hold, 850) <= 1 or J.GetHP(bot) < 0.45)) then
-		bot:Action_MoveToLocation(J.AdjustLocationWithOffsetTowardsFountain(hub, 1000))
+		-- A deep high-ground stage is already behind the usual exit point.
+		-- Do not send a compromised rear-line bot forward to that point.
+		local deepStage = stage and J.GetLocationToLocationDistance(stage, hub) > 950
+		bot:Action_MoveToLocation(J.AdjustLocationWithOffsetTowardsFountain(deepStage and stage or hub, deepStage and 600 or 1000))
 		return true
 	end
+	-- Ordinary recovery must not cancel a cast; the hard danger exit above
+	-- still takes priority, as it did before the short-step fallback.
 	if bot:IsUsingAbility() or bot:IsCastingAbility() or bot:IsChanneling() then return false end
 	local awayFromHold = GetUnitToLocationDistance(bot, hold) > 220
 	local canStepUp = not cover and formation == nil and #J.GetLastSeenEnemiesNearLoc(hub, 1150) == 0
@@ -8194,7 +8226,12 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 		end
 	end
 	local range = bot:GetAttackRange()
-	for _, creep in ipairs(bot:GetNearbyLaneCreeps(canStepUp and math.min(1600, range + 650) or range, true)) do
+	local microStep = not cover and formation ~= nil and range >= 350 and not awayFromHold
+		and (not bot.IsRooted or not bot:IsRooted()) and J.GetHP(bot) >= 0.55
+		and not bot:WasRecentlyDamagedByAnyHero(2)
+	local nextPoint, nextPriority = nil, 0
+	local scan = canStepUp and math.min(1600, range + 650) or microStep and math.min(1600, range + 180) or range
+	for _, creep in ipairs(bot:GetNearbyLaneCreeps(scan, true)) do
 		if J.IsValid(creep) and J.CanBeAttacked(creep) then
 			local siege = string.find(creep:GetUnitName(), 'siege', 1, true) ~= nil
 			local closeToHub = GetUnitToLocationDistance(creep, hub) <= 650
@@ -8211,11 +8248,30 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 			if J.IsInRange(bot, creep, range) or canStepUp and (closeToHub or siegeStep) then
 				local weight = siege and 2 or 1
 				if weight > priority then target, priority = creep, weight end
+			elseif microStep and (closeToHub or siege and GetUnitToLocationDistance(creep, hub) <= 950)
+				and (not creep.CanBeSeen or creep:CanBeSeen()) then
+				local gap = GetUnitToUnitDistance(bot, creep) - range
+				local weight = siege and 2 or 1
+				if gap > 0 and gap <= 180 and weight > nextPriority then
+					local origin = bot:GetLocation()
+					local point = J.VectorTowards(origin, creep:GetLocation(), gap + 30)
+					local mid = J.VectorTowards(origin, point, (gap + 30) * 0.5)
+					if J.GetLocationToLocationDistance(point, hold) <= 200
+						and IsLocationPassable(point) and IsLocationVisible(point) and IsLocationPassable(mid)
+						and J.CanCommitToLaneTeleport(bot, point, true, 950)
+						and J.CanCommitToLaneTeleport(bot, mid, true, 950) then
+						nextPoint, nextPriority = point, weight
+					end
+				end
 			end
 		end
 	end
 	if target ~= nil then
 		bot:Action_AttackUnit(target, true)
+		return true
+	end
+	if nextPoint then
+		bot:Action_MoveToLocation(nextPoint)
 		return true
 	end
 	local poke = range >= 425 and J.GetMidDefensePokeTarget(bot, range - 25) or nil
