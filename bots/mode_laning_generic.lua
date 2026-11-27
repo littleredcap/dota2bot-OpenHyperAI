@@ -133,10 +133,14 @@ function GetDesire()
 		end
 		if urgentApproach and J.IsCore(bot)
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
+		if not local_mode_laning_generic
+			and J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
 		local deny, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if deny ~= nil or reserveDeny then return 0.7 end
-		if not local_mode_laning_generic
-			and J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.68 end
+		if not local_mode_laning_generic then
+			if J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.68 end
+			if J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.64 end
+		end
 		if botAssignedLane == LANE_MID and J.IsCore(bot) and (reserve or moveToCreep) then
 			return 0.7
 		end
@@ -258,7 +262,8 @@ local function ThinkLane()
 	-- Real last hits remain first. Pressure the returning offlaner before an
 	-- optional support deny, and only move a short distance with lane cover.
 	if not J.IsCore(bot) and not J.IsFinishingLaningAttack(bot, attackTarget) then
-		local press = J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
+		local press = J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower)
+			or J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
 		if press ~= nil then bot:Action_AttackUnit(press, true); return end
 		local step = J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower)
 		if step ~= nil then bot:Action_MoveToLocation(step); return end

@@ -532,6 +532,21 @@ function X.ConsiderDragonTail()
 		end
 	end
 
+	-- Convert the support's covered lane trade into a short, in-range stun.
+	-- Do not give up our own last hit or the next Breathe Fire to do it.
+	if J.IsLaning(bot) and not J.IsRetreating(bot) and not J.HasPendingLaningLastHit(bot)
+		and BreatheFire and bot:GetMana() >= nManaCost + BreatheFire:GetManaCost() then
+		local support = J.GetLanePartner(bot)
+		if J.IsValidHero(support) and J.IsInRange(bot, support, 800) then
+			local target = J.GetSideLanePressureTarget(support, nEnemyHeroes, bot:GetNearbyTowers(1500, true)[1], support:GetAttackRange())
+			if target and J.IsInRange(bot, target, nCastRange) and support:GetAttackTarget() == target
+				and J.CanCastOnNonMagicImmune(target) and J.CanCastOnTargetAdvanced(target)
+				and not J.IsDisabled(target) and not target:HasModifier('modifier_necrolyte_reapers_scythe') then
+				return BOT_ACTION_DESIRE_HIGH, target
+			end
+		end
+	end
+
 	if J.IsInTeamFight(bot, 1200) then
 		-- fire dragon
 		if bInDragonForm and true then

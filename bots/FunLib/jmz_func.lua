@@ -1368,14 +1368,18 @@ function J.GetSafeLaneSupplyTower(bot)
     return SafeLaneTower(bot, tower, enemies, hp, sheltered and partner or nil, sheltered)
 end
 
-function J.GetLaningPeelTarget(bot, ally, enemies, castRange)
-    if not J.IsValidHero(ally) or not J.IsInLaningPhase(bot) or not ally:WasRecentlyDamagedByAnyHero(2) then return nil end
-    if J.GetHP(ally) >= 0.70 and not J.IsRetreating(ally) then return nil end
+function J.GetLaningPeelTarget(bot, ally, enemies, castRange, anticipate)
+    if not J.IsValidHero(ally) or not J.IsInLaningPhase(bot) then return nil end
+    local hit = ally:WasRecentlyDamagedByAnyHero(2)
+    if not hit and not anticipate then return nil end
+    local hp = J.GetHP(ally)
+    if hp >= 0.70 and not J.IsRetreating(ally) then return nil end
     local best, bestScore = nil, -math.huge
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.IsInRange(bot, enemy, castRange)
             and J.IsInRange(ally, enemy, math.max(425, enemy:GetAttackRange() + 180))
-            and (enemy:GetAttackTarget() == ally or (ally:WasRecentlyDamagedByHero(enemy, 1.4) and J.IsChasingTarget(enemy, ally)))
+            and ((enemy:GetAttackTarget() == ally and (hit or (anticipate and J.IsAttacking(enemy))))
+                or (hit and ally:WasRecentlyDamagedByHero(enemy, 1.4) and J.IsChasingTarget(enemy, ally)))
             and not J.IsDisabled(enemy) and not enemy:IsDisarmed()
             and J.CanCastOnNonMagicImmune(enemy) and J.CanCastOnTargetAdvanced(enemy) then
             local score = enemy:GetAttackDamage() / math.max(0.2, enemy:GetSecondsPerAttack())
@@ -1615,11 +1619,34 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
     return best, reserve
 end
 
--- Reapply safe pressure when an injured melee opponent comes back to last hit.
--- No chase, extra movement, or sacrifice of the lane partner's last hits.
+-- An enemy about to take a creep is a trading window even at full HP.
+-- Use a visible attack target, not the estimated enemy role or future order.
+local function IsContestForLaneCreep(enemy, ourTeam)
+    local target = enemy:GetAttackTarget()
+    return J.IsValid(target) and target:IsCreep() and target:GetTeam() == ourTeam
+        and J.IsAttacking(enemy)
+end
+
+function J.GetSideLaneCoverAttack(bot, enemies, tower)
+    local lane = bot:GetAssignedLane()
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or #enemies == 0 or J.IsCore(bot) or J.GetHP(bot) < 0.62
+        or J.IsRetreating(bot) or J.IsLaningUnderPressure(bot, enemies, tower)
+        or bot:WasRecentlyDamagedByCreep(1.5) or #enemies > 2 then return nil end
+    local core = J.GetLanePartner(bot)
+    if not J.IsValidHero(core) or not J.IsCore(core) or not J.IsInRange(bot, core, 750) then return nil end
+    local opposingWave = #bot:GetNearbyLaneCreeps(650, true)
+    if opposingWave >= 4 and #bot:GetNearbyLaneCreeps(750, false) < opposingWave - 1 then return nil end
+    local target = J.GetLaningPeelTarget(bot, core, enemies, bot:GetAttackRange(), true)
+    if target and J.CanBeAttacked(target) and not target:IsInvulnerable()
+        and (not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 850))
+        and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(target:GetLocation()) then return target end
+end
+
+-- Reapply safe pressure to an injured melee target or contest a real last hit.
+-- Do not chase or sacrifice the lane partner's last hits.
 function J.GetSideLanePressureTarget(bot, enemies, tower, range)
     local lane = bot:GetAssignedLane()
-    if #enemies == 0 or (lane ~= LANE_TOP and lane ~= LANE_BOT)
+    if #enemies == 0 or #enemies > 2 or (lane ~= LANE_TOP and lane ~= LANE_BOT)
         or J.IsCore(bot) or J.GetHP(bot) < 0.65 or J.IsRetreating(bot)
         or not J.IsInLaningPhase(bot) then return nil end
     local now = DotaTime()
@@ -1641,7 +1668,9 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
     local best, score = nil, math.huge
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
-            and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310 and J.GetHP(enemy) <= 0.72
+            and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310
+            and (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(ally) >= 0.70
+                and IsContestForLaneCreep(enemy, bot:GetTeam())))
             and J.IsInRange(bot, enemy, range) and J.CanFollowLaneFight(ally, enemy)
             and (not J.IsValidBuilding(tower) or not (J.IsInRange(enemy, tower, 900) or J.IsInRange(bot, tower, 850)))
             and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(enemy:GetLocation()) then
@@ -1650,7 +1679,7 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
                 if J.IsValid(creep) and J.IsInRange(creep, enemy, 375) then onWave = true; break end
             end
             if onWave and #J.GetEnemiesNearLoc(enemy:GetLocation(), 900) <= 2 then
-                local priority = J.GetHP(enemy)
+                local priority = J.GetHP(enemy) - (IsContestForLaneCreep(enemy, bot:GetTeam()) and 1 or 0)
                 if priority < score then best, score = enemy, priority end
             end
         end
@@ -1678,7 +1707,10 @@ function J.GetSideLanePressureStep(bot, enemies, tower)
     local range = bot:GetAttackRange()
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and not J.IsSuspiciousIllusion(enemy)
-            and enemy:GetAttackRange() < 310 and J.GetHP(enemy) <= 0.72 and J.CanFollowLaneFight(core, enemy)
+            and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310
+            and (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(core) >= 0.70
+                and IsContestForLaneCreep(enemy, bot:GetTeam())))
+            and J.CanFollowLaneFight(core, enemy)
             and not J.IsInRange(bot, enemy, range) and J.IsInRange(bot, enemy, range + 220)
             and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 1000)) then
             for _, creep in ipairs(wave) do

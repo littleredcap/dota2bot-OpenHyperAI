@@ -297,7 +297,7 @@ function X.ConsiderQ()
 	if bot:GetActiveMode() == BOT_MODE_LANING or nLV <= 5
 	then
 		local laneShot = bot.ohaLaningAttackTarget ~= nil and J.HasPendingLaningLastHit(bot)
-		local peel = J.GetLaningPeelTarget(bot, bot, nEnemysHerosInRange, abilityQ:GetCastRange())
+		local peel = J.GetLaningPeelTarget(bot, bot, nEnemysHerosInRange, abilityQ:GetCastRange(), true)
 		if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel end
 		local canSpareStun = bot:GetMana() >= nManaCost * 2
 			or (#nEnemysHerosInView == 0 and nMP >= 0.65)

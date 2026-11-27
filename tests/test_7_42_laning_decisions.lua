@@ -501,6 +501,40 @@ do
     enemy.x = 260
     state.allies = {creep}
     assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'no pressure without a friendly wave')
+
+    local friendly = setmetatable({GetTeam=function() return 2 end}, {__index=creep})
+    state.allies, state.enemyCreep = {friendly, friendly}, friendly
+    j.GetHP = function(unit) if unit == enemy then return 0.97 end; return hp(unit) end
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'do not hit the full-health target just for standing nearby')
+    state.enemyWindup = true
+    assert(j.GetSideLanePressureTarget(bot, {enemy}, nil, 450) == enemy, 'contest the exposed enemy before a low-HP threshold')
+    expect(state, mode, 'attack', enemy)
+    local lastHit = j.GetLaningLastHitTarget
+    j.GetLaningLastHitTarget = function() return creep end
+    expect(state, mode, 'attack', creep)
+    j.GetLaningLastHitTarget = lastHit
+    state.allyWave, state.allies = false, {friendly}
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'no healthy-target trade without a covered wave')
+end
+
+do
+    local state, mode, _, enemy, bot = fixture(false, false)
+    local j = mode.J
+    state.partner, state.partnerHP, state.enemy, state.creepHP = true, 0.54, true, 250
+    local partner = j.GetLanePartner(bot)
+    enemy.GetSecondsPerAttack, enemy.IsDisarmed = function() return 1.5 end, no
+    j.CanCastOnNonMagicImmune, j.CanCastOnTargetAdvanced = yes, yes
+    enemy.GetAttackTarget = function() return partner end
+    assert(not j.GetSideLaneCoverAttack(bot, {enemy}), 'a target pointer alone is not an imminent hit')
+    state.enemyWindup = true
+    assert(j.GetLaningPeelTarget(bot, partner, {enemy}, 450, true) == enemy, 'stop a verified windup before the weak core takes damage')
+    assert(mode.GetDesire() == 0.75)
+    expect(state, mode, 'attack', enemy)
+    state.enemyWindup, state.partnerHit = false, false
+    assert(not j.GetSideLaneCoverAttack(bot, {enemy}), 'release the peel after the threat ends')
+    state.enemyWindup, state.secondEnemy = true, {x=270, GetAttackRange=enemy.GetAttackRange, GetAttackTarget=function() return bot end}
+    state.enemies = {enemy, state.secondEnemy, state.secondEnemy}
+    assert(not j.GetSideLaneCoverAttack(bot, state.enemies), 'do not take an unsafe support trade against a rotation')
 end
 print('PASS: both lane modes prefer reachable ranged creeps, preserve attack windups and respect tower pressure')
 

@@ -912,6 +912,42 @@ do
     wk.SkillsComplement()
     assert(target == nil, 'do not interrupt a reserved last-hit windup with an optional stun')
 end
+do
+    local file = assert(io.open('bots/BotLib/hero_dragon_knight.lua','rb'))
+    local source = file:read('*a')
+    file:close()
+    local start = assert(source:find('function X.ConsiderDragonTail()', 1, true))
+    local finish = assert(source:find('function X.ConsiderFireball()', start, true))
+    local target = {x=195, HasModifier=no, IsChanneling=no}
+    local follow, pending, mana = target, false, 240
+    local support = {x=160, GetAttackRange=function() return 580 end, GetAttackTarget=function() return follow end}
+    local bot = {x=0, GetMana=function() return mana end, GetCurrentMovementSpeed=function() return 300 end,
+        GetNearbyTowers=empty, WasRecentlyDamagedByAnyHero=no}
+    local tail = {GetCastRange=function() return 200 end, GetManaCost=function() return 90 end, GetSpecialValueInt=function() return 0 end}
+    local breath = {GetManaCost=function() return 100 end}
+    local distance = function(a,b) return math.abs(a.x-b.x) end
+    local env = setmetatable({X={}, bot=bot, DragonTail=tail, BreatheFire=breath, nEnemyHeroes={target},
+        GetUnitToUnitDistance=distance, BOT_ACTION_DESIRE_NONE=NONE, BOT_ACTION_DESIRE_HIGH=HIGH,
+        J={CanCastAbility=yes, GetProperCastRange=function(_,_,range) return range end,
+            GetManaAfter=function() return 0.7 end, GetManaThreshold=function() return 0.4 end,
+            IsValidHero=yes, CanBeAttacked=yes, IsInRange=function(a,b,r) return distance(a,b) <= r end,
+            CanCastOnNonMagicImmune=yes, CanCastOnTargetAdvanced=yes, IsLaning=yes, IsRetreating=no,
+            HasPendingLaningLastHit=function() return pending end, GetLanePartner=function() return support end,
+            GetSideLanePressureTarget=function(unit) assert(unit == support); return target end,
+            IsDisabled=no, IsInTeamFight=no, IsGoingOnSomeone=no, IsDoingRoshan=no, IsDoingTormentor=no},
+    }, {__index=_G})
+    setfenv(assert(loadstring(source:sub(start,finish-1))),env)()
+    local desire, unit = env.X.ConsiderDragonTail()
+    assert(desire == HIGH and unit == target, 'Dragon Tail follows a safe support trade already in range')
+    follow = nil
+    assert(env.X.ConsiderDragonTail() == NONE, 'do not stun without the support trade')
+    follow, pending = target, true
+    assert(env.X.ConsiderDragonTail() == NONE, 'do not break a protected last-hit windup')
+    pending, mana = false, 170
+    assert(env.X.ConsiderDragonTail() == NONE, 'keep enough mana to use Breathe Fire')
+    mana, target.x = 240, 201
+    assert(env.X.ConsiderDragonTail() == NONE, 'do not walk forward to force the optional stun')
+end
 print('PASS: Dragon Knight and Wraith King secure lane creeps, and Dragon Form converts a clean siege')
 
 do

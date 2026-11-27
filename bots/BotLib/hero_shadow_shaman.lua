@@ -249,7 +249,7 @@ function X.GetLaneShacklesTarget()
 	if not J.IsInLaningPhase(bot) or not abilityE or not J.CanCastAbility(abilityE) or nHP < 0.55
 		or bot:WasRecentlyDamagedByAnyHero(1.5) then return nil end
 	local partner = J.GetLanePartner(bot)
-	local enemy = J.GetLaningPeelTarget(bot, partner, hEnemyList, abilityE:GetCastRange() + aetherRange)
+	local enemy = J.GetLaningPeelTarget(bot, partner, hEnemyList, abilityE:GetCastRange() + aetherRange, true)
 	if enemy == nil then return nil end
 	for _, other in ipairs(hEnemyList) do
 		if other ~= enemy and J.IsValidHero(other) and not J.IsSuspiciousIllusion(other) and not J.IsDisabled(other)
@@ -361,7 +361,7 @@ function X.ConsiderQ()
 	then
 		if nMP > 0.5
 		then
-			local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange + aetherRange)
+			local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange + aetherRange, true)
 			if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'Q-LaneCover' end
 			for _, npcEnemy in pairs( nInRangeEnemyList )
 			do
@@ -527,7 +527,7 @@ function X.ConsiderW()
 	end
 
 	if J.IsInLaningPhase(bot) then
-		local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange)
+		local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange, true)
 		if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'W-LaneCover' end
 	end
 	local towerPeel = bot._defend and J.GetTowerPeelTarget(bot, nInRangeEnemyList, nCastRange)
