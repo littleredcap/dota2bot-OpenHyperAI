@@ -537,3 +537,46 @@ do
 end
 
 print('PASS: reachable fight focus, formation movement and frontal-chase controls')
+
+do
+    local state, _, bot, core, _, enemy, other, j = fixture(false)
+    state.time, state.hp, bot.core, bot.x = 16 * 60, 0.75, true, 0
+    enemy.x, other.x, other.alive = 500, 550, true
+    enemy.target, other.target = bot, bot
+    enemy.GetEstimatedDamageToTarget = function() return 300 end
+    other.GetEstimatedDamageToTarget = function() return 210 end
+    j.WeAreStronger, j.IsDisabled = yes, no
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'targeted damage forces the focused core to withdraw even in a favorable fight')
+    state.time, other.target = state.time + 2, core
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'nearby heroes with split targets are not collective focus')
+    other.target, other.visible = bot, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'do not read pressure through fog')
+    other.visible, other.target, enemy.target = true, core, core
+    local hp = j.GetHP
+    j.GetHP = function(unit) return unit == core and 0.7 or hp(unit) end
+    j.CanCastOnNonMagicImmune, j.CanCastOnTargetAdvanced = yes, yes
+    assert(j.GetCoreFocusPeelTarget(bot, {core}, {enemy, other}, 650) == enemy, 'interrupt the larger immediate damage source')
+    assert(j.GetCoreFocusPeelTarget(bot, {core}, {enemy, other}, 450) == nil, 'do not walk into danger to save the core')
+end
+
+do
+    local state, _, bot, _, _, enemy, other, j = fixture(false)
+    state.time, state.hp, bot.core = 18 * 60, 0.25, true
+    enemy.core, enemy.x, other.x, other.alive, enemy.target, other.target = true, 100, 300, true, bot, bot
+    bot.IsRooted, bot.GetAttackRange = yes, function() return 150 end
+    bot.GetAttackPoint, bot.GetAnimCycle = function() return 0.3 end, function() return 0.18 end
+    bot.target, enemy.FindItemSlot = enemy, function() return -1 end
+    enemy.GetEstimatedDamageToTarget, other.GetEstimatedDamageToTarget = function() return 260 end, function() return 215 end
+    j.IsDisabled, j.IsAttacking, j.CanKillTarget = function(hero) return hero:IsRooted() end, yes, yes
+    j.GetVisibleFightInventoryValue = function(unit) return unit == bot and 4000 or 8000 end
+    assert(j.ShouldPreserveCoreFightTrade(bot, {enemy, other}), 'only a lethal already-started strike on a more valuable visible core')
+    bot.IsRooted = no
+    assert(not j.ShouldPreserveCoreFightTrade(bot, {enemy, other}), 'if the core can move, preserve it instead of trading')
+    bot.IsRooted, j.CanKillTarget = yes, no
+    assert(not j.ShouldPreserveCoreFightTrade(bot, {enemy, other}), 'do not gamble when it needs another hit')
+    j.CanKillTarget, bot.IsStunned = yes, yes
+    assert(not j.ShouldPreserveCoreFightTrade(bot, {enemy, other}), 'hard control prevents the last swing')
+    bot.IsStunned, enemy.FindItemSlot = no, function() return 4 end
+    assert(not j.ShouldPreserveCoreFightTrade(bot, {enemy, other}), 'visible extra life prevents a worthwhile trade')
+end
+print('PASS: recognize direct core focus, peel in range, and preserve only an already committed valuable trade')

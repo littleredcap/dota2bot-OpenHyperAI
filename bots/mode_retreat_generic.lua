@@ -178,17 +178,12 @@ function GetDesireHelper()
         return BOT_MODE_DESIRE_ABSOLUTE
     end
 
+    if J.ShouldPreserveCoreFightTrade(bot, nEnemyHeroes) then return BOT_MODE_DESIRE_NONE end
+
     local bWeAreStronger = J.WeAreStronger(bot, 1600)
     local bTeamFight     = J.IsInTeamFight(bot, 1200)
 
-    if bTeamFight and botName == "npc_dota_hero_skeleton_king"
-        and bot:GetLevel() >= 6
-    then
-        local abilityR = bot:GetAbilityByName("skeleton_king_reincarnation")
-        if abilityR:GetCooldownTimeRemaining() <= 1.0 and bot:GetMana() >= 160 then
-            return BOT_MODE_DESIRE_NONE
-        end
-    end
+    -- Reincarnation is insurance, not a reason to ignore the emergency exit.
 
     if DotaTime() < 0 and botHP < 1 then
         for _, enemy in pairs(nEnemyHeroes) do
@@ -201,7 +196,7 @@ function GetDesireHelper()
     if botHP < 0.3 and #nEnemyHeroes >= 2 and bot:WasRecentlyDamagedByAnyHero(1) then
         return RemapValClamped(botHP, 0.5, 0, BOT_MODE_DESIRE_HIGH, BOT_MODE_DESIRE_ABSOLUTE)
     end
-    if X.LowChanceToRun() then
+    if not J.IsCore(bot) and X.LowChanceToRun() then
         return BOT_MODE_DESIRE_MODERATE
     end
 

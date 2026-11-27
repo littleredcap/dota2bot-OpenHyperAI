@@ -7088,6 +7088,75 @@ function J.GetAssignedOuterTower(bot)
 	end
 end
 
+-- A numerical advantage does not protect the particular hero being focused.
+-- Require separate visible attackers with a current target and real contact.
+local function CanFireDuringFocus(hero)
+	return not hero:IsStunned() and not hero:IsHexed() and not hero:IsNightmared() and not hero:IsDisarmed()
+end
+
+function J.GetCoreFocusPressure(bot, enemies)
+	if not J.IsCore(bot) then return 0, 0 end
+	local counted, count, damage = {}, 0, 0
+	for _, enemy in ipairs(enemies) do
+		if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and CanFireDuringFocus(enemy) and enemy:GetAttackTarget() == bot
+			and J.IsInRange(enemy, bot, enemy:GetAttackRange() + 160) then
+			local id = enemy:GetPlayerID()
+			if not counted[id] then
+				counted[id], count = true, count + 1
+				damage = damage + enemy:GetEstimatedDamageToTarget(false, bot, 1.6, DAMAGE_TYPE_PHYSICAL)
+			end
+		end
+	end
+	return count, damage
+end
+
+function J.GetCoreFocusPeelTarget(bot, allies, enemies, castRange)
+	if DotaTime() < 8 * 60 or #enemies < 2 or J.GetHP(bot) < 0.42 then return nil end
+	local best, bestScore = nil, 0
+	for _, ally in ipairs(allies) do
+		if ally ~= bot and J.IsValidHero(ally) and J.IsCore(ally) and J.GetHP(ally) <= 0.78
+			and J.IsInRange(bot, ally, 1300) then
+			local count, damage = J.GetCoreFocusPressure(ally, enemies)
+			if count >= 2 and damage >= ally:GetHealth() * 0.42 then
+				for _, enemy in ipairs(enemies) do
+					if IsFightFocusCandidate(enemy) and enemy:GetAttackTarget() == ally and CanFireDuringFocus(enemy) and J.IsInRange(enemy, ally, enemy:GetAttackRange() + 160)
+						and J.IsInRange(bot, enemy, castRange) and J.CanCastOnNonMagicImmune(enemy)
+						and J.CanCastOnTargetAdvanced(enemy) then
+						local score = enemy:GetEstimatedDamageToTarget(false, ally, 1.6, DAMAGE_TYPE_PHYSICAL)
+							/ math.max(1, ally:GetHealth())
+						if score > bestScore then best, bestScore = enemy, score end
+					end
+				end
+			end
+		end
+	end
+	return best
+end
+
+local function CanFinishValuableFightTrade(bot)
+	-- Preserve only an already committed melee hit while rooted. Do not chase
+	-- an expensive target, and never bypass an independent emergency retreat.
+	if not bot:IsRooted() or bot:GetAttackRange() >= 310 or J.GetHP(bot) > 0.30
+		or not CanFireDuringFocus(bot) or not J.IsAttacking(bot) then return false end
+	local target = bot:GetAttackTarget()
+	if not IsFightFocusCandidate(target) or target:GetTeam() == bot:GetTeam() or not J.IsCore(target)
+		or target:GetUnitName() == 'npc_dota_hero_skeleton_king' or target:FindItemSlot('item_aegis') >= 0
+		or target:HasModifier('modifier_item_blade_mail_reflect') or target:HasModifier('modifier_templar_assassin_refraction_absorb')
+		or target:GetUnitName() == 'npc_dota_hero_medusa'
+		or not J.IsInRange(bot, target, bot:GetAttackRange()) then return false end
+	local remaining = bot:GetAttackPoint() - bot:GetAnimCycle()
+	if remaining < 0 or remaining > 0.28
+		or not J.CanKillTarget(target, bot:GetAttackDamage() * 0.85, DAMAGE_TYPE_PHYSICAL) then return false end
+	local ours, theirs = J.GetVisibleFightInventoryValue(bot), J.GetVisibleFightInventoryValue(target)
+	return ours > 0 and theirs >= math.max(ours + 2200, ours * 1.30)
+end
+
+function J.ShouldPreserveCoreFightTrade(bot, enemies)
+	if DotaTime() < 8 * 60 or #enemies < 2 or not J.IsCore(bot) or not bot:IsRooted() then return false end
+	local count, damage = J.GetCoreFocusPressure(bot, enemies)
+	return count >= 2 and damage >= bot:GetHealth() * 0.42 and CanFinishValuableFightTrade(bot)
+end
+
 function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local now = DotaTime()
 	if now < 0 or not bot:IsAlive() or bot:HasModifier('modifier_fountain_invulnerability') then return false end
@@ -7167,6 +7236,15 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 		return true
 	end
 
+	if now >= 8 * 60 and #enemies >= 2 and J.IsCore(bot) and J.GetHP(bot) <= 0.78 then
+		local count, damage = J.GetCoreFocusPressure(bot, enemies)
+		local health = bot:GetHealth()
+		if count >= 2 and (damage >= health * 0.42 or (count >= 3 and damaged and damage >= health * 0.24))
+			and not CanFinishValuableFightTrade(bot) then
+			bot.ohaReinforcementRetreatAt = now
+			return true
+		end
+	end
 	-- Finish disengaging if arrivals drop out of the TP list or briefly leave vision.
 	local started = bot.ohaReinforcementRetreatAt
 	return started ~= nil and now >= started and now - started < 1.25
@@ -7821,6 +7899,12 @@ local function GetInventoryValue(hero)
 		if item ~= nil then value = value + GetItemCost(item:GetName()) end
 	end
 	return value
+end
+
+-- Only the current inventory of a visible real hero, never fog net worth.
+function J.GetVisibleFightInventoryValue(hero)
+	if not J.IsValidHero(hero) or J.IsSuspiciousIllusion(hero) then return 0 end
+	return GetInventoryValue(hero)
 end
 
 function J.GetInventoryNetworth()

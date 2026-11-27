@@ -530,6 +530,8 @@ function X.ConsiderW()
 		local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange, true)
 		if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'W-LaneCover' end
 	end
+	local focusPeel = J.GetCoreFocusPeelTarget(bot, hAllyList, hEnemyList, nCastRange)
+	if focusPeel ~= nil then return BOT_ACTION_DESIRE_HIGH, focusPeel, 'W-CoreFocusCover' end
 	local towerPeel = bot._defend and J.GetTowerPeelTarget(bot, nInRangeEnemyList, nCastRange)
 	if towerPeel then return BOT_ACTION_DESIRE_HIGH, towerPeel, 'W-TowerCover' end
 
