@@ -8353,6 +8353,10 @@ local function UseGlyph()
 			local fraction = tower:GetHealth() / tower:GetMaxHealth()
 			local lanes = {LANE_TOP, LANE_MID, LANE_BOT}
 			local threat = J.GetOuterTowerThreat(tower, lanes[(index - 1) % 3 + 1])
+			local secondsLeft = threat.damageRate > 0 and tower:GetHealth() / threat.damageRate or math.huge
+			-- The fight planner can admit a defender beyond the normal Glyph ETA.
+			-- Count that ally only when the tower's remaining life plus protection is enough.
+			local gatherETA = math.min(8.5, math.max(5.5, secondsLeft + 4))
 			local contestCount, lateETA, needed = 0, 0, false
 			for _, ally in ipairs(J.GetAlliesNearLoc(tower:GetLocation(), 24000)) do
 				local defense = ally._defend
@@ -8361,7 +8365,7 @@ local function UseGlyph()
 					and (ally.ohaOuterTowerHoldUntil or 0) > DotaTime()
 				then
 					local eta = GetGlyphClearerETA(ally, tower, defense)
-					if eta <= 5.5 then
+					if eta <= (defense.waveClearGather and gatherETA or 5.5) then
 						if defense.waveClearGather then
 							contestCount, lateETA = contestCount + 1, math.max(lateETA, eta)
 							needed = needed or defense.waveClearNeedsGlyph

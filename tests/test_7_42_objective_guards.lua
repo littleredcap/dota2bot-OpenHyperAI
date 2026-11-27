@@ -252,6 +252,18 @@ assert(glyphs == 5, 'use Glyph above half HP when damage rate says a committed T
 damageRate = 1
 useGlyph()
 assert(glyphs == 5, 'do not Glyph a healthy tower without imminent damage')
+towerHP, damageRate = 50, 10
+clearers[1]._defend.waveClearGather = {x = 550}
+clearers[1]._defend.waveClearNeedsGlyph = false
+clearers[2] = {_defend = {waveClearTower = tierOne, waveClearGather = {x = 550}}, ohaOuterTowerHoldUntil = 103,
+    distance = 1150, GetCurrentMovementSpeed = function() return 300 end}
+clearers[3] = {_defend = {waveClearTower = tierOne, waveClearGather = {x = 550}, waveClearNeedsGlyph = true},
+    ohaOuterTowerHoldUntil = 103, distance = 2050, GetCurrentMovementSpeed = function() return 300 end}
+useGlyph()
+assert(glyphs == 6, 'use Glyph when the third real defender is six seconds out but the tower has five seconds left')
+clearers[3].distance = 3500
+useGlyph()
+assert(glyphs == 6, 'do not Glyph if the group cannot reach through the extended window')
 print('PASS: Glyph tolerates missing teammates and preserves full-Bot defense')
 
 do

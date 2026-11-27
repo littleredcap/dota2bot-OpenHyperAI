@@ -447,6 +447,36 @@ do
 end
 
 do
+    local state, env, bot, core, _, enemy, control, j = fixture(false)
+    state.time, bot.x, bot.id, core.x, enemy.x, control.x = 1144, -580, 4, -570, 650, 820
+    core.GetAttackRange = function() return 150 end
+    control.alive, control.GetUnitName = true, function() return 'npc_dota_hero_warlock' end
+    local hub, hold = pos(0), pos(-600)
+    local point = assert(j.GetTowerHoldFormationPoint(bot, hub, hold, 1200, {enemy, control}, {bot, core}),
+        'split with only a ranged clearer and one frontliner, before auto-attacks start')
+    assert(point.x < hold.x and math.abs(point.y) >= 450, 'move sideways behind safety, not toward the casters')
+    env.IsLocationPassable = function(p) return p.y > -150 and p.y < 150 end
+    assert(not j.GetTowerHoldFormationPoint(bot, hub, hold, 1200, {enemy, control}, {bot, core}),
+        'never split into impassable ground')
+    env.IsLocationPassable, control.visible = yes, false
+    assert(not j.GetTowerHoldFormationPoint(bot, hub, hold, 1200, {enemy, control}, {bot, core}),
+        'do not infer an unseen AoE threat')
+    local tower = {x=0, y=0}
+    bot.ohaOuterTowerHoldUntil = state.time + 3
+    bot._defend = {waveClearTower = tower}
+    j.IsValidBuilding = function(x) return x == tower end
+    j.IsDefending, j.CanCastOnNonMagicImmune, j.CanCastOnTargetAdvanced = yes, yes, yes
+    j.IsDisabled = no
+    enemy.x, enemy.target = -510, core
+    core.WasRecentlyDamagedByHero = function(_, attacker) return attacker == enemy end
+    assert(j.GetTowerPeelTarget(bot, {enemy}, 340) == enemy,
+        'interrupt a verified attacker within actual cast range')
+    assert(not j.GetTowerPeelTarget(bot, {enemy}, 50), 'never walk forward for a defensive peel')
+    enemy.target = nil
+    assert(not j.GetTowerPeelTarget(bot, {enemy}, 340), 'no peel just because an enemy is visible')
+end
+
+do
     local state, _, bot, core, _, enemy, _, j = fixture(false)
     state.time, enemy.x, core.x = 48 * 60, 920, -260
     bot.GetAttackRange = function() return 175 end

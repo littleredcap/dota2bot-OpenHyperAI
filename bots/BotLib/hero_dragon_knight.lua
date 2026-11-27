@@ -216,6 +216,15 @@ function X.SkillsComplement()
     nAllyHeroes = bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE)
     nEnemyHeroes = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
 
+	if bot._defend and J.CanCastAbility(DragonTail) then
+		local range = J.GetProperCastRange(false, bot, DragonTail:GetCastRange())
+		local peel = J.GetTowerPeelTarget(bot, nEnemyHeroes, range)
+		if peel ~= nil then
+			J.SetQueuePtToINT(bot, false)
+			bot:ActionQueue_UseAbilityOnEntity(DragonTail, peel)
+			return
+		end
+	end
 	local holdingTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) ~= nil
 	if holdingTower then BreatheFireDesire, BreatheFireLocation = X.ConsiderBreatheFire() end
 	if not holdingTower or BreatheFireDesire <= 0 then

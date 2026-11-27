@@ -1056,15 +1056,24 @@ do
     assert(orders[2].x == 5400 and not jmz.GetTowerDefenseTarget(bot), 'a teleport in progress never counts as an arrived fighter')
     members[1].x, members[2].x, members[1].HasModifier = 5450, 5500, function() return false end
     defenders.incoming = nil
+    members[4].x = 5500
     defend.DefendThink(bot, lane.Mid)
-    assert(orders[3] == defenders.contest[1] and jmz.GetTowerDefenseTarget(bot) == orders[3],
-        'concentrate attacks and enable combat spells only after the team arrives')
+    assert(orders[3].x == 5400 and not jmz.GetTowerDefenseTarget(bot),
+        'even an assembled team holds when only one defender can hit the target')
+    members[2].x = 5600
+    defend.DefendThink(bot, lane.Mid)
+    assert(orders[4] == defenders.contest[1] and jmz.GetTowerDefenseTarget(bot) == orders[4],
+        'concentrate attacks once support reaches the same target')
     for i, foe in ipairs(defenders.contest) do foe.x, foe.damage = 5430 + i * 15, 320 end
     members[1].hp, members[2].hp = 0.3, 0.3
     defend.DefendThink(bot, lane.Mid)
-    assert(orders[4].x == 4800 and not jmz.GetTowerDefenseTarget(bot), 'retreat when the attackers reach the hold point and local strength drops')
+    assert(orders[5].x == 4800 and not jmz.GetTowerDefenseTarget(bot), 'retreat when the attackers reach the hold point and local strength drops')
     local delay, weaker = jmz.GetOuterTowerResponse(tower:GetLocation(), jmz.GetOuterTowerThreat(tower, lane.Mid), nil, false)
     assert(delay and (not weaker[3] or not weaker[3].gather), 'a lost fight falls back to clearers and releases other heroes')
+    local dying = jmz.GetOuterTowerThreat(tower, lane.Mid)
+    dying.damageRate, dying.underAttack = tower:GetHealth(), true
+    local _, doomed = jmz.GetOuterTowerResponse(tower:GetLocation(), dying, nil, false)
+    assert(next(doomed) == nil, 'do not call a clearer to a front tower whose remaining life is under 2.5 seconds')
 end
 
 do

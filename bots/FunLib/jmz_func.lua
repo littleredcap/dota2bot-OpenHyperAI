@@ -6072,6 +6072,85 @@ local function IsLocalFightStep(bot, point, towers)
 	return true
 end
 
+-- Tower defense has a staging phase, so don't wait for three allies or an
+-- active attack target to separate a ranged clearer from the frontliner.
+function J.GetTowerHoldFormationPoint(bot, hub, hold, reach, enemies, allies)
+	if bot:GetAttackRange() < 420 or bot:IsRooted() or J.GetHP(bot) < 0.5
+		or #enemies < 2 then return nil end
+	local origin = bot:GetLocation()
+	if GetUnitToLocationDistance(bot, hold) > 800 then return nil end
+	local radius = 0
+	for _, enemy in ipairs(enemies) do
+		if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy)
+			and not (enemy.IsSilenced and enemy:IsSilenced()) then
+			radius = math.max(radius, fightControlSpacing[FightHeroKey(enemy)] or 0)
+		end
+	end
+	if radius <= 0 then return nil end
+
+	local dx, dy = hold.x - hub.x, hold.y - hub.y
+	local length = math.sqrt(dx * dx + dy * dy)
+	if length < 150 then return nil end
+	local ux, uy = dx / length, dy / length
+	local anchors = {}
+	for _, ally in ipairs(allies) do
+		if ally ~= bot and J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally)
+			and (ally:GetAttackRange() < 420 or ally:GetPlayerID() < bot:GetPlayerID())
+			and GetUnitToLocationDistance(ally, hold) < radius + 110 then
+			anchors[#anchors + 1] = ally
+		end
+	end
+	if #anchors == 0 then return nil end
+	local function crowding(point)
+		local penalty = 0
+		for _, ally in ipairs(anchors) do
+			local d = GetUnitToLocationDistance(ally, point)
+			penalty = penalty + math.max(0, radius - d)^2
+		end
+		return penalty
+	end
+	local best, score = nil, crowding(hold) - 65^2
+	local side = bot:GetPlayerID() % 2 == 0 and 1 or -1
+	local towers = bot:GetNearbyTowers(1600, true)
+	for _, sign in ipairs({side, -side}) do
+		local point = Vector(hold.x + ux * 50 - uy * sign * 490,
+			hold.y + uy * 50 + ux * sign * 490, hold.z or origin.z)
+		if J.GetLocationToLocationDistance(point, hub) <= math.max(length, reach - 100)
+			and IsLocalFightStep(bot, point, towers) and #J.GetEnemiesNearLoc(point, 725) == 0 then
+			local ahead = false
+			for _, enemy in ipairs(enemies) do
+				if J.IsValidHero(enemy) and GetUnitToLocationDistance(enemy, point)
+					< GetUnitToLocationDistance(enemy, hold) - 90 then ahead = true; break end
+			end
+			local penalty = crowding(point)
+			if not ahead and penalty < score then best, score = point, penalty end
+		end
+	end
+	return best
+end
+
+function J.GetTowerPeelTarget(bot, enemies, castRange)
+	local state = bot._defend
+	local tower = state and (state.waveClearRearTower or state.waveClearTower)
+	if not J.IsValidBuilding(tower) or not J.IsDefending(bot) or (bot.ohaOuterTowerHoldUntil or 0) <= DotaTime()
+		or not J.IsInRange(bot, tower, 1200) then return nil end
+	local best, score = nil, 0
+	for _, enemy in ipairs(enemies) do
+		if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and not J.IsDisabled(enemy)
+			and J.IsInRange(bot, enemy, castRange) and J.CanCastOnNonMagicImmune(enemy)
+			and J.CanCastOnTargetAdvanced(enemy) then
+			local victim = enemy:GetAttackTarget()
+			if J.IsValidHero(victim) and victim:GetTeam() == bot:GetTeam() and J.IsInRange(victim, tower, 1100)
+				and victim:WasRecentlyDamagedByHero(enemy, 2.5) then
+				local pressure = 1 + (1 - J.GetHP(victim)) + (victim:GetAttackRange() >= 420 and 1 or 0)
+					+ (J.IsDisabled(victim) and 0.5 or 0)
+				if pressure > score then best, score = enemy, pressure end
+			end
+		end
+	end
+	return best
+end
+
 function J.GetTeamfightSpreadPoint(bot, target, enemies, allies)
 	if DotaTime() < 12 * 60 or #enemies < 2 or bot:GetAttackRange() < 420
 		or not IsFightFocusCandidate(target) or not CanProvideFightContact(bot) or bot:IsRooted()
@@ -6274,6 +6353,7 @@ function J.GetOuterTowerThreat(tower, lane)
 	local visible = {}
 	local activeAttackers = 0
 	local advancingEscort = false
+	local visibleAdvance = 0
 	for _, id in ipairs(J.GetLastSeenEnemiesNearLoc(hub, 1600)) do seen[id], near[id] = true, true end
 	for _, enemy in ipairs(J.GetEnemiesNearLoc(hub, 3200)) do
 		local id = enemy:GetPlayerID()
@@ -6281,6 +6361,7 @@ function J.GetOuterTowerThreat(tower, lane)
 		local advancing = onApproach(enemy:GetLocation()) and enemy:IsFacingLocation(hub, 50)
 		if attacking then activeAttackers = activeAttackers + 1 end
 		advancingEscort = advancingEscort or attacking or advancing
+		if advancing or attacking then visibleAdvance = visibleAdvance + 1 end
 		if GetUnitToUnitDistance(enemy, tower) <= 1600 then
 			seen[id], near[id] = true, true
 			visible[id] = enemy
@@ -6327,6 +6408,7 @@ function J.GetOuterTowerThreat(tower, lane)
 	-- A visible group already rotating with a wave is actionable before the first hit.
 	local escortedWave = advancingEscort and ((siege and waveSize >= 2) or waveSize >= 4
 		or enemyCount >= 3 and waveSize >= 2) and eta <= 10
+	local middleGroup = lane == LANE_MID and visibleAdvance >= 3 and waveSize >= 2 and eta <= 10
 	local wavePressure = attackingCreeps >= 2 or siegeAttacking or escortedWave
 		or (siege and waveSize >= 2 and eta <= 8) or (enemyCount == 1 and waveSize >= 3 and eta <= 5)
 	local active = activeAttackers > 0 or (enemyCount >= 2 and (waveSize > 0 or nearCount >= 2)) or wavePressure
@@ -6354,6 +6436,7 @@ function J.GetOuterTowerThreat(tower, lane)
 		enemies = enemies, underAttack = underAttack, damageRate = watch.damageRate,
 		siegeAttacking = siegeAttacking, heroAttacking = activeAttackers > 0,
 		siege = siege, eta = eta < math.huge and eta or 0, towerHP = towerHP, briefHold = briefHold,
+		middleGroup = middleGroup,
 		score = active and (nearCount * 3 + enemyCount * 2 + math.min(waveSize, 8)
 			+ activeAttackers * 2 + (siege and 2 or 0) + (underAttack and 12 or escortedWave and 7 or 0))
 			* (towerHP > 0.15 and 1 or 0.25) or (briefHold and 1 or 0)}
@@ -6463,7 +6546,7 @@ local function GetOuterTowerFightPlan(location, threat, fallback)
 			local ally = GetTeamMember(i)
 			if not ally or not ally:IsBot() then allBots = false; break end
 		end
-		if allBots then budget = budget + 5 end
+		if allBots then budget = math.max(budget, math.min(8.5, budget + 5)) end
 	end
 	local incoming, teleportCount = {}, 0
 	for _, tp in ipairs(GetIncomingTeleports()) do
@@ -6584,7 +6667,11 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 		end
 		return true, assigned
 	end
-	if not highGround and threat.towerHP <= 0.15 then return defendNextTower() end
+	-- Do not converge on a tower that will fall before even the first cast.
+	local timeToFall = threat.tower and threat.underAttack and threat.damageRate > 0
+		and not threat.tower:HasModifier('modifier_fountain_glyph') and threat.tower:GetHealth() / threat.damageRate
+		or math.huge
+	if not highGround and (threat.towerHP <= 0.15 or timeToFall < 2.5) then return defendNextTower() end
 	for _, ally in ipairs(J.GetAlliesNearLoc(location, threat.briefHold and 1600 or (tpPoint ~= nil and 24000 or 4000))) do
 		local tp = ally._defend and ally._defend.waveClearTeleport
 		local teleportingHere = tpPoint ~= nil and tp ~= nil and J.GetLocationToLocationDistance(tpPoint, tp) < 350
@@ -6636,7 +6723,7 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 				local fromLanding = math.max(0, J.GetLocationToLocationDistance(tpPoint, location) - 575)
 				travelTime, landing = 4.5 + fromLanding / math.max(ally:GetCurrentMovementSpeed(), 250), tpPoint
 			end
-			if travelTime <= arrivalWindow then
+			if travelTime <= arrivalWindow and travelTime + 1.25 < timeToFall then
 				local score, reach, damage = GetWaveClearScore(ally, travelTime)
 				if damage == 0 and (threat.count == 0 or threat.count == 1 and travelTime <= 5 and landing == nil) then
 					-- An uncontested catapult can be cleared with ordinary attacks, including after a safe TP.
@@ -6697,9 +6784,15 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 	return true, assignments
 end
 
-function J.RunOuterTowerHold(bot, hub, reach, cover)
+function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 	if bot:HasModifier('modifier_teleporting') then return false end
-	local hold = GetOuterTowerHoldPoint(hub, reach, cover)
+	local hold = stage or GetOuterTowerHoldPoint(hub, reach, cover)
+	local formation = stage
+	if not formation and J.GetTowerHoldFormationPoint and reach >= 900 then
+		formation = J.GetTowerHoldFormationPoint(bot, hub, hold, reach,
+			J.GetEnemiesNearLoc(hub, 2250), J.GetAlliesNearLoc(hold, 1400))
+		hold = formation or hold
+	end
 	local hostile = J.GetEnemiesNearLoc(hold, 700)
 	if #hostile >= 2 or bot:WasRecentlyDamagedByAnyHero(2) and #J.GetEnemiesNearLoc(bot:GetLocation(), 750) >= 2
 		or (#hostile == 1 and bot:WasRecentlyDamagedByAnyHero(2)
@@ -6709,7 +6802,7 @@ function J.RunOuterTowerHold(bot, hub, reach, cover)
 	end
 	if bot:IsUsingAbility() or bot:IsCastingAbility() or bot:IsChanneling() then return false end
 	local awayFromHold = GetUnitToLocationDistance(bot, hold) > 220
-	local canStepUp = not cover and #J.GetLastSeenEnemiesNearLoc(hub, 1150) == 0
+	local canStepUp = not cover and formation == nil and #J.GetLastSeenEnemiesNearLoc(hub, 1150) == 0
 		and #J.GetEnemiesNearLoc(hub, 1150) == 0
 	if awayFromHold and (not canStepUp or GetUnitToLocationDistance(bot, hub) > 700) then
 		bot:Action_MoveToLocation(hold)
@@ -6774,13 +6867,20 @@ function J.RunOuterTowerContest(bot, tower, threat, state)
 		and CanTakeTowerFight(threat, allies) then
 		local target, best = nil, -math.huge
 		for _, enemy in ipairs(threat.enemies) do
-			if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and GetUnitToUnitDistance(enemy, tower) <= 900
-				and J.IsInRange(bot, enemy, math.max(650, bot:GetAttackRange() + 125)) then
-				local score = 1 - J.GetHP(enemy) + (enemy:GetAttackTarget() == tower and 0.3 or 0)
-				if score > best or score == best and enemy:GetPlayerID() < target:GetPlayerID() then target, best = enemy, score end
+			if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and GetUnitToUnitDistance(enemy, tower) <= 900 then
+				local contact = 0
+				for _, ally in ipairs(allies) do
+					if not ally.hero:IsDisarmed() and J.IsInRange(ally.hero, enemy, ally.hero:GetAttackRange() + 125) then contact = contact + 1 end
+				end
+				-- All defenders choose the same reachable target. Heroes outside
+				-- spell range stay in cover instead of picking a different fight.
+				local score = contact + 1 - J.GetHP(enemy) + (enemy:GetAttackTarget() == tower and 0.3 or 0)
+				if contact >= 2 and (score > best or score == best and enemy:GetPlayerID() < target:GetPlayerID()) then
+					target, best = enemy, score
+				end
 			end
 		end
-		if target then
+		if target and J.IsInRange(bot, target, math.max(650, bot:GetAttackRange() + 125)) then
 			state.waveClearTarget, state.waveClearTargetUntil = target, DotaTime() + 0.8
 			if J.IsInRange(bot, target, bot:GetAttackRange() + 100) then
 				bot:Action_AttackUnit(target, true)
@@ -6793,12 +6893,15 @@ function J.RunOuterTowerContest(bot, tower, threat, state)
 		bot:Action_MoveToLocation(J.AdjustLocationWithOffsetTowardsFountain(hub, 1200))
 		return true
 	end
-	if GetUnitToLocationDistance(bot, gather) > 275 then
-		bot:Action_MoveToLocation(gather)
+	local stage = J.GetTowerHoldFormationPoint and J.GetTowerHoldFormationPoint(bot, hub, gather,
+		state.waveClearReach or bot:GetAttackRange(), threat.enemies, J.GetAlliesNearLoc(gather, 1400)) or gather
+	if GetUnitToLocationDistance(bot, stage) > 275 then
+		bot:Action_MoveToLocation(stage)
 		return true
 	end
 	-- Do not let a shorter-range hero walk ahead of the rally point while the others arrive.
-	return J.RunOuterTowerHold(bot, hub, math.max(975, state.waveClearReach or bot:GetAttackRange()), false)
+	return J.RunOuterTowerHold(bot, hub, math.max(975, state.waveClearReach or bot:GetAttackRange()),
+		false, stage ~= gather and stage or nil)
 end
 
 function J.GetAssignedOuterTower(bot)

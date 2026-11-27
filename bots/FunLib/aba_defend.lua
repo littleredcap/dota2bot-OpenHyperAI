@@ -986,14 +986,17 @@ function ConsiderPingedDefend(bot, lane, desire, building, tier, nEffAllies, nEn
     end
 end
 local function GetPrimaryTowerSiege(highGround)
-    local selectedLane, selectedThreat = nil, nil
+    local selectedLane, selectedThreat, selectedScore = nil, nil, 0
     for _, candidate in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
         local tower, _, tier = unpack(____exports.GetFurthestBuildingOnLane(candidate))
         if (tier >= 3) == highGround and IsValidBuildingTarget(tower) then
             local threat = jmz.GetOuterTowerThreat(tower, candidate)
-            if threat.score > 0 and (selectedThreat == nil or threat.score > selectedThreat.score
-                or (threat.score == selectedThreat.score and threat.eta < selectedThreat.eta)) then
-                selectedLane, selectedThreat = candidate, threat
+            -- A visible escorted mid wave can cost two towers. Pre-position
+            -- before the first hit, but do not override an active group siege elsewhere.
+            local score = threat.score + (not highGround and threat.middleGroup and threat.towerHP > 0.15 and 10 or 0)
+            if score > 0 and (selectedThreat == nil or score > selectedScore
+                or (score == selectedScore and threat.eta < selectedThreat.eta)) then
+                selectedLane, selectedThreat, selectedScore = candidate, threat, score
             end
         end
     end

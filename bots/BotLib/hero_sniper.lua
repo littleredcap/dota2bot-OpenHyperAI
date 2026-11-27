@@ -308,10 +308,29 @@ function X.ConsiderQ()
 	local nCanHurtCreepCount = waveLocation and J.GetInLocLaneCreepCount(bot, 1600, nRadius, waveLocation) or 0
 	local nCanHurtHeroLocationAoE = bot:FindAoELocation(true, true, botLocation, nCastRange, nRadius - 30, impactDelay, 0)
 	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
-	if holdTower ~= nil and waveLocation ~= nil and nCanHurtCreepCount >= 2
-		and GetUnitToLocationDistance(holdTower, waveLocation) <= 1050
-		and not X.IsAbiltyQCastedHere(waveLocation, nRadius) then
-		return BOT_ACTION_DESIRE_HIGH, waveLocation
+	if holdTower ~= nil then
+		if waveLocation ~= nil and nCanHurtCreepCount >= 2
+			and GetUnitToLocationDistance(holdTower, waveLocation) <= 1050
+			and not X.IsAbiltyQCastedHere(waveLocation, nRadius) then
+			return BOT_ACTION_DESIRE_HIGH, waveLocation
+		end
+		-- FindAoELocation can pick a larger cluster elsewhere. Look at the
+		-- visible lane creeps approaching our assigned tower independently.
+		local aim, count, distance = nil, 1, math.huge
+		for _, creep in ipairs(nEnemysLaneCreepsInSkillRange) do
+			if J.IsValid(creep) then
+				local point = J.GetCorrectLoc(creep, impactDelay)
+				local fromTower = GetUnitToLocationDistance(holdTower, point)
+				if fromTower <= 1250 and GetUnitToLocationDistance(bot, point) <= nCastRange then
+					local hits = J.GetInLocLaneCreepCount(bot, 1600, nRadius - 25, point)
+					if hits >= 2 and (hits > count or hits == count and fromTower < distance)
+						and not X.IsAbiltyQCastedHere(point, nRadius) then
+						aim, count, distance = point, hits, fromTower
+					end
+				end
+			end
+		end
+		if aim ~= nil then return BOT_ACTION_DESIRE_HIGH, aim end
 	end
 
 	if J.IsInLaningPhase() and (J.IsLaning(bot) or J.IsGoingOnSomeone(bot) or J.IsRetreating(bot)) then

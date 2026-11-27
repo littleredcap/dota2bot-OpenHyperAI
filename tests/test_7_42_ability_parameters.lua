@@ -574,6 +574,9 @@ do
     sniper.ConsiderR = function() error('clear the assigned wave before picking an ultimate target') end
     sniper.SkillsComplement()
     assert(casts[7] == 100, 'use the last planned wave clear even if there are only two creeps left')
+    aim, creepAim, sniperBot.clock = 1500, 400, 225
+    sniper.SkillsComplement()
+    assert(casts[8] == 400, 'clear the assigned tower wave even when the engine AoE search picks another cluster')
 end
 print('PASS: Sniper balances last hits, lane pressure and distinct Shrapnel zones')
 

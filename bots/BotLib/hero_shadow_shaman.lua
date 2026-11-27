@@ -530,7 +530,8 @@ function X.ConsiderW()
 		local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange)
 		if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'W-LaneCover' end
 	end
-
+	local towerPeel = bot._defend and J.GetTowerPeelTarget(bot, nInRangeEnemyList, nCastRange)
+	if towerPeel then return BOT_ACTION_DESIRE_HIGH, towerPeel, 'W-TowerCover' end
 
 	if J.IsInTeamFight( bot, 1200 )
 		and ( #nInBonusEnemyList >= 2 or #hAllyList >= 3 )
