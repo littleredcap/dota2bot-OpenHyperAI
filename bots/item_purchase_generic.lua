@@ -385,12 +385,16 @@ end
 
 local adaptiveCounters = {item_black_king_bar = true, item_monkey_king_bar = true, item_pipe = true}
 local recentControl, previousControl = -math.huge, -math.huge
+local recentSupportBurst, previousSupportBurst = -math.huge, -math.huge
 local nextCounterReview = 0
 
 local function ObserveCounterPressure()
 	if currentTime - recentControl >= 12 and bot:WasRecentlyDamagedByAnyHero(1.5)
 		and (bot:IsSilenced() or J.IsDisabled(bot)) and #J.GetEnemiesNearLoc(bot:GetLocation(), 1150) > 0 then
 		previousControl, recentControl = recentControl, currentTime
+		if J.GetPosition(bot) >= 4 and J.GetHP(bot) < 0.45 then
+			previousSupportBurst, recentSupportBurst = recentSupportBurst, currentTime
+		end
 	end
 end
 
@@ -405,6 +409,25 @@ local function PreferVisibleCounter(queue)
 
 	local _, hasComponents = Item.GetMissingPurchaseComponents(bot, current)
 	if hasComponents then return end
+
+	if J.GetPosition(bot) >= 4 then
+		-- Finish the first affordable save instead of displacing it with a team aura.
+		if current == 'item_force_staff' or current == 'item_glimmer_cape' or current == 'item_aeon_disk' then return end
+		if (botName == 'npc_dota_hero_warlock' or botName == 'npc_dota_hero_shadow_shaman')
+			and currentTime >= (J.IsModeTurbo() and 780 or 1080)
+			and currentTime - previousSupportBurst <= 145 and currentTime - recentSupportBurst <= 70 then
+			local _, _, glimmer = Item.GetMissingPurchaseComponents(bot, 'item_glimmer_cape')
+			local _, _, force = Item.GetMissingPurchaseComponents(bot, 'item_force_staff')
+			local _, _, disk = Item.GetMissingPurchaseComponents(bot, 'item_aeon_disk')
+			if (glimmer or force) and not disk then
+				for i = index - 1, 1, -1 do
+					if queue[i] == 'item_aeon_disk' then table.remove(queue, i); break end
+				end
+				queue[#queue + 1] = 'item_aeon_disk'
+				return true
+			end
+		end
+	end
 
 	local mustKeepAttacking = J.GetPosition(bot) <= 3 and currentTime - previousControl <= 95
 		and currentTime - recentControl <= 48 and Item.HasBuyBoots(bot)

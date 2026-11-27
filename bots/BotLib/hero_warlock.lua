@@ -258,6 +258,14 @@ function X.SkillsComplement()
 	if aether then aetherRange = aether:GetSpecialValueInt('cast_range_bonus') end
 
 
+	local counterfight = J.GetSupportCounterfightPoint and abilityR:IsFullyCastable()
+		and J.GetSupportCounterfightPoint(bot, hEnemyHeroList or {},
+			abilityR:GetCastRange() + aetherRange, abilityR:GetSpecialValueInt('aoe'), 0.40)
+	if counterfight then
+		bot:Action_UseAbilityOnLocation(abilityR, counterfight)
+		return
+	end
+
 	castRFRDesire, castRFRLocation = X.ConsiderRFR()
 	if ( castRFRDesire > 0 )
 	then
@@ -355,7 +363,8 @@ function X.ConsiderR()
 	local range = abilityR:GetCastRange() + aetherRange
 	local enemies = J.GetEnemyList(bot, 1600)
 	local point, count = GetOfferingCluster(range, abilityR:GetSpecialValueInt("aoe"), enemies)
-	if count >= 2 or (count == 1 and nHP < 0.38) then return BOT_ACTION_DESIRE_HIGH, point end
+	if (nHP or 1) < 0.40 or (J.IsRetreating and J.IsRetreating(bot)) then return BOT_ACTION_DESIRE_NONE, nil end
+	if count >= 2 then return BOT_ACTION_DESIRE_HIGH, point end
 
 	if J.IsGoingOnSomeone(bot) and #enemies >= 2 then
 		local target = J.GetProperTarget(bot)
@@ -369,6 +378,7 @@ end
 
 function X.ConsiderRFR()
 
+	if (nHP or 1) < 0.40 or (J.IsRetreating and J.IsRetreating(bot)) then return BOT_ACTION_DESIRE_NONE, nil end
 	if not abilityR:IsFullyCastable()
 		or abilityRef == nil
 		or not abilityRef:IsFullyCastable()

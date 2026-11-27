@@ -5127,6 +5127,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	and nEnemyCount == 0
 	and J.GetLaningHoldTower(bot) == nil
 	and not J.ShouldKeepLaningWave(bot)
+	and not (J.ShouldKeepMidOpportunity and J.ShouldKeepMidOpportunity(bot))
 	then
 		hEffectTarget = J.GetTeamFountain()
 		sCastMotive = '撤退:1'
@@ -5218,6 +5219,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		local trade = bot.ohaOuterTowerTrade
 		local released = trade and trade.lane == nDefendLane and trade.expires > DotaTime()
 		if not released and not J.ShouldKeepLaningWave(bot, nDefendLane)
+			and not (J.ShouldKeepMidOverRoutineDefense and J.ShouldKeepMidOverRoutineDefense(bot, nDefendLane))
 			and (not defense or defense.waveClearLane ~= nDefendLane or (bot.ohaOuterTowerHoldUntil or 0) <= DotaTime()) then
 			local botAmount = GetAmountAlongLane(nDefendLane, botLocation)
 			local laneFront = GetLaneFrontAmount(team, nDefendLane, false)
@@ -5259,35 +5261,37 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		if nMode == BOT_MODE_PUSH_TOWER_TOP then nPushLane, sLane = LANE_TOP, 'tower_top' end
 		if nMode == BOT_MODE_PUSH_TOWER_BOT then nPushLane, sLane = LANE_BOT, 'tower_bot' end
 
-		if J.ShouldKeepLaningWave(bot, nPushLane) then return BOT_ACTION_DESIRE_NONE end
-		local botAmount = GetAmountAlongLane( nPushLane, botLocation )
-		local laneFront = GetLaneFrontAmount( team, nPushLane, false )
-		if botAmount.distance > nMinTPDistance
-			or botAmount.amount < laneFront / 5
-		then
-			tpLoc = X.GetPushTPLocation( nPushLane )
-		end
-
-		if tpLoc ~= nil
-			and GetUnitToLocationDistance( bot, tpLoc ) > nMinTPDistance - 600
-			and J.CanCommitToLaneTeleport(bot, tpLoc)
-		then
-			hEffectTarget = tpLoc
-			sCastMotive = '前往推塔:'..sLane
-
-			if botName == 'npc_dota_hero_furion'
+		if not J.ShouldKeepLaningWave(bot, nPushLane)
+			and not (J.ShouldKeepMidOpportunity and J.ShouldKeepMidOpportunity(bot, nPushLane)) then
+			local botAmount = GetAmountAlongLane( nPushLane, botLocation )
+			local laneFront = GetLaneFrontAmount( team, nPushLane, false )
+			if botAmount.distance > nMinTPDistance
+				or botAmount.amount < laneFront / 5
 			then
-				local Teleportation = bot:GetAbilityByName('furion_teleportation')
-				if Teleportation:IsTrained()
-				and Teleportation:IsFullyCastable()
-				then
-					bot.useProphetTP = true
-					bot.ProphetTPLocation = hEffectTarget
-					return BOT_ACTION_DESIRE_NONE
-				end
+				tpLoc = X.GetPushTPLocation( nPushLane )
 			end
 
-			return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
+			if tpLoc ~= nil
+				and GetUnitToLocationDistance( bot, tpLoc ) > nMinTPDistance - 600
+				and J.CanCommitToLaneTeleport(bot, tpLoc)
+			then
+				hEffectTarget = tpLoc
+				sCastMotive = '前往推塔:'..sLane
+
+				if botName == 'npc_dota_hero_furion'
+				then
+					local Teleportation = bot:GetAbilityByName('furion_teleportation')
+					if Teleportation:IsTrained()
+					and Teleportation:IsFullyCastable()
+					then
+						bot.useProphetTP = true
+						bot.ProphetTPLocation = hEffectTarget
+						return BOT_ACTION_DESIRE_NONE
+					end
+				end
+
+				return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
+		end
 		end
 	end
 
@@ -5522,6 +5526,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		end
 
 		if mostFarmDesire > ( isTravelBootsAvailable and 0.7 or 0.8 )
+			and not (J.ShouldKeepMidOpportunity and J.ShouldKeepMidOpportunity(bot, mostFarmDesireLane))
 			and #nNearEnemyList == 0
 			and #nCreeps == 0
 			and #nAttackAllyList == 0
@@ -5616,6 +5621,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		if #nNearEnemyList == 0
 			and nTeamFightLocation ~= nil
 			and GetUnitToLocationDistance( bot, nTeamFightLocation ) > nMinTPDistance - 1200
+			and J.CanJoinObservedFightByTeleport(bot, nTeamFightLocation)
 		then
 
 			if isTravelBootsAvailable and J.CanCommitToLaneTeleport(bot, nTeamFightLocation)

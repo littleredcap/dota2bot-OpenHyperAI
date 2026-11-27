@@ -43,6 +43,7 @@ sRoleItemsBuyList['pos_4'] = {
 	"item_magic_wand",
 	"item_arcane_boots",
 	"item_glimmer_cape",--
+	"item_force_staff",
 	"item_blink",
 	"item_aghanims_shard",
 	"item_ultimate_scepter",
@@ -191,6 +192,14 @@ function X.SkillsComplement()
 --	if talent3:IsTrained() then aetherRange = aetherRange + talent3:GetSpecialValueInt( "value" ) end
 	if talent7 ~= nil and talent7:IsTrained() then talent7Damage = talent7:GetSpecialValueInt( "value" ) end
 
+
+	local counterfight = J.GetSupportCounterfightPoint and abilityR:IsFullyCastable()
+		and J.GetSupportCounterfightPoint(bot, hEnemyList or {}, abilityR:GetCastRange() + aetherRange, 150, 0.40)
+	if counterfight then
+		bot.ohaSerpentWardSiegeTarget = nil
+		bot:Action_UseAbilityOnLocation(abilityR, counterfight)
+		return
+	end
 
 	castWDesire, castWTarget, sMotive = X.ConsiderW()
 	if ( castWDesire > 0 )
@@ -774,7 +783,7 @@ end
 function X.ConsiderR()
 
 
-	if not abilityR:IsFullyCastable() then return 0 end
+	if not abilityR:IsFullyCastable() or (nHP or 1) < 0.40 or (J.IsRetreating and J.IsRetreating(bot)) then return 0 end
 
 	local nSkillLV = abilityR:GetLevel()
 	local nCastRange = abilityR:GetCastRange() + aetherRange
@@ -811,27 +820,6 @@ function X.ConsiderR()
 		end
 	end
 
-
-	if J.IsRetreating( bot ) and nHP < 0.4
-	then
-		for _, npcEnemy in pairs( nInRangeEnemyList )
-		do
-			if J.IsValidHero( npcEnemy )
-				and J.CanCastOnMagicImmune( npcEnemy )
-				and not J.IsDisabled(npcEnemy)
-				and bot:WasRecentlyDamagedByHero(npcEnemy, 1.5)
-				and J.IsChasingTarget(npcEnemy, bot)
-				and J.IsInRange(bot, npcEnemy, 425)
-				and not (J.CanCastAbility(abilityW) and J.CanCastOnNonMagicImmune(npcEnemy)
-					and J.CanCastOnTargetAdvanced(npcEnemy))
-			then
-				targetLocation = npcEnemy:GetExtrapolatedLocation( nCastPoint )
-				if IsLocationPassable(targetLocation) then
-					return BOT_ACTION_DESIRE_HIGH, targetLocation, "R-Retreat:"..J.Chat.GetNormName( npcEnemy )
-				end
-			end
-		end
-	end
 
 	return BOT_ACTION_DESIRE_NONE
 

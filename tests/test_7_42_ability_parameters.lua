@@ -954,19 +954,24 @@ do
     local wards, hex = ability({}), ability({})
     wards.GetManaCost, wards.GetAbilityDamage = function() return 200 end, function() return 0 end
     wards.GetLevel = function() return 1 end
-    local hp, immediateChase, hexAvailable, casts = 700, false, false, 0
+    local hp, immediateChase, hexAvailable, casts, teamCanCounter = 700, false, false, 0, false
     local bot = {
         IsInvisible = no, GetLevel = function() return 12 end,
         GetMana = function() return 400 end, GetMaxMana = function() return 800 end,
         GetHealth = function() return hp end, GetMaxHealth = function() return 1000 end,
         GetLocation = empty, WasRecentlyDamagedByHero = yes,
-        ActionQueue_UseAbilityOnLocation = function() casts = casts + 1 end,
+        ActionQueue_UseAbilityOnLocation = function() error('a retreat ultimate should not queue behind movement') end,
+        Action_UseAbilityOnLocation = function(_, spell, point)
+            assert(spell == wards and point == 420)
+            casts = casts + 1
+        end,
     }
     local shaman = loadHero('shadow_shaman', {shadow_shaman_mass_serpent_ward = wards, shadow_shaman_voodoo = hex}, bot, {
         CanNotUseAbility = no, IsItemAvailable = no, GetProperTarget = no,
         GetNearbyHeroes = function() return {enemy} end, GetAlliesNearLoc = empty,
         IsRetreating = yes, IsGoingOnSomeone = no, IsValidHero = yes, IsDisabled = no, IsInRange = yes, IsInLaningPhase = no,
         IsChasingTarget = function() return immediateChase end,
+        GetSupportCounterfightPoint = function() return teamCanCounter and 420 or nil end,
         CanCastAbility = function(ability) return ability == hex and hexAvailable end,
         CanCastOnMagicImmune = yes, CanCastOnNonMagicImmune = yes, CanCastOnTargetAdvanced = yes,
         Chat = {GetNormName = function() return 'test' end}, SetQueuePtToINT = no, SetReportMotive = no,
@@ -983,7 +988,10 @@ do
     assert(casts == 0, 'reserve wards if a short disable is ready')
     hexAvailable = false
     shaman.SkillsComplement()
-    assert(casts == 1, 'a close pursuer can justify dropping wards to survive')
+    assert(casts == 0, 'do not drop wards just for a lone pursuer')
+    teamCanCounter = true
+    shaman.SkillsComplement()
+    assert(casts == 1, 'cast immediately when a teammate can still counterattack')
 end
 
 do

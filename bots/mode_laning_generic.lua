@@ -92,6 +92,7 @@ function GetDesire()
 	if J.GetEnemiesAroundAncient(bot, 3200) > 0 then
 		return BOT_MODE_DESIRE_NONE
 	end
+	if bot.ohaCreepDrag ~= nil then return 0.82 end
 	if J.GetLaningHoldTower(bot) ~= nil then return 0.82 end
 
 	-- if J.GetDistanceFromAncient( bot, true ) < 6900 then
@@ -133,6 +134,8 @@ function GetDesire()
 		end
 		if urgentApproach and J.IsCore(bot)
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
+		if not local_mode_laning_generic and hitCreep == nil and not reserve
+			and J.GetSideLaneCreepDrag(bot, nInRangeEnemy, enemyTower) then return 0.73 end
 		if not local_mode_laning_generic
 			and J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
 		if not local_mode_laning_generic
@@ -186,6 +189,7 @@ local function ThinkLane()
 	if not bot:IsAlive() or J.CanNotUseAction(bot) or bot:IsDisarmed()
 		or bot:IsUsingAbility() or bot:IsChanneling() then return end
 	nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
+	if bot.ohaCreepDrag and J.RunSideLaneCreepDrag(bot, nInRangeEnemy, nil, true) then return end
 	local opening = GetOpeningLaneDestination(botAssignedLane or bot:GetAssignedLane(), nInRangeEnemy)
 	if opening ~= nil then
 		bot:Action_MoveToLocation(opening)
@@ -275,6 +279,7 @@ local function ThinkLane()
 		local step = J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower)
 		if step ~= nil then bot:Action_MoveToLocation(step); return end
 	end
+	if firingPosition == nil and J.RunSideLaneCreepDrag(bot, nInRangeEnemy, enemyTower, false) then return end
 	local denyCreep, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 	if J.IsValid(denyCreep) then
 		bot:SetTarget(denyCreep)
@@ -318,6 +323,10 @@ end
 if not engineMid then Think = ThinkLane end
 
 function OnEnd()
+	if bot.ohaCreepDrag then
+		bot.ohaCreepDrag = nil
+		if not bot:IsUsingAbility() and not bot:IsChanneling() then bot:Action_ClearActions(true) end
+	end
 	campPlan = nil
 	LaneCamp.Cancel(bot)
 end
