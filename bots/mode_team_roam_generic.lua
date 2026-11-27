@@ -348,8 +348,12 @@ function Think()
                 bot.ohaFightFocus, bot.ohaFightFocusUntil = focusEnemy, DotaTime() + 1.25
             end
             bot:SetTarget(focusEnemy)
-            if not J.TryTeamfightSpread(bot, focusEnemy, liveEnemies, liveAllies) then
-                bot:Action_AttackUnit(focusEnemy, true)
+            if bot:GetAttackTarget() ~= focusEnemy
+                and not J.TryTeamfightSpread(bot, focusEnemy, liveEnemies, liveAllies) then
+                -- Keep a continuous local attack, but never issue an
+                -- indefinite chase when still outside attack reach.
+                local contact = J.IsInRange(bot, focusEnemy, bot:GetAttackRange() + 75)
+                bot:Action_AttackUnit(focusEnemy, not contact)
             end
             issuedFocusTarget = focusEnemy
         else

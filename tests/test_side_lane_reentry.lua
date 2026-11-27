@@ -49,7 +49,17 @@ state.enemy=nil;state.hit=true
 assert(not j.GetSideLaneReturnPoint(bot,1),'cannot override a live retreat')
 state.hit=false;wave.hidden=true
 assert(not j.GetSideLaneReturnPoint(bot,1),'do not use hidden wave coordinates')
-wave.hidden=false;state.fog=true
+wave.hidden=false
+-- Returning from a large detour can take a different but closer path
+-- even when the selected staging point is farther from the bot itself.
+bot.x=-7500
+assert(j.GetSideLaneReturnPoint(bot,1)==1750,'favor progress toward the wave, not proximity to the bot')
+bot.x=-1500
+ally.x,cover.x=6000,6000
+assert(j.GetSideLaneReturnPoint(bot,1)==0,'without a screen only return to the protected tower')
+bot.x=200
+ally.x,cover.x=1700,2000
+state.fog=true
 assert(not j.GetSideLaneReturnPoint(bot,1),'no commitment into a blind endpoint')
 print('PASS: side core reconnects to a visible wave, but not through live threat or fog.')
 

@@ -380,6 +380,15 @@ function X.ConsiderQ()
 		end
 		if not J.IsRetreating(bot) and (J.IsAttacking(bot) or X.HasLaningCreepShot(nEnemysLaneCreepsInSkillRange,
 			nEnemysHeroesInSkillRange, bot:GetNearbyTowers(1200, true)[1])) then return BOT_ACTION_DESIRE_NONE end
+		-- Stop two visible opponents zoning the mid core off an entire
+		-- wave. Keep one charge for the next approach and don't cancel a shot.
+		if now >= 240 and now <= 660 and bot:GetAssignedLane() == LANE_MID
+			and #nEnemysHeroesInSkillRange >= 2 and nCanHurtCreepCount >= 3 and waveLocation
+			and GetShrapnelCharges() >= 2 and bot:GetMana() >= abilityQ:GetManaCost() * 2
+			and GetUnitToLocationDistance(bot, waveLocation) > attackRange
+			and GetUnitToLocationDistance(bot, waveLocation) <= nCastRange
+			and GetAmountAlongLane(LANE_MID, waveLocation).distance <= 500
+			and not X.IsAbiltyQCastedHere(waveLocation, nRadius) then return BOT_ACTION_DESIRE_HIGH, waveLocation end
 		local manaReserve = abilityR:IsTrained() and abilityR:GetManaCost() or abilityQ:GetManaCost()
 		if GetShrapnelCharges() >= 2 and bot:GetMana() - abilityQ:GetManaCost() >= manaReserve then
 			for _, enemy in ipairs(nEnemysHeroesInSkillRange) do

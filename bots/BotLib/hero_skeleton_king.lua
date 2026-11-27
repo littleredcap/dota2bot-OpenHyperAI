@@ -184,6 +184,10 @@ function X.SkillsComplement()
 
 		J.SetQueuePtToINT( bot, false )
 
+		if J.IsValidHero(castQTarget) and J.NoteFightDisable then
+			J.NoteFightDisable(bot, castQTarget, abilityQ:GetCastPoint()
+				+ GetUnitToUnitDistance(bot, castQTarget) / math.max(1, abilityQ:GetSpecialValueInt('blast_speed')), abilityQ)
+		end
 		bot:ActionQueue_UseAbilityOnEntity( abilityQ, castQTarget )
 		return
 	end
@@ -237,9 +241,11 @@ function X.ConsiderQ()
 	local function canOpenOn(enemy)
 		-- Preserve defensive use during a real engagement; do not mistake
 		-- one backline right-click for a team that can follow a ranged stun.
-		return bot:WasRecentlyDamagedByHero(enemy, 2) and J.IsInRange(bot, enemy, bot:GetAttackRange() + 150)
+		local impact = nCastPoint + GetUnitToUnitDistance(bot, enemy) / blastSpeed
+		local conflict = J.GetFightDisableDelay and J.GetFightDisableDelay(bot, enemy) > impact + 0.15
+		return not conflict and (bot:WasRecentlyDamagedByHero(enemy, 2) and J.IsInRange(bot, enemy, bot:GetAttackRange() + 150)
 			or J.IsInLaningPhase() and J.HasLaneFightFollowUp(bot, enemy)
-			or J.HasCommittedStunFollowUp(bot, enemy, enemy:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_MAGICAL))
+			or J.HasCommittedStunFollowUp(bot, enemy, enemy:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_MAGICAL)))
 	end
 
 	--打断和击杀

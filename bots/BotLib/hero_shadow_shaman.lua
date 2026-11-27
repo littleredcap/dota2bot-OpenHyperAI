@@ -166,7 +166,9 @@ local aetherRange = 0
 local talent7Damage = 0
 
 local function HasAttackFollowUp(target)
-	return not J.IsInLaningPhase(bot) or J.HasLaneFightFollowUp(bot, target)
+	if not J.IsValidHero(target) then return false end
+	if J.IsInLaningPhase(bot) then return J.HasLaneFightFollowUp(bot, target) end
+	return not J.HasCommittedStunFollowUp or J.HasCommittedStunFollowUp(bot, target, 0)
 end
 
 
@@ -208,6 +210,7 @@ function X.SkillsComplement()
 
 		J.SetQueuePtToINT( bot, true )
 
+		if J.NoteFightDisable then J.NoteFightDisable(bot, castWTarget, abilityW:GetCastPoint(), abilityW) end
 		bot:ActionQueue_UseAbilityOnEntity( abilityW, castWTarget )
 		return
 	end
@@ -247,6 +250,8 @@ function X.SkillsComplement()
 
 		J.SetQueuePtToINT( bot, true )
 
+		bot.ohaFightControlTarget = castETarget
+		if J.NoteFightDisable then J.NoteFightDisable(bot, castETarget, abilityE:GetCastPoint(), abilityE) end
 		bot:ActionQueue_UseAbilityOnEntity( abilityE, castETarget )
 		return
 	end
@@ -384,7 +389,10 @@ function X.ConsiderQ()
 				if J.IsValid( npcEnemy )
 					and J.CanCastOnNonMagicImmune( npcEnemy )
 					and J.CanCastOnTargetAdvanced( npcEnemy )
-					and J.GetAttackEnemysAllyCreepCount( npcEnemy, 1400 ) >= 3
+					and (J.GetAttackEnemysAllyCreepCount(npcEnemy, 1400) >= 3
+						or J.HasLaneFightFollowUp(bot, npcEnemy)
+							and bot:GetMana() - nManaCost >= 100
+							and (not J.HasPendingLaningLastHit or not J.HasPendingLaningLastHit(bot)))
 				then
 					return BOT_ACTION_DESIRE_HIGH, npcEnemy, "Q-Laning:"..J.Chat.GetNormName( npcEnemy )
 				end
@@ -576,7 +584,9 @@ function X.ConsiderW()
 		end
 
 		if npcMostDangerousEnemy ~= nil
-			and J.IsInRange( bot, npcMostDangerousEnemy, nCastRange + 50 )
+			and J.IsInRange( bot, npcMostDangerousEnemy, nCastRange )
+			and HasAttackFollowUp(npcMostDangerousEnemy)
+			and (not J.GetFightDisableDelay or J.GetFightDisableDelay(bot, npcMostDangerousEnemy) <= nCastPoint + 0.12)
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcMostDangerousEnemy, 'W-Battle:'..J.Chat.GetNormName( npcMostDangerousEnemy )
 		end
@@ -724,7 +734,9 @@ function X.ConsiderE()
 		end
 
 		if npcMostDangerousEnemy ~= nil
-			and J.IsInRange( bot, npcMostDangerousEnemy, nCastRange + 50 )
+			and J.IsInRange( bot, npcMostDangerousEnemy, nCastRange )
+			and HasAttackFollowUp(npcMostDangerousEnemy)
+			and (not J.GetFightDisableDelay or J.GetFightDisableDelay(bot, npcMostDangerousEnemy) <= nCastPoint + 0.12)
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcMostDangerousEnemy, 'E-Battle:'..J.Chat.GetNormName( npcMostDangerousEnemy )
 		end

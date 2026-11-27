@@ -153,10 +153,18 @@ end
 
 local function CanFarmCamp(camp)
 	local location = camp.cattr.location
+	-- Do not spend the last of a low-health hero's escape budget on
+	-- neutrals, especially if it just lost a fight near its exit path.
+	if J.GetHP(bot) < 0.27 or J.GetHP(bot) < 0.42
+		and (bot:WasRecentlyDamagedByAnyHero(5) or not J.Site.IsSmallCamp(camp.cattr)) then return false end
 	if (recoveringLane or postWaveCampDistance) and (J.Site.IsEnemyCamp(camp.cattr)
 		or GetUnitToLocationDistance(bot, location) > (postWaveCampDistance or 2600)) then return false end
 	if postWaveCampDistance and postWaveOrigin and J.GetLocationToLocationDistance(location, postWaveOrigin) > postWaveCampDistance then return false end
 	if not IsFarmLocationSafe(location) or not IsFarmPathSafe(location) then return false end
+	-- After the map contracts, don't routinely walk across the river to
+	-- a speculative camp. Reserve exposed resources for visible team pushes.
+	if DotaTime() >= 25 * 60 and J.Site.IsEnemyCamp(camp.cattr)
+		and (not IsLocationVisible(location) or #J.GetAlliesNearLoc(location, 1050) == 0) then return false end
 	if postWaveCampDistance then
 		local walk = GetUnitToLocationDistance(bot, location)
 		local health = 0

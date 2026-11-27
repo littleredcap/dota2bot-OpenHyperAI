@@ -1042,7 +1042,14 @@ function GetPostFightPushPlan(gameState)
                         end
                     end
                 end
-                if wave and secondCreepETA <= availableTime then
+                -- A respawn estimate can be exhausted while the hero is
+                -- still publicly dead. Allow only immediately actionable
+                -- outer-tower chip in that case, never a march or high ground.
+                local immediateChip = not highGround and secondCreepETA == 0
+                    and #jmz.GetLastSeenEnemiesNearLoc(location, 1800) == 0
+                    and #jmz.GetEnemiesNearLoc(location, 2000) == 0
+                local budget = immediateChip and math.max(availableTime, 4) or availableTime
+                if wave and secondCreepETA <= budget then
                     local waveDistance = GetLocationToLocationDistance(wave, location)
                     local staging = waveDistance <= 1200 and GetLaneStaging(location, lane, 900)
                         or GetLaneStaging(wave, lane, 280)
@@ -1055,7 +1062,7 @@ function GetPostFightPushPlan(gameState)
                                 and (not jmz.CanTakePostFightTrip or jmz.CanTakePostFightTrip(ally, location)) then
                                 local distance = reach == 0 and 0 or math.max(reach, GetUnitToLocationDistance(ally, staging))
                                 local eta = distance / math.max(1, ally:GetCurrentMovementSpeed())
-                                if eta <= availableTime then arriving[ally:GetPlayerID()] = ally end
+                                if eta <= budget and (budget == availableTime or eta <= 0.7) then arriving[ally:GetPlayerID()] = ally end
                                 if eta < first then first, second = eta, first
                                 elseif eta < second then second = eta end
                                 if jmz.IsCore(ally) then core = math.min(core, eta) end
@@ -1081,10 +1088,11 @@ function GetPostFightPushPlan(gameState)
                         local hp = tower.GetHealth and tower:GetHealth() or 0
                         local work = dps > 0 and hp / (dps * 0.8) or 0
                         local finish = time + work + (dps > 0 and 2 or 1.25)
-                        local usable = availableTime - time - 1.5
+                        local usable = budget - time - 1.5
                         local chip = not highGround and dps > 0 and usable >= 1
+                            and (budget == availableTime or arrival <= 0.7)
                             and dps * 0.8 * usable >= math.min(hp, math.max(70, hp * 0.075))
-                        local rank = finish <= availableTime and finish or chip and (availableTime + 2) or math.huge
+                        local rank = finish <= availableTime and finish or chip and (budget + 2 + time) or math.huge
                         if rank < bestTime then
                             bestTime = rank
                             best = {lane = lane, tower = tower, staging = staging, highGround = highGround, ready = arriving, waveFront = wave}

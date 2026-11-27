@@ -103,7 +103,7 @@ function GetDesire()
 	end
 	if bot.ohaCreepDrag ~= nil then return 0.82 end
 	-- Ranged mid retains the engine's timing. This plan only belongs to side cores.
-	if not local_mode_laning_generic and not underPressure and J.GetSideLaneReturnPoint
+	if not local_mode_laning_generic and J.GetSideLaneReturnPoint
 		and J.GetSideLaneReturnPoint(bot, botAssignedLane) ~= nil then return 0.84 end
 	if not local_mode_laning_generic and J.GetSideLaneYieldPoint and underPressure
 		and J.GetSideLaneYieldPoint(bot, nInRangeEnemy, enemyTower) then return 0.88 end
@@ -209,7 +209,6 @@ local function ThinkLane()
 		return
 	end
 	if not local_mode_laning_generic and not J.HasPendingLaningLastHit(bot)
-		and not J.IsLaningUnderPressure(bot, nInRangeEnemy, bot:GetNearbyTowers(1200, true)[1])
 		and J.GetSideLaneReturnPoint then
 		local point = J.GetSideLaneReturnPoint(bot, botAssignedLane or bot:GetAssignedLane())
 		if point then

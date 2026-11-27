@@ -175,7 +175,7 @@ function GetDesireHelper()
         and J.IsLaningUnderPressure(bot, nEnemyHeroes, nEnemyTowers[1])
         and J.GetSideLaneYieldPoint(bot, nEnemyHeroes, nEnemyTowers[1])
     if shortYield then return BOT_MODE_DESIRE_MODERATE end
-    if J.GetSideLaneReturnPoint and botHP >= 0.64 and J.GetSideLaneReturnPoint(bot, bot:GetAssignedLane())
+    if J.GetSideLaneReturnPoint and botHP >= 0.58 and J.GetSideLaneReturnPoint(bot, bot:GetAssignedLane())
         and not J.IsLaningUnderPressure(bot, nEnemyHeroes, nEnemyTowers[1]) then return BOT_MODE_DESIRE_NONE end
 
     if botHP <= 0.62 and J.IsInLaningPhase(bot) and not bot:IsChanneling()

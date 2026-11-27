@@ -917,7 +917,13 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
                 else if (eta < secondCreepETA) secondCreepETA = eta;
                 if (progress > waveProgress) { wave = point; waveProgress = progress; }
             }
-            if (!wave || secondCreepETA > availableTime) continue;
+            // A conservative respawn estimate can expire before the real respawn.
+            // Only allow immediate outer-tower contact, not travel or high ground.
+            const immediateChip = !highGround && secondCreepETA === 0
+                && jmz.GetLastSeenEnemiesNearLoc(location, 1800).length === 0
+                && jmz.GetEnemiesNearLoc(location, 2000).length === 0;
+            const budget = immediateChip ? Math.max(availableTime, 4) : availableTime;
+            if (!wave || secondCreepETA > budget) continue;
             const waveDistance = GetLocationToLocationDistance(wave, location);
             const staging = (waveDistance <= 1200 && GetLaneStaging(location, lane, 900)) || GetLaneStaging(wave, lane, 280);
             if (!staging || !IsLocationPassable(staging)) continue;
@@ -930,7 +936,7 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
                 if ((ally.IsRooted() && reach > 0) || !jmz.CanTakePostFightTrip(ally, location)) continue;
                 const distance = reach === 0 ? 0 : Math.max(reach, GetUnitToLocationDistance(ally, staging));
                 const eta = distance / Math.max(1, ally.GetCurrentMovementSpeed());
-                if (eta <= availableTime) arriving[ally.GetPlayerID()] = ally;
+                if (eta <= budget && (budget === availableTime || eta <= 0.7)) arriving[ally.GetPlayerID()] = ally;
                 if (eta < first) { second = first; first = eta; }
                 else if (eta < second) second = eta;
                 if (jmz.IsCore(ally)) core = Math.min(core, eta);
@@ -953,10 +959,10 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
             const hp = tower.GetHealth ? tower.GetHealth() : 0;
             const work = dps > 0 ? hp / (dps * 0.8) : 0;
             const finish = time + work + (dps > 0 ? 2 : 1.25);
-            const usable = availableTime - time - 1.5;
-            const chip = !highGround && dps > 0 && usable >= 1
+            const usable = budget - time - 1.5;
+            const chip = !highGround && dps > 0 && usable >= 1 && (budget === availableTime || arrival <= 0.7)
                 && dps * 0.8 * usable >= Math.min(hp, Math.max(70, hp * 0.075));
-            const rank = finish <= availableTime ? finish : chip ? availableTime + 2 : Infinity;
+            const rank = finish <= availableTime ? finish : chip ? budget + 2 + time : Infinity;
             if (rank < bestTime) {
                 bestTime = rank;
                 best = { lane, tower, staging, highGround, ready: arriving, waveFront: wave };

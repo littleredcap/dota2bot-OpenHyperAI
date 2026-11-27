@@ -537,7 +537,28 @@ do
     assert(state.orders[3] == 'cancel' and state.target == nil, 'vision loss clears the existing focus attack')
 end
 
-print('PASS: reachable fight focus, formation movement and frontal-chase controls')
+do
+    local state, _, bot, channeler, _, enemy, other, j = fixture(false)
+    state.time, channeler.x, enemy.x = 36 * 60 + 28, 300, 400
+    channeler.IsChanneling, channeler.ohaFightControlTarget = yes, enemy
+    enemy.NumModifiers = function() return 1 end
+    enemy.GetModifierName = function() return 'modifier_shadow_shaman_shackles' end
+    enemy.GetModifierRemainingDuration = function() return 1.5 end
+    assert(j.GetAvailableFightAllies(bot, enemy:GetLocation(), 900) == 0, 'a channel still is not a mobile ally')
+    assert(j.GetSupportedFightTarget(bot, {enemy}, {channeler}) == enemy,
+        'a live, reachable controlled target does not need a teammate to issue the first attack')
+    j.NoteFightDisable(channeler, enemy, 0.45, {})
+    assert(j.GetFightDisableDelay(bot, enemy) > 0.45, 'later caster waits for imminent allied disable')
+    state.time = state.time + 0.8
+    assert(j.GetFightDisableDelay(bot, enemy) == 1.5, 'after the cast window use the observed disable')
+    other.alive, other.x = true, 475
+    assert(not j.GetSupportedFightTarget(bot, {enemy, other}, {channeler}), 'do not ignore the other enemy')
+    other.alive = false
+    enemy.NumModifiers = function() return 0 end
+    assert(not j.GetSupportedFightTarget(bot, {enemy}, {channeler}), 'an unrelated or failed channel cannot authorize focus')
+end
+
+print('PASS: live control activates local follow-through without pretending the channeler can rotate')
 
 do
     local state, _, bot, core, _, enemy, other, j = fixture(false)
