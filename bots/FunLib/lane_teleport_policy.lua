@@ -15,4 +15,18 @@ function M.ReturnToLane(f)
     return f.started and f.fromBase and f.healthy and f.safeAnchor and f.distance >= f.minimum
 end
 
+function M.ActionETA(channel, distance, reach, speed)
+    return channel + math.max(0, distance - reach) / math.max(speed, 250) * 1.15
+end
+
+function M.CoversDeadline(eta, timeToFall)
+    return eta <= 9 and eta + 1 < timeToFall
+end
+
+function M.TimelyClearer(rows, deadline)
+    for _, row in ipairs(rows) do
+        if row.canClear and row.arrival <= deadline then return row end
+    end
+end
+
 return M

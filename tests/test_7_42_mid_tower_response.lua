@@ -57,6 +57,7 @@ assert(not j.GetMidDefensePokeTarget(bot,800),'do not poke without another avail
 cover,danger=true,true
 assert(not j.GetMidDefensePokeTarget(bot,800),'do not poke into a group already at the defender')
 danger=false
+env.LaneTeleportPolicy = dofile('bots/FunLib/lane_teleport_policy.lua')
 extract('local function BuildDefenseLanePlan','local function GetOuterTowerHoldPoint',env)
 local spare=unit(-1000,.90,3)
 local guard, building, reach=j.GetExposedMidCover(2)
@@ -111,6 +112,27 @@ do
         'two credible fronts recruit distinct clearers, never assign one hero twice')
 end
 print('PASS: generic simultaneous top and mid deadlines allocate two defenders and skip a doomed tower')
+
+do
+    local outer = unit(3000,0.60,9)
+    outer.structure = true
+    outer.GetHealth = function() return 600 end
+    towers = {[env.TOWER_TOP_1]=outer}
+    secondWave={waveSize=4,eta=0,count=3,underAttack=true,damageRate=100}
+    wave={waveSize=3,eta=5,count=2}
+    local heroes = j.GetAlliesNearLoc
+    j.GetAlliesNearLoc = function() return {bot} end
+    bot.x = 0
+    local plan = j.GetPostFightCoverage(2)
+    assert(plan.lanes[1].lane==env.LANE_TOP and not plan.lanes[1].primary
+        and plan.lanes[2].primary.hero==bot, 'a missed deadline must not block another reachable lane')
+    bot.x = 2400
+    plan = j.GetPostFightCoverage(2)
+    assert(plan.lanes[1].primary.hero==bot and not plan.lanes[2].primary,
+        'the highest-priority lane still takes the only clearer if on time')
+    j.GetAlliesNearLoc = heroes
+end
+print('PASS: an impossible first response does not steal a timely second-lane defender')
 
 do
     local function v(x) return {x=x,y=0} end

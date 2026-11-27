@@ -6338,7 +6338,8 @@ function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, 
 	local hub = tower:GetLocation()
 	local speed = math.max(bot:GetCurrentMovementSpeed(), 250)
 	local ready = math.max(bot:GetAttackRange(), reach or 0, 250)
-	local arrival = 4.5 + math.max(0, J.GetLocationToLocationDistance(landing, hub) - ready) / speed
+	local arrival = LaneTeleportPolicy.ActionETA(4.5, J.GetLocationToLocationDistance(landing, hub), ready, speed)
+	local timeToFall = threat.damageRate > 0 and tower:GetHealth() / threat.damageRate or math.huge
 	local urgent = threat.heroAttacking and (threat.count >= 2 or threat.waveSize >= 2)
 		or threat.count >= 2 and threat.waveSize >= 3 and threat.eta <= 6
 		or threat.underAttack and threat.towerHP <= 0.30
@@ -6351,30 +6352,37 @@ function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, 
 		-- phase keep the core home unless the rear tower itself needs help.
 		return false
 	end
-	local coverage, covered = {}, 0
+	local incoming, covered = {}, 0
 	local limit = planned and threat.count >= 3 and 2 or 1
 	for _, tp in ipairs(GetIncomingTeleports()) do
 		if tp.playerid ~= nil and tp.playerid ~= bot:GetPlayerID() and tp.location ~= nil
 			and tp.time_remaining ~= nil and tp.time_remaining >= 0 and tp.time_remaining <= 5
 			and GetTeamForPlayer(tp.playerid) == bot:GetTeam()
-			and J.GetLocationToLocationDistance(tp.location, hub) <= 1150 then coverage[tp.playerid] = true end
+			and J.GetLocationToLocationDistance(tp.location, hub) <= 1150 then incoming[tp.playerid] = tp end
 	end
-	for _, ally in ipairs(J.GetAlliesNearLoc(hub, 1450)) do
+	for slot = 1, #GetTeamPlayers(bot:GetTeam()) do
+		local ally = GetTeamMember(slot)
 		if ally ~= bot and J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally)
 			and not J.IsRetreating(ally) and not J.IsDisabled(ally) and J.GetHP(ally) >= 0.55 then
+			local tp = incoming[ally:GetPlayerID()]
+			local point = tp and tp.location or ally:GetLocation()
+			local distance = J.GetLocationToLocationDistance(point, hub)
 			local started = ally.ohaLaneDefenseTP
-			local covers = ally:GetAttackRange() >= 450 or ally:GetAssignedLane() == lane
-				or started and started.lane == lane and DotaTime() - started.time < 10
-			if covers then coverage[ally:GetPlayerID()] = true end
+			local reach = math.max(ally:GetAttackRange(), 250)
+			if distance <= 1450 and (tp or not ally:IsChanneling() and not ally:HasModifier('modifier_teleporting'))
+				and (tp or reach >= 450 or ally:GetAssignedLane() == lane
+					or started and started.lane == lane and DotaTime() - started.time < 10) then
+				local eta = LaneTeleportPolicy.ActionETA(tp and tp.time_remaining or 0, distance, reach, ally:GetCurrentMovementSpeed())
+				if LaneTeleportPolicy.CoversDeadline(eta, timeToFall) then covered = covered + 1 end
+			end
 		end
 	end
-	for _ in pairs(coverage) do covered = covered + 1 end
 	local prior = bot.ohaLaneDefenseTP
 	return LaneTeleportPolicy.Defense({
 		observed = threat.heroAttacking or threat.waveSize > 0,
 		pressure = pressure,
 		arrival = arrival,
-		timeToFall = threat.damageRate > 0 and tower:GetHealth() / threat.damageRate or math.huge,
+		timeToFall = timeToFall,
 		covered = covered >= limit,
 		sourceValuable = home ~= lane and HasSourceLaneOpportunity(bot, home),
 		urgent = urgent,
@@ -7146,15 +7154,16 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 		if a.score == b.score then return a.id < b.id end
 		return a.score > b.score
 	end)
-	local first = rows[1]
-	if first and first.canClear then
+	local first = LaneTeleportPolicy.TimelyClearer(rows, deadline)
+	if first then
 		plan.candidates=rows
 		-- Do not replace a usable incumbent with someone who has only promised to arrive.
 		if incumbent and incumbent.canClear and incumbent.arrival <= deadline and not first.onStation then first=incumbent end
-		if incumbent and incumbent.onStation then first=incumbent end
+		if incumbent and incumbent.onStation and incumbent.arrival <= deadline then first=incumbent end
 		plan.primary=first
 		building.ohaCoverOwner=first.id
-
+	else
+		building.ohaCoverOwner=nil
 	end
 	return plan
 end

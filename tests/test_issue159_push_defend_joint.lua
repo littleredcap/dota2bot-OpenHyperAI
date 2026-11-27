@@ -510,6 +510,18 @@ local function fixture(opts)
         jmz.GetEnemiesNearLoc = function(point)
             return (opts.dangerInLanes and point.x > bot.x or opts.dangerAtFarCamp and point == farCamp.cattr.location) and {{}} or {}
         end
+        modules['bots/FunLib/lane_resource_window'] = dofile('bots/FunLib/lane_resource_window.lua')
+        if opts.shelterTrial then
+            local shelterTower = building(bot.x, 1000)
+            neutral.CanBeSeen, neutral.GetLocation = yes, function() return loc(neutral.x) end
+            jmz.GetLaningHoldTower = function() return shelterTower end
+            jmz.HasPendingLaningLastHit = function() return opts.pendingHit == true end
+            jmz.GetOuterTowerThreat = function()
+                return {waveSize=opts.shelterWave and 3 or 0, eta=opts.shelterWave and 3 or 99,
+                    underAttack=opts.shelterDanger}
+            end
+            jmz.IsInRange = function(a,b,range) return distance(a:GetLocation(), b:GetLocation()) <= range end
+        end
         setfenv(assert(loadfile('bots/mode_farm_generic.lua')), farmEnv)()
         farm = {GetDesire = farmEnv.GetDesire, Think = farmEnv.Think, OnEnd = farmEnv.OnEnd}
         function farm.SetThreatVisible(visible) creeps[1].visible = visible end
@@ -1018,12 +1030,51 @@ do
 end
 
 do
+    local opts = {farmBot=1, route=true, laning=true, laneTower=true, shelterTrial=true, direct=true,
+        neutralCount=1, closeCampDistance=800, farmPosition=3, farmLevel=7, farmNetWorth=2800, time=8*60}
+    local _, _, members, orders, _, farm = fixture(opts)
+    assert(farm.GetDesire() < 0.84, 'do not immediately leave a sheltered tower')
+    farm.AdvanceTime(11)
+    same(farm.GetDesire(), 0.84, 'a sheltered offlaner may take a confirmed local camp after an empty hold')
+    farm.Think()
+    same(orders[#orders].x, farm.camps[1].cattr.location.x, 'move to the actual local neutral rather than waiting at tower')
+    opts.shelterWave = true
+    farm.Think()
+    assert(orders[#orders] == 'cancel', 'abort the issued farm move on an incoming wave before the next mode update')
+    assert(members[1].ohaFarmCampClaim == nil)
+    assert(farm.GetDesire() < 0.84, 'the arriving wave keeps priority')
+    opts.shelterWave, opts.shelterDanger = false, true
+    farm.AdvanceTime(11)
+    assert(farm.GetDesire() < 0.84, 'a genuinely threatened tower keeps its defender')
+end
+
+do
     local opts = {farmBot = 1, route = true, time = 15 * 60, farmLevel = 7,
         farmNetWorth = 2300, dangerInLanes = true}
     local _, _, _, orders, _, farm = fixture(opts)
     same(farm.GetDesire(), 0.5, 'a level-seven carry may take a safe camp after laning ends')
     farm.Think()
     assert(orders[1] == farm.camps[1].cattr.location)
+end
+
+
+do
+    local incoming = {playerid=2, location={x=4900,y=0}, time_remaining=5}
+    local opts = {direct=true, x=1000, incoming={incoming}}
+    local _, _, members, _, lane, _, buildings, j = fixture(opts)
+    local tower = buildings.outerTower
+    j.IsInLaningPhase = function() return true end
+    j.GetOuterTowerThreat = function()
+        return {heroAttacking=true, underAttack=true, count=2, waveSize=4, eta=0, towerHP=0.3,
+            damageRate=tower:GetHealth()/6}
+    end
+    members[2].GetAttackRange = function() return 250 end
+    members[2].HasModifier = function(_, name) return name=='modifier_teleporting' end
+    assert(j.CanTakeLaneDefenseTeleport(members[1], lane.Mid, tower:GetLocation(), tower),
+        'an ally whose channel plus walk is too slow does not block a timely defense TP')
+    incoming.location.x, incoming.time_remaining = 5800, 2
+    local allow, why = j.CanTakeLaneDefenseTeleport(members[1], lane.Mid, tower:GetLocation(), tower)
+    assert(not allow and why=='already-covered', 'a timely teammate still prevents a duplicate arrival')
 end
 
 do
