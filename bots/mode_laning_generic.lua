@@ -240,8 +240,9 @@ local function ThinkLane()
 			if pending or J.IsFinishingLaningAttack(bot, current) then
 				for _, creep in ipairs(wave) do if (pending or current) == creep then return end end
 			end
-			local creep, approach = J.GetLaningLastHitTarget(bot, wave, nil, J.GetLaningAttackDamage(bot), nInRangeEnemy, true)
+			local creep, approach, reserve = J.GetLaningLastHitTarget(bot, wave, nil, J.GetLaningAttackDamage(bot), nInRangeEnemy, true)
 			if creep ~= nil and not approach then J.IssueLaningAttack(bot, creep); return end
+			if reserve then J.HoldLaningAttack(bot, current); return end
 			if approach and not J.IsLaningUnderPressure(bot, nInRangeEnemy, nil)
 				and #J.GetEnemiesNearLoc(creep:GetLocation(), 750) == 0 then
 				bot:Action_MoveToUnit(creep)

@@ -784,6 +784,23 @@ do
     risky=true
     shaman.SkillsComplement()
     assert(order[1]==shock, 'avoid channeling if another enemy can punish the support')
+    shackle.GetLevel, shackle.GetManaCost = function() return 3 end, function() return 100 end
+    caster.GetAttackDamage, caster.GetActiveMode = function() return 70 end, function() return 0 end
+    rival.IsChanneling, rival.IsDisarmed, interrupter.IsChanneling = no, no, no
+    j.IsInLaningPhase, j.IsInTeamFight, j.IsRetreating, j.IsTaunted = no, no, no, no
+    j.IsGoingOnSomeone, j.HasCommittedStunFollowUp = yes, yes
+    j.CanCastOnNonMagicImmune, j.CanCastOnTargetAdvanced = yes, yes
+    j.GetProperTarget, j.Chat = function() return rival end, {GetNormName=function() return 'rival' end}
+    shaman.ConsiderQ = function() return NONE end
+    order=nil
+    shaman.SkillsComplement()
+    assert(not order, 'an exposed Shaman does not start a voluntary channel in a later fight')
+    risky=false
+    shaman.SkillsComplement()
+    assert(order and order[1]==shackle, 'shackle when the dangerous second hero has gone')
+    order, risky, rival.IsChanneling=nil, true, yes
+    shaman.SkillsComplement()
+    assert(order and order[1]==shackle, 'a necessary channel interrupt still takes priority')
 end
 
 do

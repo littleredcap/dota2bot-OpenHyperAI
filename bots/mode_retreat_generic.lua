@@ -23,7 +23,7 @@ local C = {
     enemyHeroes = {},
     enemyNearbyExtra = 0, -- warlock golem / tombstone / phoenix sun / tower danger within 1200
     allyNearbyExtra  = 0, -- allied phoenix sun within 1200
-    haveEnemyTowerThreat = false,
+    focusedUnitDps = 0,
     enemyTowers1200 = nil,
     allyTowers1200  = nil,
     enemyLaneCreeps1200 = nil,
@@ -50,12 +50,23 @@ local function buildContext()
     -- reset
     C.allyHeroes, C.enemyHeroes = {}, {}
     C.enemyNearbyExtra, C.allyNearbyExtra = 0, 0
-    C.haveEnemyTowerThreat = false
+    C.focusedUnitDps = 0
 
     -- cache these (used multiple times downstream)
     C.allyTowers1200       = bot:GetNearbyTowers(1200, false)
     C.enemyTowers1200      = bot:GetNearbyTowers(1200, true)
     C.enemyLaneCreeps1200  = bot:GetNearbyLaneCreeps(1200, true)
+
+    local function addFocusedDamage(unit)
+        if unit:GetAttackTarget() == bot and not unit:IsDisarmed()
+            and J.IsInRange(bot, unit, unit:GetAttackRange() + 80) then
+            C.focusedUnitDps = C.focusedUnitDps + bot:GetActualIncomingDamage(unit:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+                / math.max(0.25, unit:GetSecondsPerAttack())
+        end
+    end
+    for _, tower in ipairs(C.enemyTowers1200) do
+        if J.IsValidBuilding(tower) and tower:CanBeSeen() then addFocusedDamage(tower) end
+    end
 
     -- single pass over ALL units; do 2 distance checks so we can fill both 1600-hero lists and 1200-specials
     local unitList = GetUnitList(UNIT_LIST_ALL)
@@ -93,12 +104,8 @@ local function buildContext()
                     then
                         C.enemyNearbyExtra = C.enemyNearbyExtra + 1
                     end
-                    if string.find(name, 'tower') then
-                        local towerDamage = bot:GetActualIncomingDamage(u:GetAttackDamage() * u:GetAttackSpeed() * 5.0, DAMAGE_TYPE_PHYSICAL) - botHealthRegen * 5.0
-                        if towerDamage / botHealth >= 0.5 then
-                            C.enemyNearbyExtra = C.enemyNearbyExtra + 1
-                            C.haveEnemyTowerThreat = true
-                        end
+                    if string.find(name, 'shadow_shaman_ward', 1, true) or string.find(name, 'warlock_golem', 1, true) then
+                        addFocusedDamage(u)
                     end
                 else
                     if string.find(name, 'npc_dota_phoenix_sun') then
@@ -170,6 +177,10 @@ function GetDesireHelper()
     local nAllyTowers      = C.allyTowers1200
     local nEnemyTowers     = C.enemyTowers1200
     local nEnemyLaneCreeps = C.enemyLaneCreeps1200
+
+    if (C.focusedUnitDps - botHealthRegen) * 3 >= botHealth * 0.55 then
+        return BOT_MODE_DESIRE_VERYHIGH
+    end
 
     local shortYield = botHP >= 0.46 and botHP <= 0.62 and J.GetSideLaneYieldPoint
         and J.IsLaningUnderPressure(bot, nEnemyHeroes, nEnemyTowers[1])

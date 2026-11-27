@@ -257,6 +257,19 @@ do
 end
 
 do
+    local state, mode, creep, _, bot = fixture(true, false)
+    state.partner, state.partnerHP, state.hp, state.enemy, state.pressure = true, 0.92, 0.54, true, true
+    bot.x, mode.GetTower().x = 100, -450
+    state.creepHP, state.incomingDamage, state.incomingDamageAt = 70, 30, 0.45
+    assert(mode.GetDesire() == 0.82)
+    local hit, _, reserve = mode.J.GetLaningLastHitTarget(bot, {creep}, nil, mode.J.GetLaningAttackDamage(bot), {}, true)
+    assert(not hit and reserve, 'the covered creep will enter last-hit range after the next projectile')
+    expect(state, mode, nil)
+    state.incomingDamageAt = 0.2
+    expect(state, mode, 'attack', creep)
+end
+
+do
     local state, mode, creep = fixture(true, false)
     local deny = setmetatable({x = 170, GetHealth = function() return 25 end, GetTeam = function() return 2 end}, {__index = creep})
     state.mid, state.allies, state.deniable, state.attackTarget = true, {deny}, true, creep

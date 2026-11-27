@@ -352,6 +352,9 @@ end
 function IsValidBuildingTarget(unit)
     return unit ~= nil and unit:IsAlive() and unit:IsBuilding()
 end
+local function IsStandingHighGroundBuilding(unit)
+    return unit ~= nil and not (unit.IsNull and unit:IsNull()) and IsValidBuildingTarget(unit)
+end
 function IsBaseThreatActive()
     return DotaTime() < (baseThreatUntil or -1)
 end
@@ -549,7 +552,7 @@ end
 function ____exports.GetFurthestBuildingOnLane(lane)
     local cacheKey = (("FurthestBuildingOnLane:" .. tostring(nTeam)) .. ":") .. tostring(lane or -1)
     local cachedVar = jmz.Utils.GetCachedVars(cacheKey, 1)
-    if cachedVar ~= nil then
+    if cachedVar ~= nil and (cachedVar[3] < 3 or IsStandingHighGroundBuilding(cachedVar[1])) then
         return cachedVar
     end
     local res = ____exports.GetFurthestBuildingOnLaneHelper(lane)
@@ -1035,6 +1038,7 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     if creepBaseDesire ~= nil then
         if creepBaseDesire > 0.9 and ancient then
             bot._ohaCreepDefenseUntil = DotaTime() + BASE_THREAT_HOLD
+            bot.ohaHighGroundResponse = nil
             ds.defendLoc = ancient:GetLocation()
             bot.laneToDefend = Lane.Mid
         end
@@ -1043,12 +1047,42 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     local siegeLane, siege
     if not gameState.isLaningPhase then siegeLane, siege = GetPrimaryTowerSiege(true, true) end
     if siege then
-        if lane ~= siegeLane then return BotModeDesire.VeryLow end
+        if lane ~= Lane.Mid and (bot._ohaCreepDefenseUntil or -1) > DotaTime() and ____exports.GetBaseCreepResponse(bot, ancient) then
+            return BotModeDesire.VeryLow
+        end
+        local tower, assignedStage = siege.tower, nil
+        local reach, cover = bot:GetAttackRange(), false
+        local role, plan
+        if jmz.GetPostFightDuty then role, plan = jmz.GetPostFightDuty(bot) end
+        if role and plan then
+            local building, _, tier = unpack(____exports.GetFurthestBuildingOnLane(plan.lane))
+            if building == plan.building and tier >= 3
+                and (building == tower or jmz.GetOuterTowerThreat(building, plan.lane).underAttack) then
+                tower, siegeLane = building, plan.lane
+                cover = role == "cover"
+                assignedStage = cover and plan.hold or plan.primary.staging or plan.hold
+                if not cover then reach = plan.primary.reach end
+            end
+        end
+        if lane ~= siegeLane then
+            if bot.ohaHighGroundResponse and bot.ohaHighGroundResponse.lane == lane then bot.ohaHighGroundResponse = nil end
+            return BotModeDesire.VeryLow
+        end
+        if siege.underAttack and not role and (not plan or plan.building == tower and not plan.primary) then
+            local _, orders = jmz.GetOuterTowerResponse(tower:GetLocation(), siege, nil, true)
+            local duty = orders[bot:GetPlayerID()]
+            if duty then
+                reach, cover = duty.reach, duty.cover
+                assignedStage = plan and plan.hold or jmz.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 550)
+            end
+        end
         local rear = ancient and jmz.AdjustLocationWithOffsetTowardsFountain(ancient:GetLocation(), 350)
-        local stage = jmz.AdjustLocationWithOffsetTowardsFountain(siege.tower:GetLocation(), 1450)
-        if not IsLocationPassable(stage) or #jmz.GetLastSeenEnemiesNearLoc(stage, 850) > 0
+        local stage = jmz.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 1450)
+        if assignedStage and IsLocationPassable(assignedStage) and jmz.CanCommitToLaneTeleport(bot, assignedStage, true, 650) then
+            stage = assignedStage
+        elseif not IsLocationPassable(stage) or #jmz.GetLastSeenEnemiesNearLoc(stage, 850) > 0
             or #jmz.GetEnemiesNearLoc(stage, 850) > 0 then stage = rear or stage end
-        bot.ohaHighGroundResponse = {lane = lane, tower = siege.tower, stage = stage, rear = rear, expires = DotaTime() + 1}
+        bot.ohaHighGroundResponse = {lane = lane, tower = tower, stage = stage, rear = rear, reach = reach, cover = cover, expires = DotaTime() + 1}
         bot.laneToDefend = lane
         ds.defendLoc = stage
         return 0.96
@@ -1072,6 +1106,7 @@ function ____exports.GetDefendDesireHelper(bot, lane)
             return role == 'cover' and 0.80 or 0.83
         end
         if bot.ohaMidCover and bot.ohaMidCover.lane == lane then bot.ohaMidCover = nil end
+        if plan and jmz.HasAssignedWaveDefense(plan, lane) then return BotModeDesire.VeryLow end
     end
     local botLevel = bot:GetLevel()
     if bot:GetAssignedLane() ~= lane and distanceToDefendLoc > 3000 and (jmz.GetPosition(bot) == 1 and botLevel < 6 or jmz.GetPosition(bot) == 2 and botLevel < 6 or jmz.GetPosition(bot) == 3 and botLevel < 5 or jmz.GetPosition(bot) == 4 and botLevel < 4 or jmz.GetPosition(bot) == 5 and botLevel < 4) then
@@ -1480,16 +1515,37 @@ function ____exports.GetDefendDesire(bot, lane)
     bot.defendDesire = res
     return res
 end
+local function AttackHighGroundWaveFromHere(bot, tower, rear)
+    if not rear or GetUnitToUnitDistance(bot, tower) > 1300
+        or GetUnitToLocationDistance(bot, rear) > GetUnitToLocationDistance(tower, rear)
+        or jmz.GetHP(bot) < 0.55 or bot:WasRecentlyDamagedByAnyHero(2) then return false end
+    local current, target = bot:GetAttackTarget(), nil
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(bot:GetAttackRange(), true)) do
+        if jmz.IsValid(creep) and creep:CanBeSeen() and jmz.CanBeAttacked(creep)
+            and GetUnitToUnitDistance(creep, tower) <= 950 then
+            if creep == current then target = creep; break end
+            if not target or creep:GetAttackTarget() == tower then target = creep end
+        end
+    end
+    if not target or not jmz.CanCommitToLaneTeleport(bot, bot:GetLocation(), true, 850) then return false end
+    if target ~= current then bot:Action_AttackUnit(target, true) end
+    return true
+end
+
 function ____exports.DefendThink(bot, lane)
     local now = DotaTime()
     if jmz.CanNotUseAction(bot) then
         return
     end
     local response = bot.ohaHighGroundResponse
+    if response and not IsStandingHighGroundBuilding(response.tower) then
+        bot.ohaHighGroundResponse, response = nil, nil
+    end
     if response and response.lane == lane and now < response.expires then
         if bot:HasModifier("modifier_teleporting") or bot:IsChanneling() or bot:IsCastingAbility()
             or bot:IsUsingAbility() then return end
         if GetUnitToLocationDistance(bot, response.stage) > 350 then
+            if AttackHighGroundWaveFromHere(bot, response.tower, response.rear) then return end
             local point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear)
             if point and GetUnitToLocationDistance(bot, point) > 180 then
                 bot:Action_MoveToLocation(point)
@@ -1498,7 +1554,7 @@ function ____exports.DefendThink(bot, lane)
             end
             return
         end
-        jmz.RunOuterTowerHold(bot, response.tower:GetLocation(), bot:GetAttackRange(), false, response.stage)
+        jmz.RunOuterTowerHold(bot, response.tower:GetLocation(), response.reach, response.cover, response.stage)
         return
     end
     local guard = bot.ohaMidCover

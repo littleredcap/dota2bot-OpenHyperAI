@@ -114,6 +114,30 @@ end
 print('PASS: generic simultaneous top and mid deadlines allocate two defenders and skip a doomed tower')
 
 do
+    local oldTowers, oldThreat = towers, j.GetOuterTowerThreat
+    local top, bottom = unit(0,1,40), unit(3800,1,41)
+    top.structure, bottom.structure = true,true
+    towers = {[env.TOWER_TOP_2]=top, [env.TOWER_BOT_2]=bottom, [env.TOWER_MID_1]=tower}
+    bot.x, ally.x = -475,3300
+    local empty = {waveSize=0, eta=0, count=0, score=0}
+    local topWave = {waveSize=2, eta=7, count=0, siege=true, clearAt=2750}
+    local bottomWave = {waveSize=3, eta=4, count=3, clearAt=4300}
+    j.GetOuterTowerThreat=function(b)
+        if b==top then return topWave end
+        if b==bottom then return bottomWave end
+        return empty
+    end
+    local plan=j.GetPostFightCoverage(2)
+    assert(plan.lane==env.LANE_BOT and plan.primary.hero==ally, 'an escorted push gets first choice')
+    assert(plan.lanes[2].primary.hero==bot and not plan.lanes[2].primary.onStation,
+        'a defender behind a tower cannot yet reach the distant wave')
+    topWave=empty
+    plan=j.GetPostFightCoverage(2)
+    assert(#plan.lanes==1 and plan.lane==env.LANE_BOT, 'release the quiet lane while the real push continues')
+    j.GetOuterTowerThreat, towers=oldThreat, oldTowers
+end
+
+do
     local outer = unit(3000,0.60,9)
     outer.structure = true
     outer.GetHealth = function() return 600 end

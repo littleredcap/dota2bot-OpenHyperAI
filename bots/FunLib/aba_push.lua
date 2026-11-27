@@ -943,6 +943,12 @@ end
 -- the base responder. Never substitute a blind move or an uphill approach.
 local function GetPostFightWavePlan(gameState, ready, availableTime)
     if availableTime < 6 then return false end
+    local free = {}
+    for _, ally in pairs(ready) do
+        if not jmz.IsValidHero(ally:GetAttackTarget())
+            and #jmz.GetEnemiesNearLoc(ally:GetLocation(), 950) == 0 then free[#free + 1] = ally end
+    end
+    if #free < 2 then return false end
     local best, bestScore = false, math.huge
     local direction = gameState.team == Team.Radiant and 1 or -1
     local enemies = GetUnitList(UnitType.EnemyCreeps)
@@ -962,7 +968,7 @@ local function GetPostFightWavePlan(gameState, ready, availableTime)
                     and (not gameState.enemyAncient or GetUnitToLocationDistance(gameState.enemyAncient, point) > 3400)
                     and staging and IsLocationPassable(staging) then
                     local candidates = {}
-                    for _, ally in pairs(ready) do
+                    for _, ally in ipairs(free) do
                         local distance = GetUnitToLocationDistance(ally, staging)
                         local eta = distance / math.max(1, ally:GetCurrentMovementSpeed())
                         if eta <= math.min(8, availableTime - 4) and not ally:IsRooted()
@@ -970,6 +976,8 @@ local function GetPostFightWavePlan(gameState, ready, availableTime)
                             and GetHeightLevel(point) <= GetHeightLevel(ally:GetLocation())
                             and jmz.CanCommitToLaneTeleport(ally, point, true, 1200)
                             and jmz.CanCommitToLaneTeleport(ally, staging, true, 1000)
+                            and (distance <= 850 or jmz.CanCommitToLaneTeleport(ally,
+                                jmz.VectorTowards(ally:GetLocation(), staging, distance / 2), true, 1000))
                             and (not jmz.CanTakePostFightTrip or jmz.CanTakePostFightTrip(ally, point)) then
                             candidates[#candidates + 1] = {ally = ally, eta = eta}
                         end
@@ -995,7 +1003,7 @@ end
 
 function GetPostFightPushPlan(gameState)
     if gameState.currentTime < StartToPushTime or gameState.aliveEnemyCount > 3
-        or gameState.aliveAllyCount < gameState.aliveEnemyCount + 2 or gameState.aliveAllyCoreCount == 0 then return nil end
+        or gameState.aliveAllyCount <= gameState.aliveEnemyCount or gameState.aliveAllyCoreCount == 0 then return nil end
     return getCachedData("postFightPushPlan", 0.35, function()
         local ready, count = {}, 0
         local reserve = jmz.GetExposedMidCover and jmz.GetExposedMidCover(gameState.team)
@@ -1013,9 +1021,12 @@ function GetPostFightPushPlan(gameState)
         end
         if count < 2 then return false end
 
+        local availableTime = math.max(0, gameState.reinforcementWindow - 1.5)
+        if gameState.aliveAllyCount == gameState.aliveEnemyCount + 1 then
+            return GetPostFightWavePlan(gameState, ready, availableTime)
+        end
         local creeps = GetUnitList(UnitType.AlliedCreeps)
         local direction = gameState.team == Team.Radiant and 1 or -1
-        local availableTime = math.max(0, gameState.reinforcementWindow - 1.5)
         local best, bestTime = false, math.huge
         for _, lane in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
             local tower = GetFirstOuterTower(lane, gameState.enemyTeam, IsStandingBuilding)
@@ -1086,8 +1097,8 @@ function GetPostFightPushPlan(gameState)
                         -- If a kill won't fit, a safe outer tower chip can
                         -- still be worth it. Keep an exit buffer either way.
                         local hp = tower.GetHealth and tower:GetHealth() or 0
-                        local work = dps > 0 and hp / (dps * 0.8) or 0
-                        local finish = time + work + (dps > 0 and 2 or 1.25)
+                        local work = dps > 0 and hp / (dps * 0.8) or math.huge
+                        local finish = time + work + 2
                         local usable = budget - time - 1.5
                         local chip = not highGround and dps > 0 and usable >= 1
                             and (budget == availableTime or arrival <= 0.7)

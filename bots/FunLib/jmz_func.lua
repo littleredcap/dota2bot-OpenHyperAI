@@ -1440,9 +1440,10 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local now = DotaTime()
     if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 40 or now >= 600
         or not J.IsInLaningPhase(bot) or not J.IsCore(bot) or J.GetHP(bot) < 0.58
-        or not bot.DistanceFromFountain or bot:DistanceFromFountain() < 1000 or bot:WasRecentlyDamagedByAnyHero(2)
+        or not bot.DistanceFromFountain or bot:WasRecentlyDamagedByAnyHero(2)
         or bot:HasModifier('modifier_teleporting') or J.IsDisabled(bot)
         or (bot.ohaOuterTowerHoldUntil or 0) > now or not GetUnitList then return nil end
+    if bot:DistanceFromFountain() < 1000 and (J.GetHP(bot) <= 0.90 or J.GetMP(bot) <= 0.80) then return nil end
     local supply = bot.ohaLaneSupply
     if supply and supply.waitUntil > now then return nil end
     local origin, team = bot:GetLocation(), bot:GetTeam()
@@ -6470,8 +6471,27 @@ end
 
 -- Both planned and legacy defense must justify spending the scroll. Follow-up
 -- claims are written only after the item action is issued.
-function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, reach)
-	if not J.IsInLaningPhase(bot) then return true end
+function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, reach, observed)
+	if not J.IsInLaningPhase(bot) then
+		if not landing or (not observed and not J.IsValidBuilding(tower)) then return false end
+		if not planned and tower ~= nil and tower == GetAncient(bot:GetTeam()) then
+			return #J.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 3000) > 0
+		end
+		local sight = observed or J.GetOuterTowerThreat(tower, lane)
+		if not sight.underAttack and ((sight.waveSize or 0) == 0
+			or sight.score == 0 and not (sight.siege and sight.eta <= 9)) then return false, 'no-live-pressure' end
+		local role, plan = J.GetPostFightDuty(bot)
+		if role then return plan.lane == lane and plan.building == (rear or tower) end
+		if J.HasAssignedWaveDefense(plan, lane) then return false, 'already-covered' end
+		if (sight.count or 0) <= 1 then
+			for _, tp in ipairs(GetIncomingTeleports()) do
+				if tp.playerid ~= nil and tp.playerid ~= bot:GetPlayerID() and tp.location and tp.time_remaining
+					and tp.time_remaining >= 0 and tp.time_remaining <= 5 and GetTeamForPlayer(tp.playerid) == bot:GetTeam()
+					and J.GetLocationToLocationDistance(tp.location, landing) <= 1150 then return false, 'already-incoming' end
+			end
+		end
+		return true
+	end
 	if not J.IsValidBuilding(tower) or landing == nil then return false end
 	local threat = J.GetOuterTowerThreat(tower, lane)
 	local home = J.GetTeleportHomeLane(bot)
@@ -6677,10 +6697,24 @@ function J.GetFightHardControlRemaining(enemy)
 end
 
 function J.GetFightDisableDelay(bot, enemy)
+	local remaining = J.GetFightHardControlRemaining(enemy)
+	local now = DotaTime()
 	local pending = enemy.ohaFightDisable
-	if pending and pending.caster ~= bot and pending.expiry > DotaTime()
-		and J.IsValidHero(pending.caster) then return math.max(0.30, pending.impact - DotaTime() + 0.12) end
-	return J.GetFightHardControlRemaining(enemy)
+	if pending and pending.caster ~= bot and pending.expiry > now and J.IsValidHero(pending.caster) then
+		remaining = math.max(remaining, pending.impact - now + 0.65)
+	end
+	-- A teammate's projectile is observable even when their queued order isn't.
+	if enemy.GetIncomingTrackingProjectiles then
+		for _, shot in ipairs(enemy:GetIncomingTrackingProjectiles()) do
+			if not shot.is_attack and shot.ability and shot.caster and shot.caster:GetTeam() == bot:GetTeam()
+				and shot.caster ~= bot and J.IsStunProjectileSpell(shot.ability:GetName())
+				and GetUnitToLocationDistance(enemy, shot.location) <= 500 then
+				-- Recheck after impact and chain from the observed modifier duration.
+				return math.huge
+			end
+		end
+	end
+	return remaining
 end
 
 function J.NoteFightDisable(bot, enemy, delay)
@@ -6973,10 +7007,12 @@ function J.ShouldHoldFightApproach(bot, target)
 	local origin, location = bot:GetLocation(), target:GetLocation()
 	local stopMovement = target:IsRooted() or target:IsStunned() or target:IsHexed() or target:IsNightmared()
 	local allies = J.GetAlliesNearLoc(location, 1200)
-	local pressure = false
+	local pressure, inContact = false, 0
 	for _, ally in ipairs(allies) do
-		if ally ~= bot and CanProvideFightContact(ally) and HasFightContact(ally, target, 110)
-			and ally:GetAttackTarget() == target then pressure = true; break end
+		if ally ~= bot and CanProvideFightContact(ally) and HasFightContact(ally, target, 110) then
+			inContact = inContact + 1
+			if ally:GetAttackTarget() == target then pressure = true end
+		end
 	end
 
 	for _, tower in ipairs(bot:GetNearbyTowers(1600, true)) do
@@ -6995,6 +7031,13 @@ function J.ShouldHoldFightApproach(bot, target)
 	local firedUpon = bot:WasRecentlyDamagedByAnyHero(1.75) or target:GetAttackTarget() == bot
 	local closingTime = gap / math.max(1, selfSpeed - drift)
 
+	if firedUpon and not pressure and closingTime > 1.0 and J.GetHP(bot) <= 0.75 then
+		local defenders = 0
+		for _, enemy in ipairs(J.GetEnemiesNearLoc(location, 1100)) do
+			if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) then defenders = defenders + 1 end
+		end
+		if defenders >= inContact + 3 then return true end
+	end
 	if drift >= selfSpeed * 0.58 and closingTime > (pressure and 3.5 or 2.2) then return true end
 	if firedUpon and not pressure and not stopMovement and target:GetAttackRange() >= bot:GetAttackRange() + 130
 		and distance <= target:GetAttackRange() + 275 and closingTime > 1.2 then return true end
@@ -7113,6 +7156,29 @@ function J.GetOuterTowerThreat(tower, lane)
 	local waveSize, waveHP, siege, eta = 0, 0, false, math.huge
 	local attackingCreeps, siegeAttacking = 0, false
 	local clearAt, mostUrgent = nil, -math.huge
+	local now = DotaTime()
+	-- Several lanes can share a base tower or the Ancient as their front.
+	tower.ohaApproachingCreeps = tower.ohaApproachingCreeps or {}
+	local previousWave = tower.ohaApproachingCreeps[lane] or {}
+	local currentWave = {}
+	-- Creep movement speed is a capability. A distant catapult firing into an
+	-- allied wave can stay on the same spot for minutes without approaching.
+	local function closingSpeed(creep, distance)
+		local speed = math.max(1, creep:GetCurrentMovementSpeed())
+		if distance <= 1280 then return speed end
+		local sample = previousWave[creep]
+		if not sample or now - sample.seen > 2.5 then
+			local projected = creep.GetExtrapolatedLocation and creep:GetExtrapolatedLocation(1)
+			local advance = projected and distance - J.GetLocationToLocationDistance(projected, hub) or 0
+			sample = {distance=distance, time=now, speed=not creep:GetAttackTarget() and math.max(0, advance) or 0}
+		elseif now - sample.time >= 0.6 then
+			sample.speed = math.max(0, (sample.distance - distance) / (now - sample.time))
+			sample.distance, sample.time = distance, now
+		end
+		sample.seen = now
+		currentWave[creep] = sample
+		return math.min(speed, sample.speed)
+	end
 	for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
 		if J.IsValid(creep) and (not creep.CanBeSeen or creep:CanBeSeen()) then
 			local name = creep:GetUnitName()
@@ -7120,9 +7186,10 @@ function J.GetOuterTowerThreat(tower, lane)
 			local attacking = creep:GetAttackTarget() == tower
 			local summon = IsSiegeSummon(name)
 			local catapult = string.find(name, 'siege', 1, true) ~= nil
-			if (summon and attacking and distance <= 1400)
-				or (distance <= 3000 and (catapult or string.find(name, 'npc_dota_creep_', 1, true))
-					and (attacking or onApproach(creep:GetLocation()))) then
+			local laneUnit = catapult or string.find(name, 'npc_dota_creep_', 1, true)
+			local speed = laneUnit and distance <= 3000 and onApproach(creep:GetLocation())
+				and closingSpeed(creep, distance) or 0
+			if (attacking and (summon and distance <= 1400 or laneUnit and distance <= 3000)) or speed >= 60 then
 				local priority = (attacking and 8 or 0) + ((summon or catapult) and 3 or 0) - distance / 1000
 				if priority > mostUrgent and (not creep.CanBeSeen or creep:CanBeSeen()) then
 					clearAt, mostUrgent = creep:GetLocation(), priority
@@ -7135,11 +7202,12 @@ function J.GetOuterTowerThreat(tower, lane)
 					siegeAttacking = siegeAttacking or summon or catapult
 					eta = 0
 				else
-					eta = math.min(eta, math.max(0, distance - 650) / math.max(250, creep:GetCurrentMovementSpeed()))
+					eta = math.min(eta, math.max(0, distance - 650) / speed)
 				end
 			end
 		end
 	end
+	tower.ohaApproachingCreeps[lane] = currentWave
 	-- A visible group already rotating with a wave is actionable before the first hit.
 	local escortedWave = advancingEscort and ((siege and waveSize >= 2) or waveSize >= 4
 		or enemyCount >= 3 and waveSize >= 2) and eta <= 10
@@ -7150,7 +7218,7 @@ function J.GetOuterTowerThreat(tower, lane)
 		or (siege and waveSize >= 2 and eta <= 8) or (enemyCount == 1 and waveSize >= 3 and eta <= 5)
 	local active = activeAttackers > 0 or (enemyCount >= 2 and (waveSize > 0 or nearCount >= 2)) or wavePressure
 	local underAttack = activeAttackers > 0 or attackingCreeps > 0
-	local health, now = tower:GetHealth(), DotaTime()
+	local health = tower:GetHealth()
 	local watch = tower.ohaSiegeWatch
 	if not watch or not watch.time then
 		watch = {health = health, time = now, damageRate = 0, lastHit = watch and watch.lastHit}
@@ -7296,7 +7364,8 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 	local needsBackup = (sight.count or 0) >= 2 or deadline <= 10 and
 		(waveSize >= 3 or waveSize >= 2 and sight.siege
 			or waveSize == 0 and enemies >= 2 and reinforcement <= 5)
-	local plan = {building=building, lane=lane, hold=hold, deadline=deadline, needsBackup=needsBackup == true}
+	local plan = {building=building, lane=lane, hold=hold, deadline=deadline, needsBackup=needsBackup == true,
+		waveDefense=not demand.open and waveSize > 0 and (sight.count or 0) <= 1}
 	local unsafe = #J.GetEnemiesNearLoc(hold, 800) >= 2
 	local rows, incumbent = {}, nil
 	local anchors = {}
@@ -7357,7 +7426,9 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 							if mayStep then clearStage = step end
 							impact = mayStep and impact + shortfall / speed * 1.25 or math.huge
 						end
-						onSite = onSite and GetUnitToLocationDistance(ally, actionablePoint) <= reach
+						-- Use the projected intercept for travel, but only count coverage
+						-- as ready once the real, visible target is within reach.
+						onSite = onSite and GetUnitToLocationDistance(ally, sight.clearAt) <= reach
 					end
 					local row = {hero=ally, id=ally:GetPlayerID(), walk=not tp and safe and walk or math.huge,
 						arrival=impact, coverArrival=arrival, teleport=teleport, reach=reach, canClear=damage > 0,
@@ -7506,6 +7577,17 @@ function J.GetPostFightDuty(bot)
 		if lanePlan.backup and lanePlan.backup.hero == bot then return 'cover', lanePlan end
 	end
 	return nil, plan
+end
+
+-- When the shared plan has filled the roles for a small wave, another
+-- defense entry point must not recruit a third clearer or spend their TP.
+function J.HasAssignedWaveDefense(plan, lane)
+	for _, front in ipairs(plan and (plan.lanes or {plan}) or {}) do
+		if front.lane == lane and front.waveDefense and front.primary and (not front.needsBackup or front.backup) then
+			return true
+		end
+	end
+	return false
 end
 
 function J.CanTakePostFightTrip(bot, point, spendTeleport, localResource)
@@ -8085,7 +8167,7 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 				and (highGround or not J.ShouldKeepLaningWave(ally, threat.lane, threat))
 				and (ally:HasModifier('modifier_teleporting') or J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')))
 				and #J.GetEnemiesNearLoc(ally:GetLocation(), 1200) == 0 and J.CanCommitToLaneTeleport(ally, tpPoint, true)
-				and (highGround or J.CanTakeLaneDefenseTeleport(ally, threat.lane, tpPoint, threat.tower, nil, true, walkingReach)) then
+				and (highGround or J.CanTakeLaneDefenseTeleport(ally, threat.lane, tpPoint, threat.tower, nil, true, walkingReach, threat)) then
 				local fromLanding = math.max(0, J.GetLocationToLocationDistance(tpPoint, location) - 575)
 				travelTime, landing = 4.5 + fromLanding / math.max(ally:GetCurrentMovementSpeed(), 250), tpPoint
 			end

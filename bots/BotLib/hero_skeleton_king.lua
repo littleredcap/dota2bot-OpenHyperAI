@@ -238,12 +238,14 @@ function X.ConsiderQ()
 	local nEnemysHerosInRange = J.GetNearbyHeroes(bot, nCastRange + 43, true, BOT_MODE_NONE )
 	local nEnemysHerosInBonus = J.GetNearbyHeroes(bot, nCastRange + 330, true, BOT_MODE_NONE )
 
+	local function canLandStun(enemy)
+		local impact = nCastPoint + GetUnitToUnitDistance(bot, enemy) / blastSpeed
+		return not J.GetFightDisableDelay or J.GetFightDisableDelay(bot, enemy) <= impact + 0.15
+	end
 	local function canOpenOn(enemy)
 		-- Preserve defensive use during a real engagement; do not mistake
 		-- one backline right-click for a team that can follow a ranged stun.
-		local impact = nCastPoint + GetUnitToUnitDistance(bot, enemy) / blastSpeed
-		local conflict = J.GetFightDisableDelay and J.GetFightDisableDelay(bot, enemy) > impact + 0.15
-		return not conflict and (bot:WasRecentlyDamagedByHero(enemy, 2) and J.IsInRange(bot, enemy, bot:GetAttackRange() + 150)
+		return canLandStun(enemy) and (bot:WasRecentlyDamagedByHero(enemy, 2) and J.IsInRange(bot, enemy, bot:GetAttackRange() + 150)
 			or J.IsInLaningPhase() and J.HasLaneFightFollowUp(bot, enemy)
 			or J.HasCommittedStunFollowUp(bot, enemy, enemy:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_MAGICAL)))
 	end
@@ -361,8 +363,9 @@ function X.ConsiderQ()
 		do
 			if J.IsValid( npcEnemy )
 				and ( bot:WasRecentlyDamagedByHero( npcEnemy, 5.0 )
-						or nMP > 0.8
+						or npcEnemy:GetAttackTarget() == bot
 						or GetUnitToUnitDistance( bot, npcEnemy ) <= 400 )
+				and canLandStun(npcEnemy)
 				and J.CanCastOnNonMagicImmune( npcEnemy )
 				and J.CanCastOnTargetAdvanced( npcEnemy )
 				and not J.IsDisabled( npcEnemy )
@@ -424,6 +427,8 @@ function X.ConsiderQ()
 				and not J.IsDisabled( npcEnemy )
 				and not npcEnemy:IsDisarmed()
 				and bot:IsFacingLocation( npcEnemy:GetLocation(), 45 )
+				and (bot:WasRecentlyDamagedByHero(npcEnemy, 3) or npcEnemy:GetAttackTarget() == bot)
+				and canLandStun(npcEnemy)
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy
 			end
@@ -442,6 +447,7 @@ function X.ConsiderQ()
 				and J.CanCastOnNonMagicImmune( npcEnemy )
 				and J.CanCastOnTargetAdvanced( npcEnemy )
 				and not J.IsDisabled( npcEnemy )
+				and canOpenOn(npcEnemy)
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy
 			end

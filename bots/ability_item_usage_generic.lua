@@ -4857,7 +4857,7 @@ function X.GetDefendTPLocation( nLane )
 	local ancient = GetAncient(team)
 	if ancient ~= nil and X.GetNumEnemyNearby(ancient) > 0 then
 		local fountain = J.GetTeamFountain()
-		if J.CanCommitToLaneTeleport(bot, fountain, true) then return fountain end
+		if J.CanCommitToLaneTeleport(bot, fountain, true) then return fountain, ancient end
 	end
 end
 
@@ -5092,7 +5092,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local defense = bot._defend
 	local plannedDefense = defense and defense.waveClearLane ~= nil and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
 		and defense.waveClearTeleport ~= nil and J.IsValidBuilding(defense.waveClearRearTower or defense.waveClearTower)
-	if plannedDefense and J.IsDefending(bot) and nEnemyCount == 0
+	if plannedDefense and not postFightDuty and J.IsDefending(bot) and nEnemyCount == 0
 		and not J.ShouldKeepLaningWave(bot, defense.waveClearLane)
 		and GetUnitToLocationDistance(bot, defense.waveClearTeleport) > 1800
 		and J.CanCommitToLaneTeleport(bot, defense.waveClearTeleport, true, defense.waveClearGather and 1250 or nil)
@@ -5228,7 +5228,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	end
 
 	--守塔
-	if not highGroundResponse and J.IsDefending( bot )
+	if not highGroundResponse and not postFightDuty and J.IsDefending( bot )
 		and nModeDesire > BOT_MODE_DESIRE_MODERATE
 		and nEnemyCount == 0
 	then
@@ -8500,12 +8500,53 @@ function ItemUsageThink()
 	if not J.IsNoItemIllution(bot) then ItemUsageComplement() end
 end
 
+function X.TraceDefenseMovement(now)
+	local position = bot:GetLocation()
+	local sample = bot.ohaDefenseMovement
+	if sample and now >= sample.sampled and now < sample.sampled + 0.5 then return end
+	local lastAttack = bot:GetLastAttackTime()
+	local high, guard, outer = bot.ohaHighGroundResponse, bot.ohaMidCover, bot._defend
+	if high and high.expires <= now then high = nil end
+	if guard and guard.expires <= now then guard = nil end
+	if (bot.ohaOuterTowerHoldUntil or 0) <= now then outer = nil end
+	local duty = high and 'high-ground' or guard and (guard.cover and 'cover' or 'clear')
+		or outer and 'outer' or 'unassigned'
+	local tower = high and high.tower or guard and guard.tower or outer and outer.waveClearTower
+	local mode = bot:GetActiveMode()
+	if sample and sample.reported and now >= sample.sampled and now - sample.sampled <= 2 and lastAttack ~= sample.attack then
+		print(string.format('[OHA auto-resumed] %.2f hero=%s since=%.2f mode=%d', now, botName, sample.started, mode))
+	end
+	if not sample or now < sample.sampled or now - sample.sampled > 2 or lastAttack ~= sample.attack then
+		bot.ohaDefenseMovement = {started=now, sampled=now, origin=position, last=position, travel=0,
+			attack=lastAttack, mode=mode, duty=duty, nextReport=now+10}
+		return
+	end
+	sample.travel = sample.travel + J.GetLocationToLocationDistance(sample.last, position)
+	sample.last, sample.sampled = position, now
+	if now < sample.nextReport then return end
+	local displacement = J.GetLocationToLocationDistance(sample.origin, position)
+	if duty ~= 'unassigned' or J.IsDefending(bot) or displacement <= 200 then
+		local target = bot:GetAttackTarget()
+		local creep = bot:GetNearbyLaneCreeps(1500, true)[1]
+		local function describe(unit)
+			if not unit or unit:IsNull() or not unit:CanBeSeen() then return '-' end
+			return string.format('%s@%.0f', unit:GetUnitName(), GetUnitToUnitDistance(bot, unit))
+		end
+		print(string.format('[OHA no-auto] %.2f hero=%s since=%.2f mode=%d>%d duty=%s>%s tower=%s target=%s laneCreep=%s travel=%.0f net=%.0f action=%d channel=%s',
+			now, botName, sample.started, sample.mode, mode, sample.duty, duty, describe(tower), describe(target), describe(creep), sample.travel,
+			displacement, bot:GetCurrentActionType(), tostring(bot:IsChanneling())))
+		sample.reported = true
+	end
+	sample.nextReport = now + 10
+end
+
 function AbilityUsageThink()
 	if RefreshBotHandle() then return end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
 	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) and bot.isBear == nil then return end
 	bot.lastAbilityFrameProcessTime = DotaTime()
+	if Customize.TraceLaneDecisions then X.TraceDefenseMovement(bot.lastAbilityFrameProcessTime) end
 	local protectingShot = bot.ohaLaningAttackTarget ~= nil and J.HasPendingLaningLastHit(bot)
 	if not protectingShot and bot.ohaEngineMid and J.IsLaning(bot) and J.IsInLaningPhase(bot) then
 		local target = bot:GetAttackTarget()

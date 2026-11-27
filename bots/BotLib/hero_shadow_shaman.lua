@@ -171,6 +171,10 @@ local function HasAttackFollowUp(target)
 	return not J.HasCommittedStunFollowUp or J.HasCommittedStunFollowUp(bot, target, 0)
 end
 
+local function CanLandDisable(target, castPoint)
+	return not J.GetFightDisableDelay or J.GetFightDisableDelay(bot, target) <= castPoint + 0.12
+end
+
 
 
 function X.SkillsComplement()
@@ -259,17 +263,20 @@ function X.SkillsComplement()
 
 end
 
+local function HasSafeShacklesPosition(enemy)
+	for _, other in ipairs(hEnemyList) do
+		if other ~= enemy and J.IsValidHero(other) and not J.IsSuspiciousIllusion(other) and not J.IsDisabled(other)
+			and J.IsInRange(bot, other, math.max(550, other:GetAttackRange() + 200)) then return false end
+	end
+	return true
+end
+
 function X.GetLaneShacklesTarget()
 	if not J.IsInLaningPhase(bot) or not abilityE or not J.CanCastAbility(abilityE) or nHP < 0.55
 		or bot:WasRecentlyDamagedByAnyHero(1.5) then return nil end
 	local partner = J.GetLanePartner(bot)
 	local enemy = J.GetLaningPeelTarget(bot, partner, hEnemyList, abilityE:GetCastRange() + aetherRange, true)
-	if enemy == nil then return nil end
-	for _, other in ipairs(hEnemyList) do
-		if other ~= enemy and J.IsValidHero(other) and not J.IsSuspiciousIllusion(other) and not J.IsDisabled(other)
-			and J.IsInRange(bot, other, math.max(550, other:GetAttackRange() + 200)) then return nil end
-	end
-	return enemy
+	if enemy and HasSafeShacklesPosition(enemy) then return enemy end
 end
 
 function X.ConsiderQ()
@@ -586,7 +593,7 @@ function X.ConsiderW()
 		if npcMostDangerousEnemy ~= nil
 			and J.IsInRange( bot, npcMostDangerousEnemy, nCastRange )
 			and HasAttackFollowUp(npcMostDangerousEnemy)
-			and (not J.GetFightDisableDelay or J.GetFightDisableDelay(bot, npcMostDangerousEnemy) <= nCastPoint + 0.12)
+			and CanLandDisable(npcMostDangerousEnemy, nCastPoint)
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcMostDangerousEnemy, 'W-Battle:'..J.Chat.GetNormName( npcMostDangerousEnemy )
 		end
@@ -604,6 +611,7 @@ function X.ConsiderW()
 			and not J.IsDisabled( botTarget )
 			and not J.IsTaunted( botTarget )
 			and not botTarget:IsDisarmed()
+			and CanLandDisable(botTarget, nCastPoint)
 		then
 			return BOT_ACTION_DESIRE_HIGH, botTarget, 'W-Attack:'..J.Chat.GetNormName( botTarget )
 		end
@@ -623,6 +631,8 @@ function X.ConsiderW()
 				and not J.IsDisabled( npcEnemy )
 				and not J.IsTaunted( npcEnemy )
 				and not npcEnemy:IsDisarmed()
+				and (bot:WasRecentlyDamagedByHero(npcEnemy, 3) or npcEnemy:GetAttackTarget() == bot)
+				and CanLandDisable(npcEnemy, nCastPoint)
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy, 'W-protect'
 			end
@@ -643,6 +653,7 @@ function X.ConsiderW()
 				and not J.IsDisabled( npcEnemy )
 				and not J.IsTaunted( npcEnemy )
 				and not npcEnemy:IsDisarmed()
+				and CanLandDisable(npcEnemy, nCastPoint)
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy, "W-Retreat:"..J.Chat.GetNormName( npcEnemy )
 			end
@@ -736,7 +747,8 @@ function X.ConsiderE()
 		if npcMostDangerousEnemy ~= nil
 			and J.IsInRange( bot, npcMostDangerousEnemy, nCastRange )
 			and HasAttackFollowUp(npcMostDangerousEnemy)
-			and (not J.GetFightDisableDelay or J.GetFightDisableDelay(bot, npcMostDangerousEnemy) <= nCastPoint + 0.12)
+			and CanLandDisable(npcMostDangerousEnemy, nCastPoint)
+			and HasSafeShacklesPosition(npcMostDangerousEnemy)
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcMostDangerousEnemy, 'E-Battle:'..J.Chat.GetNormName( npcMostDangerousEnemy )
 		end
@@ -752,6 +764,8 @@ function X.ConsiderE()
 			and not J.IsDisabled( botTarget )
 			and not J.IsTaunted( botTarget )
 			and not botTarget:IsDisarmed()
+			and CanLandDisable(botTarget, nCastPoint)
+			and HasSafeShacklesPosition(botTarget)
 		then
 			if nSkillLV >= 2 or nMP > 0.68 or J.GetHP( botTarget ) < 0.35 or nHP < 0.28
 			then
@@ -773,6 +787,7 @@ function X.ConsiderE()
 				and not J.IsDisabled( npcEnemy )
 				and not J.IsTaunted( npcEnemy )
 				and not npcEnemy:IsDisarmed()
+				and CanLandDisable(npcEnemy, nCastPoint)
 			then
 				return BOT_ACTION_DESIRE_HIGH, npcEnemy, "E-Retreat:"..J.Chat.GetNormName( npcEnemy )
 			end

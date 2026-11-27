@@ -19,13 +19,14 @@ local attacker={}
 local state={hp=0.9}
 local function distance(a,b) return math.abs(a-b) end
 local function hostile(x,r) return state.enemy and distance(x,state.enemy)<r and {attacker} or {} end
-bot.DistanceFromFountain=function() return 4500 end
+bot.DistanceFromFountain=function() return state.fountainDistance or 4500 end
 bot.WasRecentlyDamagedByAnyHero=function() return state.hit end
 bot.HasModifier,ally.HasModifier=noop,noop
 bot.GetTeam=function() return 2 end
 bot.GetAttackRange=function() return 150 end
 local j={IsInLaningPhase=function() return true end,IsCore=function() return true end,
     GetHP=function(unit) return unit==bot and state.hp or 0.9 end,
+    GetMP=function() return state.mp or 1 end,
     IsDisabled=noop, IsValidBuilding=function(x) return x==tower end, IsValid=function(x) return x~=nil end,
     IsValidHero=function(x) return x==ally end, GetLanePartner=function() return ally end,
     IsRetreating=noop, GetLocationTowardDistanceLocation=function(unit,b,d) return toward(unit:GetLocation(),b,d) end,VectorTowards=toward,
@@ -42,6 +43,13 @@ local env=setmetatable({J=j,LANE_TOP=1,LANE_BOT=2,TOWER_TOP_1=1,TOWER_BOT_1=2,
     {__index=_G})
 setfenv(assert(loadstring(src:sub(a,b-1))),env)()
 assert(j.GetSideLaneReturnPoint(bot,1)==1750,'walk back to a screened wave before the last-hit scan can see it')
+state.fountainDistance, state.hp, state.mp = 200, 0.99, 0.9
+assert(j.GetSideLaneReturnPoint(bot,1)==1750,'a healed side core can start the safe return inside the fountain radius')
+state.mp=0.5
+assert(not j.GetSideLaneReturnPoint(bot,1),'wait for mana before leaving the fountain')
+state.mp, state.hp=0.9,0.75
+assert(not j.GetSideLaneReturnPoint(bot,1),'wait for health before leaving the fountain')
+state.fountainDistance, state.hp=nil,0.9
 state.enemy=1750
 local fallback=j.GetSideLaneReturnPoint(bot,1)
 assert(fallback and fallback<=1125 or fallback==nil,'threat makes the move smaller or aborts it')

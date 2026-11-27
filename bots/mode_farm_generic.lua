@@ -101,6 +101,7 @@ local function CanReserveWave(ally)
 		and (ally.ohaOuterTowerHoldUntil or 0) <= DotaTime() and not ally:HasModifier('modifier_teleporting')
 		and not (J.IsDefending(ally) and ally:GetActiveModeDesire() >= 0.75)
 		and not J.IsGoingOnSomeone(ally) and not J.IsDoingRoshan(ally) and not J.IsDoingTormentor(ally)
+		and not (J.GetPostFightDuty and J.GetPostFightDuty(ally))
 end
 
 local function IsReleasedFarmLane(location)
@@ -112,6 +113,8 @@ local function IsFarmWaveAvailable(location)
 	if IsReleasedFarmLane(location) or not IsFarmLocationSafe(location) then return false end
 	local owner=J.GetScheduledFarmWaveOwner and J.GetScheduledFarmWaveOwner(bot,location)
 	if owner~=nil then return owner==bot:GetPlayerID() end
+	-- Think has already checked the collection claim and can still revoke it on the next tick.
+	if collectingWave and farmLaneLocation and J.GetLocationToLocationDistance(location, farmLaneLocation) <= 700 then return true end
 	if not recoveringLane then return true end
 	for _, ally in ipairs(J.GetAlliesNearLoc(location, 1000)) do
 		if CanReserveWave(ally) and J.IsCore(ally)
@@ -607,7 +610,9 @@ local function CanCollectWave(location, distance)
 			local claim = ally.ohaWaveClaim
 			if claim and claim.expires > DotaTime() and J.GetLocationToLocationDistance(location, claim.location) < 700 then return false end
 			local other = GetUnitToLocationDistance(ally, location)
-			local coreOwnsWave = J.IsCore(ally) and (other <= 1250 or J.IsFarming(ally) and other <= distance + 300)
+			local allyFirst = other < distance or other == distance and ally:GetPlayerID() < bot:GetPlayerID()
+			local coreOwnsWave = J.IsCore(ally) and (not J.IsCore(bot) or allyFirst)
+				and (other <= 1250 or J.IsFarming(ally) and other <= distance + 300)
 			local closerCollector = other + 150 < distance and J.IsFarming(ally)
 			if coreOwnsWave or closerCollector then return false end
 		end
@@ -848,7 +853,18 @@ local function GetUnclaimedWaveDesire()
 		or J.IsPushing(bot) and J.IsValidBuilding(bot:GetNearbyTowers(1600, true)[1]) then return BOT_MODE_DESIRE_NONE end
 	local nearby = bot:GetNearbyLaneCreeps(1000, true)
 	local best, bestDistance = nil, 2801
-	if #nearby >= 3 and J.IsInAllyArea(nearby[1]) then
+	-- Keep collecting the near remainder of our claim when only one or two creeps survive.
+	local claim = bot.ohaWaveClaim
+	if #nearby <= 2 and claim and claim.expires > DotaTime() then
+		for _, creep in ipairs(nearby) do
+			local distance = GetUnitToUnitDistance(bot, creep)
+			if distance <= bot:GetAttackRange() + 100 and distance < bestDistance
+				and GetUnitToLocationDistance(creep, claim.location) <= 700 and J.IsInAllyArea(creep)
+				and CanCollectWave(creep:GetLocation(), distance) then
+				best, bestDistance = creep:GetLocation(), distance
+			end
+		end
+	elseif #nearby >= 3 and J.IsInAllyArea(nearby[1]) then
 		local point = J.GetCenterOfUnits(nearby)
 		if CanCollectWave(point, GetUnitToLocationDistance(bot, point)) then best = point end
 	end

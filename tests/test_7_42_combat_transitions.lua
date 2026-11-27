@@ -500,6 +500,17 @@ do
     assert(not j.ShouldHoldFightApproach(bot, enemy), 'nearby active pressure can cover an approach')
     core.IsDisarmed = yes
     assert(j.ShouldHoldFightApproach(bot, enemy), 'a disarmed ally does not make the frontal approach safe')
+    do
+        local original = j.GetEnemiesNearLoc
+        enemy.GetAttackRange = function() return 150 end
+        local defenders = {enemy, setmetatable({}, {__index=enemy}), setmetatable({}, {__index=enemy})}
+        j.GetEnemiesNearLoc = function() return defenders end
+        state.hp = 0.65
+        assert(j.ShouldHoldFightApproach(bot, enemy), 'a damaged core without support does not step into three visible defenders')
+        defenders[3] = nil
+        assert(not j.ShouldHoldFightApproach(bot, enemy), 'the same ground without the visible numbers swing remains playable')
+        j.GetEnemiesNearLoc = original
+    end
     bot.WasRecentlyDamagedByAnyHero, enemy.x = no, 1100
     assert(j.ShouldHoldFightApproach(bot, enemy), 'do not walk uphill into an unsupported target')
     state.time = 300
@@ -549,6 +560,7 @@ do
         'a live, reachable controlled target does not need a teammate to issue the first attack')
     j.NoteFightDisable(channeler, enemy, 0.45, {})
     assert(j.GetFightDisableDelay(bot, enemy) > 0.45, 'later caster waits for imminent allied disable')
+    assert(j.GetFightDisableDelay(bot, enemy) >= 1.5, 'a pending cast cannot hide longer observed control')
     state.time = state.time + 0.8
     assert(j.GetFightDisableDelay(bot, enemy) == 1.5, 'after the cast window use the observed disable')
     other.alive, other.x = true, 475
@@ -556,6 +568,16 @@ do
     other.alive = false
     enemy.NumModifiers = function() return 0 end
     assert(not j.GetSupportedFightTarget(bot, {enemy}, {channeler}), 'an unrelated or failed channel cannot authorize focus')
+    local shot = {caster=channeler, ability={GetName=function() return 'test_stun' end}, location=pos(350)}
+    j.IsStunProjectileSpell = function(name) return name == 'test_stun' end
+    enemy.GetIncomingTrackingProjectiles = function() return {shot} end
+    assert(j.GetFightDisableDelay(bot, enemy) > 0.95, 'an incoming allied stun reserves contact even for a second projectile')
+    shot.caster = other
+    assert(j.GetFightDisableDelay(bot, enemy) == 0, 'a hostile projectile is not allied control')
+    enemy.GetIncomingTrackingProjectiles = empty
+    enemy.NumModifiers = function() return 1 end
+    enemy.GetModifierRemainingDuration = function() return 0.35 end
+    assert(j.GetFightDisableDelay(bot, enemy) < 0.8, 'after impact a slower stun can land as control wears off')
 end
 
 print('PASS: live control activates local follow-through without pretending the channeler can rotate')

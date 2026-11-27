@@ -817,6 +817,9 @@ type PostFightPlan = PostFightPushPlan | PostFightWavePlan;
 // Use a nearby, visible wave when no building can be reached together.
 function GetPostFightWavePlan(gameState: ReturnType<typeof getGlobalGameState>, ready: Unit[], availableTime: number): PostFightWavePlan | false {
     if (availableTime < 6) return false;
+    const free = ready.filter(ally => !jmz.IsValidHero(ally.GetAttackTarget())
+        && jmz.GetEnemiesNearLoc(ally.GetLocation(), 950).length === 0);
+    if (free.length < 2) return false;
     let best: PostFightWavePlan | false = false;
     let bestScore = Infinity;
     const direction = gameState.team === Team.Radiant ? 1 : -1;
@@ -836,13 +839,16 @@ function GetPostFightWavePlan(gameState: ReturnType<typeof getGlobalGameState>, 
                 || (gameState.enemyAncient && GetUnitToLocationDistance(gameState.enemyAncient, point) <= 3400)
                 || !staging || !IsLocationPassable(staging)) continue;
             const candidates: { ally: Unit; eta: number }[] = [];
-            for (const ally of ready) {
-                const eta = GetUnitToLocationDistance(ally, staging) / Math.max(1, ally.GetCurrentMovementSpeed());
+            for (const ally of free) {
+                const distance = GetUnitToLocationDistance(ally, staging);
+                const eta = distance / Math.max(1, ally.GetCurrentMovementSpeed());
                 if (eta <= Math.min(8, availableTime - 4) && !ally.IsRooted()
                     && !ally.WasRecentlyDamagedByAnyHero(2)
                     && GetHeightLevel(point) <= GetHeightLevel(ally.GetLocation())
                     && jmz.CanCommitToLaneTeleport(ally, point, true, 1200)
                     && jmz.CanCommitToLaneTeleport(ally, staging, true, 1000)
+                    && (distance <= 850 || jmz.CanCommitToLaneTeleport(ally,
+                        jmz.VectorTowards(ally.GetLocation(), staging, distance / 2), true, 1000))
                     && jmz.CanTakePostFightTrip(ally, point)) {
                     candidates.push({ ally, eta });
                 }
@@ -866,7 +872,7 @@ function GetPostFightWavePlan(gameState: ReturnType<typeof getGlobalGameState>, 
 
 function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>): PostFightPlan | false | undefined {
     if (gameState.currentTime < StartToPushTime || gameState.aliveEnemyCount > 3
-        || gameState.aliveAllyCount < gameState.aliveEnemyCount + 2 || gameState.aliveAllyCoreCount === 0) return;
+        || gameState.aliveAllyCount <= gameState.aliveEnemyCount || gameState.aliveAllyCoreCount === 0) return;
     return getCachedData<PostFightPlan | false>("postFightPushPlan", 0.35, () => {
         const ready: Record<number, Unit> = {};
         const [reserve] = jmz.GetExposedMidCover(gameState.team);
@@ -887,9 +893,12 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
         const participants = Object.values(ready);
         if (participants.length < 2) return false;
 
+        const availableTime = Math.max(0, gameState.reinforcementWindow - 1.5);
+        if (gameState.aliveAllyCount === gameState.aliveEnemyCount + 1) {
+            return GetPostFightWavePlan(gameState, participants, availableTime);
+        }
         const creeps = GetUnitList(UnitType.AlliedCreeps);
         const direction = gameState.team === Team.Radiant ? 1 : -1;
-        const availableTime = Math.max(0, gameState.reinforcementWindow - 1.5);
         let best: PostFightPushPlan | false = false;
         let bestTime = Infinity;
         for (const lane of [Lane.Mid, Lane.Top, Lane.Bot]) {
@@ -957,8 +966,8 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
             }
             // A safe outer tower chip can have value when a kill won't fit.
             const hp = tower.GetHealth ? tower.GetHealth() : 0;
-            const work = dps > 0 ? hp / (dps * 0.8) : 0;
-            const finish = time + work + (dps > 0 ? 2 : 1.25);
+            const work = dps > 0 ? hp / (dps * 0.8) : Infinity;
+            const finish = time + work + 2;
             const usable = budget - time - 1.5;
             const chip = !highGround && dps > 0 && usable >= 1 && (budget === availableTime || arrival <= 0.7)
                 && dps * 0.8 * usable >= Math.min(hp, Math.max(70, hp * 0.075));

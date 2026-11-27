@@ -54,3 +54,61 @@ hostileAtHold,bot.order,bot.x=false,nil,-800
 creep.CanBeSeen=no
 assert(not j.RunOuterTowerHold(bot,0,1200,false,-800) and not bot.order,'do not move toward a creep in fog')
 print('PASS: staged defender takes a bounded, safe step and shoots without dropping a cast or TP')
+
+do
+    local hero = {x=0, GetActiveMode=function() return 0 end, IsAlive=yes, HasModifier=no,
+        GetUnitName=function() return 'npc_dota_hero_test' end, GetTeam=function() return 2 end,
+        GetHealth=function() return 500 end, GetHealthRegen=function() return 0 end,
+        GetManaRegen=function() return 0 end, GetLevel=function() return 12 end,
+        GetLocation=function() return 0 end, GetNearbyLaneCreeps=empty,
+        GetActualIncomingDamage=function(_, damage) return damage end}
+    local function attacker(name, damage)
+        return {visible=true, target=hero, x=300, GetUnitName=function() return name end,
+            GetAttackTarget=function(self) return self.target end, IsDisarmed=no, HasModifier=no,
+            GetTeam=function() return 3 end, GetAttackRange=function() return 700 end,
+            GetAttackDamage=function() return damage end, GetSecondsPerAttack=function() return 1 end,
+            CanBeSeen=function(self) return self.visible end}
+    end
+    local ward, tower = attacker('npc_dota_shadow_shaman_ward_1', 60), attacker('enemy_tower', 50)
+    hero.GetNearbyTowers=function(_, _, enemy) return enemy and {tower} or {} end
+    local j={ShouldRetreatFromEnemyReinforcements=no, GetModifierTime=function() return 0 end,
+        GetHP=function() return 0.65 end, GetMP=function() return 1 end, GetProperTarget=no,
+        IsValid=function(u) return u==ward and u.visible end, IsValidHero=no, IsValidBuilding=function(u) return u==tower end,
+        IsInRange=function(u,v,r) return math.abs(u.x-v.x)<=r end, GetSideLaneYieldPoint=nil,
+        ShouldPreserveCoreFightTrade=yes}
+    local env=setmetatable({GetBot=function() return hero end, GetTeam=hero.GetTeam,
+        GetOpposingTeam=function() return 3 end, GetAncient=no, GetDroppedItemList=empty,
+        GetUnitList=function() return {ward,tower} end, GetScriptDirectory=function() return 'bots' end,
+        require=function(name) return name:find('jmz_func') and j or {} end,
+        BOT_MODE_DESIRE_VERYHIGH=0.9, BOT_MODE_DESIRE_NONE=0}, {__index=_G})
+    setfenv(assert(loadfile('bots/mode_retreat_generic.lua')),env)()
+    assert(env.GetDesire()==0.9, 'visible tower and serpent wards focusing the same hero trigger withdrawal')
+    tower.target=ward
+    assert(env.GetDesire()==0, 'a tower shooting another unit does not add damage')
+    tower.target, ward.visible = hero, false
+    assert(env.GetDesire()==0, 'a ward in fog does not add damage')
+end
+
+do
+    local f=assert(io.open('bots/ability_item_usage_generic.lua','rb'))
+    local src=f:read('*a'); f:close()
+    local first=assert(src:find('function X.TraceDefenseMovement',1,true))
+    local last=assert(src:find('function AbilityUsageThink()',first,true))
+    local state={mode=1, attack=0, x=0}
+    local logs={}
+    local unit={GetLocation=function() return state.x end, GetLastAttackTime=function() return state.attack end,
+        GetActiveMode=function() return state.mode end, GetCurrentActionType=function() return 0 end,
+        GetAttackTarget=function() end, GetNearbyLaneCreeps=empty, IsChanneling=no}
+    local env=setmetatable({bot=unit, botName='test', X={}, J={IsDefending=yes, GetLocationToLocationDistance=gap},
+        print=function(line) logs[#logs+1]=line end}, {__index=_G})
+    setfenv(assert(loadstring(src:sub(first,last-1))),env)()
+    for t=0,20 do
+        state.x=t%2*100
+        if t==7 then state.mode=2 end
+        env.X.TraceDefenseMovement(t)
+    end
+    assert(#logs==2 and logs[2]:find('since=0.00',1,true) and logs[2]:find('travel=2000 net=0',1,true))
+    state.attack=21
+    env.X.TraceDefenseMovement(21)
+    assert(#logs==3 and logs[3]:find('auto-resumed',1,true))
+end

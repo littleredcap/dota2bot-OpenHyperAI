@@ -85,6 +85,7 @@ local function fixture(opts)
             local x = opts.approach and 7900 + i * 15 or 6450 + i * 15
             creeps[#creeps+1] = {x=x, IsCreep=yes, IsAncientCreep=no,
                 GetLocation=function() return loc(x) end, GetAttackTarget=function() end,
+                GetExtrapolatedLocation=function(_, seconds) return loc(x-300*seconds) end,
                 GetHealth=function() return opts.bigWave and 400 or 200 end,
                 GetCurrentMovementSpeed=function() return 300 end,
                 GetUnitName=function() return opts.bigWave and i == 6 and 'npc_dota_badguys_siege'
@@ -1014,6 +1015,53 @@ do
 end
 
 do
+    local opts = {farmBot=1, farmPosition=1, time=1250, route=true, supportWave=true, waveOwner=true}
+    local _, _, members, orders, _, farm, _, j = fixture(opts)
+    local bot, other = members[1], members[2]
+    j.IsFarming = function(ally) return ally == other end
+    other.x = bot.x + 400
+    assert(farm.GetDesire() == 0.62, 'the closer of two available cores can collect an unscheduled wave')
+    farm.Think()
+    assert(bot.ohaWaveClaim and orders[#orders] == 'attack', 'the attack uses the same owner as the desire')
+    local baseScan = bot.GetNearbyLaneCreeps
+    local last = baseScan(bot, 900, true)[1]
+    local function atOffset(offset)
+        local x = bot.x + offset
+        return setmetatable({x=x, GetLocation=function() return {x=x,y=0} end}, {__index=last})
+    end
+    local remote, sibling = atOffset(990), atOffset(710)
+    local remaining = {sibling, last}
+    bot.GetNearbyLaneCreeps = function(unit, radius, enemy)
+        if enemy then return remaining end
+        return baseScan(unit, radius, false)
+    end
+    farm.AdvanceTime(1.25)
+    assert(farm.GetDesire() == 0.62 and bot.farmLocation.x == last.x, 'keep the reachable sibling when the first of two creeps is beyond reach')
+    farm.Think()
+    assert(bot.ohaWaveClaim and orders[#orders] == 'attack')
+    farm.AdvanceTime(1.25)
+    remaining = {last}
+    assert(farm.GetDesire() == 0.62, 'finish the remaining nearby creep of a claimed pack')
+    farm.Think()
+    farm.AdvanceTime(1)
+    remaining = {remote, sibling}
+    assert(farm.GetDesire() ~= 0.62, 'a former claim does not send the collector after two out-of-reach creeps')
+    bot.GetNearbyLaneCreeps, opts.supportWave, opts.farmWave = baseScan, false, true
+    assert(farm.GetDesire() == 0.62)
+    other.x = bot.x + 100
+    farm.Think()
+    assert(not bot.ohaWaveClaim and orders[#orders] == 'cancel', 'yield when the closer core is available')
+    opts.supportWave = true
+    j.GetPostFightDuty = function(hero) if hero == other then return 'cover' end end
+    assert(farm.GetDesire() == 0.62, 'a new defensive assignment releases the wave before the other core changes active mode')
+    farm.Think()
+    assert(bot.ohaWaveClaim and orders[#orders] == 'attack')
+    opts.laneThreat = true
+    farm.Think()
+    assert(not bot.ohaWaveClaim and orders[#orders] == 'cancel', 'a new threat still cancels the single-wave claim')
+end
+
+do
     local opts = {farmBot = 1, farmPosition = 2, route = true, time = 617,
         laning = true, direct = true, farmLevel = 7, farmNetWorth = 2800, waveClaimed = true}
     local _, _, members, orders, lane, farm = fixture(opts)
@@ -1803,6 +1851,30 @@ end
 print('PASS: post-fight allies share a safe wave without abandoning base defense')
 
 do
+    local opts = {postFight=true, conversion=true, conversionCore=1, x=5040,
+        allyCount=4, enemyAliveAtStart=3, fightWaves={[2]=6830}, captureTargets=true}
+    local push, _, members, orders, lane = fixture(opts)
+    same(push.GetPushDesire(members[1], lane.Mid), 0.84, 'four versus three can recover a nearby visible wave')
+    push.PushThink(members[1], lane.Mid)
+    assert(orders[#orders].x == 5450, 'limited local advantage authorizes a wave attack')
+    members[1].GetAttackTarget = function() return {IsHero=function() return true end} end
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.84, 'do not replace a core attacking a visible hero')
+    members[1].GetAttackTarget = function() return nil end
+    opts.conversionFog = true
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.88, 'no tower rally from the smaller advantage')
+    opts.conversionFog, opts.postFightEnemyAlive = false, 4
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.84, 'regroup once enemy numbers recover')
+end
+
+do
+    local opts = {postFight=true, x=6550, allyCount=5, enemyAliveAtStart=3,
+        fightWaves={[2]=6830}, reinforcementWindow=12}
+    local push, _, members, _, lane = fixture(opts)
+    for _, ally in ipairs(members) do ally.damage = 0 end
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.88, 'zero building damage cannot finish a tower')
+end
+
+do
     local _, defend, members, orders, lane, _, buildings, jmz, advance = fixture({outerSiege=true, highDefend=true})
     local bot = members[1]
     local siege = {tower=buildings.outerTower, count=3, waveSize=2, eta=6, score=12, towerHP=1}
@@ -1821,6 +1893,120 @@ do
     bot.GetLevel = function() return 2 end -- Isolate withdrawal from the unrelated ordinary tower path.
     assert(defend.GetDefendDesire(bot, lane.Mid) ~= 0.96 and bot.ohaHighGroundResponse == nil,
         'a dissipated group is not an emergency')
+end
+
+do
+    local _, defend, members, orders, lane, _, buildings, j, advance = fixture({
+        direct=true, outerSiege=true, highDefend=true, captureTargets=true,
+    })
+    local bot, tower, other = members[3], buildings.outerTower, buildings.counterTower
+    local castPoint, screenPoint = {x=tower.x-350,y=0}, {x=tower.x-550,y=0}
+    local plan = {lane=lane.Mid, building=tower, hold=screenPoint, primary={hero=bot,reach=950,staging=castPoint}}
+    local role, otherHit, safe = 'clear', true, true
+    local getBuilding = defend.GetFurthestBuildingOnLane
+    defend.GetFurthestBuildingOnLane = function(ln)
+        if ln==lane.Top then return {other,1,3} end
+        return getBuilding(ln)
+    end
+    local siege={tower=tower,count=3,waveSize=3,eta=2,score=18,towerHP=0.8,underAttack=true}
+    j.GetOuterTowerThreat = function(b)
+        if b==tower then return siege end
+        return {tower=b,count=1,waveSize=2,eta=2,score=2,towerHP=0.8,underAttack=otherHit}
+    end
+    j.GetPostFightDuty = function() return role,plan end
+    j.GetOuterTowerResponse = function() return true,{} end
+    j.GetEnemiesNearLoc, j.GetLastSeenEnemiesNearLoc = function() return {} end, function() return {} end
+    j.AdjustLocationWithOffsetTowardsFountain = function(point,offset) return {x=point.x-offset,y=0} end
+    j.CanCommitToLaneTeleport = function() return safe end
+    for _=1,3 do
+        same(defend.GetDefendDesire(bot,lane.Mid),0.96,'keep responding to an active high-ground siege')
+        assert(bot.ohaHighGroundResponse.stage==castPoint, 'a renewed group rally must retain the assigned casting point')
+        assert(bot.ohaHighGroundResponse.reach==950, 'use the reach of the selected wave-clear ability')
+        advance(4)
+    end
+    role='cover'
+    defend.GetDefendDesire(bot,lane.Mid)
+    assert(bot.ohaHighGroundResponse.stage==screenPoint and bot.ohaHighGroundResponse.cover,
+        'the designated screen accompanies the clearer')
+    safe=false
+    defend.GetDefendDesire(bot,lane.Mid)
+    assert(bot.ohaHighGroundResponse.stage~=screenPoint,'do not advance to a newly unsafe assigned point')
+    safe=true
+    plan={lane=lane.Top,building=other,hold={x=other.x-550,y=0},primary={hero=bot,reach=950}}
+    role='clear'
+    same(defend.GetDefendDesire(bot,lane.Mid),0.12,'an assigned defender stays available to the other attacked high ground')
+    same(defend.GetDefendDesire(bot,lane.Top),0.96,'take the simultaneous high-ground assignment')
+    assert(bot.ohaHighGroundResponse.tower==other)
+    otherHit=false
+    same(defend.GetDefendDesire(bot,lane.Top),0.12,'a quiet lane does not pull a defender from an active group siege')
+    same(defend.GetDefendDesire(bot,lane.Mid),0.96,'return to the current siege')
+    assert(bot.ohaHighGroundResponse.stage.x==tower.x-1450 and not bot.ohaHighGroundResponse.cover)
+
+    bot.x=tower.x-300
+    local wave={x=tower.x+100,visible=true,CanBeSeen=function(self) return self.visible end,
+        GetAttackTarget=function() return tower end}
+    bot.GetNearbyLaneCreeps=function() return {wave} end
+    j.GetHighGroundWalkPoint=function(_,stage) return stage end
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders]==wave,'take a safe shot at the attacking wave before walking back to the deep rally')
+    bot.GetAttackTarget=function() return wave end
+    local count=#orders
+    defend.DefendThink(bot,lane.Mid)
+    assert(#orders==count,'let the attack land without restarting it')
+    bot.GetAttackTarget=function() return nil end
+    wave.visible=false
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders]==bot.ohaHighGroundResponse.stage,'do not shoot a creep the defender cannot see')
+    wave.visible,safe=true,false
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders]==bot.ohaHighGroundResponse.stage,'return to protection when the present firing point is unsafe')
+    bot.IsCastingAbility=function() return true end
+    count=#orders
+    defend.DefendThink(bot,lane.Mid)
+    assert(#orders==count,'neither the rally nor an in-range wave interrupts a cast')
+
+    role,plan,safe=nil,{lane=lane.Mid,building=tower,hold=screenPoint},true
+    local assignment, calls = {reach=975,cover=false}, 0
+    j.GetOuterTowerResponse=function(_,threat,_,highGround)
+        assert(threat==siege and highGround)
+        calls=calls+1
+        return true,{[bot:GetPlayerID()]=assignment}
+    end
+    defend.GetDefendDesire(bot,lane.Mid)
+    assert(calls==1 and bot.ohaHighGroundResponse.stage==screenPoint and bot.ohaHighGroundResponse.reach==975,
+        'use the siege clearer when the immediate coverage deadline left the attacked high ground without one')
+    assignment=nil
+    defend.GetDefendDesire(bot,lane.Mid)
+    assert(bot.ohaHighGroundResponse.stage.x==tower.x-1450,'a reserve stays back when the siege planner has no job for it')
+    plan.primary={hero=members[4],reach=900}
+    calls=0
+    defend.GetDefendDesire(bot,lane.Mid)
+    assert(calls==0,'never recruit another clearer over an occupied shared assignment')
+    plan.primary=nil
+    siege.underAttack=false
+    defend.GetDefendDesire(bot,lane.Mid)
+    assert(calls==0,'an approaching group alone does not move reserves to the tower')
+
+    local removed={IsNull=function() return true end,IsAlive=function() error('queried destroyed tower') end}
+    j.Utils.GetCachedVars=function(key)
+        if key:find('FurthestBuildingOnLane:',1,true) then return {removed,1,3} end
+    end
+    assert(getBuilding(lane.Mid)[1]==tower,'discard a removed high-ground tower from the one-second building cache')
+    j.Utils.IsBotThinkingMeaningfulAction=function() return true end
+    bot.ohaHighGroundResponse.tower=removed
+    defend.DefendThink(bot,lane.Mid)
+    assert(bot.ohaHighGroundResponse==nil,'release the old response immediately if its tower falls between desire and think')
+
+    j.GetOuterTowerThreat=function(b)
+        if b==other then return {tower=b,count=3,waveSize=3,eta=1,score=30,towerHP=1,underAttack=true} end
+        return siege
+    end
+    defend.GetBaseCreepResponse=function() return true end
+    bot.ohaHighGroundResponse={tower=tower,lane=lane.Mid,expires=9999}
+    same(defend.GetDefendDesire(bot,lane.Mid),0.97,'switch the selected defender to the Ancient')
+    assert(not bot.ohaHighGroundResponse,'clear the prior high-ground action and TP destination when the Ancient takes priority')
+    same(defend.GetDefendDesire(bot,lane.Top),0.12,'a side-lane evaluation cannot overwrite the current Ancient assignment')
+    assert(not bot.ohaHighGroundResponse)
 end
 
 do
@@ -1862,6 +2048,76 @@ end
 print('PASS: 9107324797 lone mid cart claims one defender and receives an attack from a safe route')
 
 do
+    local opts = {outerSiege=true, safeSiege=true, direct=true}
+    local _, _, members, _, lane, _, buildings, j, advance = fixture(opts)
+    local tower = buildings.outerTower
+    local env = getfenv(j.GetOuterTowerThreat)
+    local blocker = {}
+    local function laneUnit(offset, name)
+        local unit = {x=tower.x + offset, target=blocker, visible=true}
+        function unit:GetLocation() return {x=self.x,y=0} end
+        function unit:GetUnitName() return name end
+        function unit:GetAttackTarget() return self.target end
+        function unit:GetHealth() return 350 end
+        function unit:GetCurrentMovementSpeed() return 300 end
+        function unit:CanBeSeen() return self.visible end
+        return unit
+    end
+    local cart = laneUnit(2850, 'npc_dota_badguys_siege')
+    local melee = laneUnit(2750, 'npc_dota_creep_badguys_melee')
+    env.GetUnitList = function(kind) return kind == env.UNIT_LIST_ENEMY_CREEPS and {cart,melee} or {} end
+    local laneTrack = env.GetAmountAlongLane
+    env.GetAmountAlongLane = function(candidate, point)
+        if candidate == lane.Mid and point.x > tower.x then return {amount=point.x/10000, distance=1600} end
+        return laneTrack(candidate, point)
+    end
+    for second=0,128 do
+        local sight = j.GetOuterTowerThreat(tower, lane.Top)
+        assert(sight.score==0 and sight.waveSize==0 and not sight.underAttack,
+            'a cart fighting another wave far from the tower cannot repeatedly renew its ETA')
+        advance(1)
+    end
+    assert(not j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower),
+        'an empty outer defense may not spend a midgame TP')
+    assert(j.GetOuterTowerThreat(tower,lane.Mid).waveSize==0,
+        'another lane ending at this same base building sees no approaching wave')
+    cart.target, melee.target = nil, nil
+    cart.x, melee.x = cart.x-300, melee.x-300
+    advance(1)
+    local moving = j.GetOuterTowerThreat(tower, lane.Top)
+    assert(moving.score>0 and moving.waveSize==2 and moving.eta==6,
+        'observed forward progress survives an interleaved scan of the same building on another lane')
+    assert(j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower),
+        'a credible uncovered wave still permits a timely response')
+    opts.incoming = {{playerid=members[2]:GetPlayerID(), location=tower:GetLocation(), time_remaining=2}}
+    assert(not j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower),
+        'a second optional TP may not follow a teammate already landing at the unescorted wave')
+    opts.incoming = {}
+    local front = {lane=lane.Top, building=tower, waveDefense=true, primary={hero=members[1], id=1}}
+    j.GetPostFightCoverage = function() return front end
+    assert(j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower))
+    assert(not j.CanTakeLaneDefenseTeleport(members[2], lane.Top, tower:GetLocation(), tower),
+        'an unassigned actor does not duplicate a filled wave-defense task')
+    front.lane = lane.Bot
+    assert(not j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower),
+        'a routine lane TP cannot take the assigned defender to a different front')
+    advance(1)
+    cart.x, melee.x = cart.x+250, melee.x+250
+    assert(j.GetOuterTowerThreat(tower,lane.Top).waveSize==0, 'a retreating wave stops counting')
+    cart.visible, melee.visible = false, false
+    advance(1)
+    assert(j.GetOuterTowerThreat(tower,lane.Top).waveSize==0, 'never infer progress through fog')
+    cart.visible, cart.target, cart.x = true, tower, tower.x+750
+    advance(1)
+    assert(j.GetOuterTowerThreat(tower,lane.Top).siegeAttacking,
+        'an actual tower attack needs no earlier movement sample')
+    local ancient = buildings.ourAncient
+    j.GetLastSeenEnemiesNearLoc = function() return {6} end
+    assert(j.CanTakeLaneDefenseTeleport(members[1], lane.Mid, ancient:GetLocation(), ancient),
+        'an enemy at the Ancient still permits the emergency fountain return')
+end
+
+do
     local opts = {postFight=true, direct=true, outerSiege=true, safeSiege=true, captureTargets=true, time=2100, farmBot=1}
     local push, defend, members, _, lane, farm, buildings, j = fixture(opts)
     local plan={building=buildings.outerTower,hold=buildings.outerTower:GetLocation(),deadline=6,needsBackup=true,
@@ -1871,6 +2127,8 @@ do
     assert(defend.GetDefendDesire(members[1],lane.Mid)==0.83,'reserve clearer through defense entry point')
     assert(members[1].ohaMidCover.staging==plan.hold,'use the planned safe point instead of choosing a different stance at execution')
     assert(defend.GetDefendDesire(members[2],lane.Mid)==0.80,'reserve distinct backup through same entry point')
+    plan.lane, plan.waveDefense = lane.Mid, true
+    assert(defend.GetDefendDesire(members[3],lane.Mid)==0.12,'a filled wave-defense task leaves the third hero free')
     assert(push.GetPushDesire(members[1],lane.Top)==0 and push.GetPushDesire(members[2],lane.Top)==0,
         'push cannot steal the live coverage roles')
     assert(farm.GetDesire()==0,'farming also respects the assigned clearing duty')
