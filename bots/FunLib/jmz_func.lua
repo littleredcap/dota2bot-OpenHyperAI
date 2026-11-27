@@ -1734,6 +1734,33 @@ function J.GetSideLanePressureStep(bot, enemies, tower)
     end
 end
 
+-- Take a clean finishing hit between last-hit windows, never a chase.
+function J.GetSideLaneFinishTarget(bot, enemies, tower)
+    local lane = bot:GetAssignedLane()
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or #enemies == 0 or #enemies > 2
+        or not J.IsInLaningPhase(bot) or J.GetHP(bot) < 0.65 or J.IsRetreating(bot)
+        or bot:WasRecentlyDamagedByCreep(1.5) or J.IsLaningUnderPressure(bot, enemies, tower) then return nil end
+    if not J.IsValidBuilding(tower) then
+        tower = GetTower(GetOpposingTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+    end
+    if J.IsValidBuilding(tower) and J.IsInRange(bot, tower, 900) then return nil end
+    local hostile = #bot:GetNearbyLaneCreeps(650, true)
+    if hostile >= 4 and #bot:GetNearbyLaneCreeps(750, false) < hostile - 1 then return nil end
+    local best, lowest = nil, math.huge
+    for _, enemy in ipairs(enemies) do
+        if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
+            and J.IsInRange(bot, enemy, bot:GetAttackRange())
+            and not J.CannotBeKilled(bot, enemy) and not enemy:HasModifier('modifier_item_blade_mail_reflect')
+            and not enemy:HasModifier('modifier_templar_assassin_refraction_absorb')
+            and not enemy:HasModifier('modifier_medusa_mana_shield')
+            and not (GetHeightLevel(bot:GetLocation()) < GetHeightLevel(enemy:GetLocation()))
+            and enemy:GetHealth() < lowest and J.CanKillTarget(enemy, bot:GetAttackDamage() * 0.85, DAMAGE_TYPE_PHYSICAL) then
+            best, lowest = enemy, enemy:GetHealth()
+        end
+    end
+    return best
+end
+
 function J.GetLaningHarassTarget(bot, enemies, tower, enemyCreepCount)
     local range = bot:GetAttackRange()
     local core = J.IsCore(bot)

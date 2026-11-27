@@ -36,7 +36,8 @@ local function fixture(core, overridden, startMid)
         GetAttackCombatProficiency = function() return 1 end,
         GetAttackDamage = function() return state.enemyDamage or 50 end,
         GetLastAttackTime = function() return state.enemyLastAttackTime or state.time - 1 end}
-    enemy.IsInvulnerable = no
+    enemy.IsInvulnerable, enemy.HasModifier = no, no
+    enemy.GetHealth = function() return state.enemyHealth or 1000 end
     local tower = {x = 700, GetAttackTarget = function() return state.tower and bot or nil end}
     local openingTower = {x = 1600, IsAlive = yes, GetLocation = function(self) return self.x end}
     bot.GetPlayerID = function() return state.playerID or 1 end
@@ -89,7 +90,8 @@ local function fixture(core, overridden, startMid)
         IsSuspiciousIllusion = no, IsChasingTarget = no, IsThereNonSelfCoreNearby = no,
         GetHP = function(unit) return unit == bot and state.hp or (unit == partner and state.partnerHP)
             or (unit.IsCreep and state.deniable and 0.4 or 0.75) end,
-        CanNotUseAction = no, CanBeAttacked = yes,
+        CanNotUseAction = no, CanBeAttacked = yes, CannotBeKilled = function() return state.enemyProtected end,
+        CanKillTarget = function(unit, damage) return unit:GetHealth() <= damage end,
         IsAttacking = function(unit) return unit == bot and state.attacking or unit == enemy and state.enemyWindup end,
         GetAttackProDelayTime = function(unit) return unit == enemy and state.enemyEta or 0.3,
             unit == enemy and state.enemyRelease or 0.18, unit == bot and state.attackWait or 0 end,
@@ -841,3 +843,18 @@ do
     local safe = env.J.GetLaningCreepPosition(bot, env.LANE_BOT, {creep}, nil, {enemy,rival})
     assert(safe and safe < bot.x, 'a zoned melee hero waits behind the wave instead of walking back into both opponents')
 end
+
+do
+    local state, mode, creep, enemy, bot = fixture(true, false)
+    state.enemy, state.enemyHealth, state.creepHP = true, 30, 250
+    assert(mode.J.GetSideLaneFinishTarget(bot, {enemy}) == enemy)
+    mode.GetDesire()
+    expect(state, mode, 'attack', enemy)
+    state.creepHP = 30
+    expect(state, mode, 'attack', creep)
+    state.creepHP, state.enemyProtected = 250, true
+    assert(mode.J.GetSideLaneFinishTarget(bot, {enemy}) == nil, 'do not gamble into protection')
+    state.enemyProtected, enemy.x = false, 500
+    assert(mode.J.GetSideLaneFinishTarget(bot, {enemy}) == nil, 'do not chase a low enemy out of reach')
+end
+print('PASS: take an immediate safe finishing hit without dropping a real last hit')

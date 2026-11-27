@@ -135,6 +135,8 @@ function GetDesire()
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
 		if not local_mode_laning_generic
 			and J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
+		if not local_mode_laning_generic
+			and J.GetSideLaneFinishTarget(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
 		local deny, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if deny ~= nil or reserveDeny then return 0.7 end
 		if not local_mode_laning_generic then
@@ -257,6 +259,11 @@ local function ThinkLane()
 	if firingPosition ~= nil and (urgentApproach or J.IsCore(bot)) then
 		bot:Action_MoveToLocation(firingPosition)
 		return
+	end
+
+	if not J.IsFinishingLaningAttack(bot, attackTarget) then
+		local finish = J.GetSideLaneFinishTarget(bot, nInRangeEnemy, enemyTower)
+		if finish ~= nil then bot:Action_AttackUnit(finish, true); return end
 	end
 
 	-- Real last hits remain first. Pressure the returning offlaner before an
