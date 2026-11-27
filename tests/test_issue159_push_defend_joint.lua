@@ -6,7 +6,7 @@ local function fixture(opts)
     local function empty() return {} end
     local function loc(x) return {x=x,y=0} end
     local function building(x,hp)
-        return {x=x, IsAlive=yes, IsBuilding=yes, HasModifier=no, GetAttackTarget = function() return opts.towerTarget end,
+        return {x=x, IsAlive=yes, IsBuilding=yes, CanBeSeen=no, HasModifier=no, GetAttackTarget = function() return opts.towerTarget end,
             GetLocation=function() return loc(x) end, GetHealth=function() return hp end,
             GetUnitName=function() return 'npc_dota_tower_' .. x end,
             GetMaxHealth=function() return 1000 end, GetActualIncomingDamage=function(_, dmg) return dmg * 0.65 end}
@@ -876,6 +876,29 @@ do
     same(push.GetPushDesire(bot, lane.Mid), 0.8, 'a healthy ranged hero can still hit while the wave tanks after its ally leaves')
     opts.towerTarget = nil
     same(push.GetPushDesire(bot, lane.Mid), 0, 'yield when neither the allied tank nor a wave attacking the tower is confirmed')
+end
+
+do
+    local opts = {time=360, x=5500, direct=true, outerSiege=true, localAllies=true,
+        wave=true, safeSiege=true, captureTargets=true}
+    local push, _, members, orders, lane, _, buildings, jmz = fixture(opts)
+    local bot, tower = members[1], buildings.outerTower
+    local hp = 300
+    local tank = {x=tower.x, GetTeam=function() return 2 end, GetHealth=function() return hp end}
+    local tank2 = {x=tower.x+50}
+    tower.CanBeSeen = function() return true end
+    tower.GetAttackDamage = function() return 105 end
+    bot.GetAttackRange = function() return 650 end
+    bot.GetNearbyLaneCreeps = function() return {tank, tank2} end
+    jmz.IsKeyWordUnit = function(key, unit) return key == 'npc_dota_creep_' and unit == tank end
+    opts.towerTarget = tank
+    same(push.GetPushDesire(bot, lane.Mid), 0.8, 'ranged mid can take one covered early shot')
+    assert(bot.ohaOuterTowerPush and bot.ohaOuterTowerPush.earlyMidChip)
+    push.PushThink(bot, lane.Mid)
+    assert(orders[#orders] == tower)
+    hp = 40
+    push.PushThink(bot, lane.Mid)
+    assert(not bot.ohaOuterTowerPush, 'cancel the scoped chip when creep cover is about to die')
 end
 
 do

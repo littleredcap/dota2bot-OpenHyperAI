@@ -201,8 +201,8 @@ function ____exports.GetPushDesireHelper(bot, lane)
             return 0.88
         end
     end
-    local earlyMidChip = lane == LANE_MID and currentTime >= 240 and currentTime <= 780
-        and bot:GetAssignedLane() == LANE_MID and bot:GetAttackRange() >= 550
+    local earlyMidChip = lane == Lane.Mid and currentTime >= 240 and currentTime <= 780
+        and bot:GetAssignedLane() == Lane.Mid and bot:GetAttackRange() >= 550
     if (earlyMidChip or nH == 0 or currentTime > StartToPushTime) and not outsideCoreLane and not recentDefendPing
         and not criticalBaseCreeps and not baseDefenseLimited and not activeDefense then
         local opportunity = GetOuterTowerOpportunity(bot, lane, gameState)
@@ -784,12 +784,12 @@ end
 -- A brief mid T1 attack behind a living wave is not a general push.
 local function GetEarlyMidTowerChip(bot, lane, gameState)
     local now = gameState.currentTime
-    if lane ~= LANE_MID or now < 240 or now > 780
-        or bot:GetAssignedLane() ~= LANE_MID or bot:GetAttackRange() < 550
+    if lane ~= Lane.Mid or now < 240 or now > 780
+        or bot:GetAssignedLane() ~= Lane.Mid or bot:GetAttackRange() < 550
         or not jmz.IsCore(bot) or jmz.GetHP(bot) < 0.65 or bot:IsDisarmed()
         or jmz.IsRetreating(bot) or bot:WasRecentlyDamagedByAnyHero(2)
         or bot:WasRecentlyDamagedByTower(2) then return end
-    local tower = GetTower(gameState.enemyTeam, TOWER_MID_1)
+    local tower = GetTower(gameState.enemyTeam, Tower.Mid1)
     if not jmz.IsValidBuilding(tower) or not tower:CanBeSeen()
         or not jmz.IsInRange(bot, tower, bot:GetAttackRange())
         or tower:HasModifier('modifier_fountain_glyph') or ____exports.HasBackdoorProtect(tower) then return end

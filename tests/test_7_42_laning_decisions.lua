@@ -466,7 +466,18 @@ do
     tower.x = enemy.x + 560
     assert(not j.GetSideLanePressureTarget(bot, {enemy}, tower, 450), 'do not pressure within enemy tower range')
     enemy.x = 640
-    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'no walk-up to attack')
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'do not submit a long attack order')
+    local allyCreep = {x = 420}
+    state.allies = {allyCreep, allyCreep}
+    j.VectorTowards = function(origin, _, step) return origin + step end
+    enemy.x = 550
+    local step = j.GetSideLanePressureStep(bot, {enemy}, nil)
+    assert(step == 125, 'step into range while the opponent contests a covered wave')
+    state.partnerRetreat = true
+    assert(not j.GetSideLanePressureStep(bot, {enemy}, nil), 'do not advance when the core leaves')
+    state.partnerRetreat = false
+    enemy.x = 760
+    assert(not j.GetSideLanePressureStep(bot, {enemy}, nil), 'do not chase after the opponent leaves the wave')
     enemy.x = 260
     state.allies = {creep}
     assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'no pressure without a friendly wave')
