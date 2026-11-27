@@ -1229,6 +1229,12 @@ export function DefendThink(bot: Unit, lane: Lane) {
 
     // Prefer nearest valid enemy hero within range (cheap local queries first)
     const enemiesAtHub = jmz.GetEnemiesNearLoc(hub, SEARCH_RANGE_DEFAULT);
+    if (IsValidBuildingTarget(bld) && enemiesAtHub.length >= 3
+        && jmz.GetAvailableFightAllies(bot, hub, 1500) < Math.max(2, enemiesAtHub.length - 2)) {
+        // Hold behind the tower until the backline can join.
+        jmz.RunOuterTowerHold(bot, jmz.AdjustLocationWithOffsetTowardsFountain(hub, 650), attackRange, false);
+        return;
+    }
     if (enemiesAtHub.length >= 2 && !ds.weAreStronger) {
         if (jmz.IsValidHero(enemiesAtHub[0]) && jmz.IsInRange(bot, enemiesAtHub[0], attackRange)) {
             bot.Action_AttackUnit(enemiesAtHub[0], true);

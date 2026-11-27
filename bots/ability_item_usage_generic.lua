@@ -8380,8 +8380,9 @@ local function UseGlyph()
 						if defense.waveClearGather then
 							contestCount, lateETA = contestCount + 1, math.max(lateETA, eta)
 							needed = needed or defense.waveClearNeedsGlyph
-						elseif fraction < 0.50 or threat.count >= 3 and threat.damageRate > 0
-							and tower:GetHealth() / threat.damageRate <= eta + 3 then
+						elseif (fraction < 0.50 and secondsLeft <= math.max(12, eta + 4))
+							or (fraction <= 0.20 and threat.siegeAttacking)
+							or (threat.count >= 3 and secondsLeft <= eta + 3) then
 							coverOuter = true
 						end
 					end

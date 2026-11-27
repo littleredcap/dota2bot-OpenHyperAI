@@ -6440,6 +6440,7 @@ end
 
 local function IsSiegeSummon(name)
 	return string.find(name, 'shadow_shaman_ward', 1, true) ~= nil or string.find(name, 'warlock_golem', 1, true) ~= nil
+		or string.find(name, 'wraith_king_skeleton_warrior', 1, true) ~= nil
 end
 
 function J.GetOuterTowerThreat(tower, lane)
@@ -6525,7 +6526,7 @@ function J.GetOuterTowerThreat(tower, lane)
 		watch = {health = health, time = now, damageRate = 0, lastHit = watch and watch.lastHit}
 		tower.ohaSiegeWatch = watch
 	end
-	if health < watch.health and (activeAttackers > 0 or enemyCount > 0 and waveSize > 0) then watch.lastHit = now end
+	if health < watch.health and (underAttack or enemyCount > 0 and waveSize > 0) then watch.lastHit = now end
 	local elapsed = now - watch.time
 	if elapsed >= 0.25 then
 		local damage = math.max(0, watch.health - health)

@@ -1583,6 +1583,13 @@ function ____exports.DefendThink(bot, lane)
         return
     end
     local enemiesAtHub = jmz.GetEnemiesNearLoc(hub, SEARCH_RANGE_DEFAULT)
+    if IsValidBuildingTarget(bld) and #enemiesAtHub >= 3
+        and jmz.GetAvailableFightAllies(bot, hub, 1500) < math.max(2, #enemiesAtHub - 2) then
+        -- No scripted contest was assigned: hold behind the tower instead of
+        -- letting the first melee defender start a fight before the backline.
+        jmz.RunOuterTowerHold(bot, jmz.AdjustLocationWithOffsetTowardsFountain(hub, 650), attackRange, false)
+        return
+    end
     if #enemiesAtHub >= 2 and not ds.weAreStronger then
         if jmz.IsValidHero(enemiesAtHub[1]) and jmz.IsInRange(bot, enemiesAtHub[1], attackRange) then
             bot:Action_AttackUnit(enemiesAtHub[1], true)

@@ -218,6 +218,10 @@ clearers[1] = {_defend = {waveClearTower = tierOne}, ohaOuterTowerHoldUntil = 10
     GetCurrentMovementSpeed = function() return 300 end}
 useGlyph()
 assert(glyphs == 2, 'glyph a pressured tower before it becomes unsavable if a clearer is almost there')
+damageRate = 1
+useGlyph()
+assert(glyphs == 2, 'a chipped tower and a slow ordinary wave do not warrant early Glyph')
+damageRate = 10
 clearers[1].distance = 5000
 clearers[1].GetPlayerID = function() return 4 end
 clearers[1]._defend.waveClearTeleport = {x = 550}
