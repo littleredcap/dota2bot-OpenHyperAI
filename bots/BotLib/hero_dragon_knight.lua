@@ -280,6 +280,16 @@ function X.ConsiderBreatheFire()
 			and J.GetInLocLaneCreepCount(bot, 1600, nRadius, wave.targetloc) >= 2 then
 			return BOT_ACTION_DESIRE_HIGH, wave.targetloc
 		end
+		for _, creep in ipairs(bot:GetNearbyLaneCreeps(nCastRange, true)) do
+			if J.IsValid(creep) and J.IsKeyWordUnit('_siege', creep) and creep:GetAttackTarget() == holdTower
+				and not creep:HasModifier('modifier_fountain_glyph') then
+				return BOT_ACTION_DESIRE_HIGH, creep:GetLocation()
+			end
+		end
+		local poke = J.GetMidDefensePokeTarget and J.GetMidDefensePokeTarget(bot, nCastRange - 35)
+		if poke and J.CanCastOnNonMagicImmune(poke) then
+			return BOT_ACTION_DESIRE_HIGH, poke:GetLocation()
+		end
 	end
 
 	for _, enemyHero in pairs(nEnemyHeroes) do

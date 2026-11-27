@@ -99,7 +99,8 @@ interface OuterTowerThreat {
     score: number;
 }
 declare function GetOuterTowerThreat(tower: Unit, lane: Lane): OuterTowerThreat;
-declare function GetOuterTowerResponse(location: Vector, threat: OuterTowerThreat, fallback?: Vector, highGround?: boolean): LuaMultiReturn<[boolean, Record<number, {reach: number, cover: boolean, teleport?: Vector, rally?: Vector, gather?: Vector, needsGlyph?: boolean} | undefined>]>;
+declare function GetExposedMidCover(team: Team): LuaMultiReturn<[Unit | undefined, Unit | undefined, number | undefined]>;
+declare function GetOuterTowerResponse(location: Vector, threat: OuterTowerThreat, fallback?: Vector, highGround?: boolean): LuaMultiReturn<[boolean, Record<number, {reach: number, cover: boolean, teleport?: Vector, rally?: Vector, gather?: Vector, screen?: boolean, needsGlyph?: boolean} | undefined>]>;
 declare function RunOuterTowerHold(bot: Unit, location: Vector, reach: number, cover: boolean): boolean;
 declare function RunOuterTowerContest(bot: Unit, tower: Unit, threat: OuterTowerThreat, state: {waveClearGather?: Vector, waveClearReach?: number}): boolean;
 declare function HasPendingLaningLastHit(bot: Unit): boolean;

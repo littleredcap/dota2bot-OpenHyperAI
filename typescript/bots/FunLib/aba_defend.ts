@@ -49,6 +49,7 @@ interface DefendBotState {
     waveClearRally?: Vector;
     waveClearGather?: Vector;
     waveClearNeedsGlyph?: boolean;
+    waveClearScreen?: boolean;
     waveClearTarget?: Unit;
     nextWave?: { lane: Lane; tower: Unit; reach: number; expires: number };
 }
@@ -761,6 +762,7 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         ds.waveClearRally = undefined;
         ds.waveClearGather = undefined;
         ds.waveClearNeedsGlyph = undefined;
+        ds.waveClearScreen = undefined;
         (bot as any).ohaOuterTowerHoldUntil = undefined;
     }
     const trade = (bot as any).ohaOuterTowerTrade;
@@ -798,6 +800,15 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         return 0.96;
     } else if ((bot as any).ohaHighGroundResponse?.lane === lane) {
         (bot as any).ohaHighGroundResponse = undefined;
+    }
+    if (lane === Lane.Mid && !IsBaseThreatActive()) {
+        const [guard, building, reach] = jmz.GetExposedMidCover(team);
+        if (guard === bot) {
+            (bot as any).ohaMidCover = {tower: building, reach, expires: DotaTime() + 1};
+            bot.laneToDefend = lane;
+            return 0.83 as BotModeDesire;
+        }
+        (bot as any).ohaMidCover = undefined;
     }
     const botLevel = bot.GetLevel();
     if (
@@ -975,15 +986,17 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
                     ds.waveClearRally = assignment.rally;
                     ds.waveClearGather = assignment.gather;
                     ds.waveClearNeedsGlyph = assignment.needsGlyph;
+                    ds.waveClearScreen = assignment.screen;
                     (bot as any).ohaOuterTowerTrade = undefined;
-                    if (rearTower && !assignment.cover && !assignment.gather && (assignment.rally || threat.count >= 3) && threat.waveSize > 0) {
+                    const keepNext = !assignment.gather || assignment.screen || assignment.reach >= 1050;
+                    if (rearTower && !assignment.cover && keepNext && (assignment.rally || threat.count >= 3) && threat.waveSize > 0) {
                         const march = GetUnitToUnitDistance(furthestBuilding!, rearTower) / 300;
                         ds.nextWave = { lane, tower: rearTower, reach: assignment.reach, expires: DotaTime() + math.min(22, march + 9) };
                     }
                     (bot as any).ohaOuterTowerHoldUntil = DotaTime() + 3;
                     (bot as any).laneToDefend = lane;
                     if (highGround) return 0.96 as BotModeDesire;
-                    if (assignment.gather) return 0.89 as BotModeDesire;
+                    if (assignment.gather) return (lane === Lane.Mid && buildingTier === 1 ? 0.93 : 0.89) as BotModeDesire;
                     if (assignment.rally || assignment.teleport || (threat.siege && threat.count <= 1)) return 0.84 as BotModeDesire;
                     return BotModeDesire.High;
                 } else if (!highGround) {
@@ -1135,6 +1148,12 @@ export function DefendThink(bot: Unit, lane: Lane) {
             return;
         }
         jmz.RunOuterTowerHold(bot, response.stage, bot.GetAttackRange(), false, response.stage);
+        return;
+    }
+    const guard = (bot as any).ohaMidCover;
+    if (lane === Lane.Mid && guard && now < guard.expires && !IsBaseThreatActive()
+        && ((bot as any)._ohaCreepDefenseUntil ?? -1) <= now && jmz.IsValidBuilding(guard.tower)) {
+        jmz.RunOuterTowerHold(bot, guard.tower.GetLocation(), guard.reach, false);
         return;
     }
     if (jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "defend")) return;

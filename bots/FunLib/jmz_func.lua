@@ -1401,12 +1401,18 @@ end
 -- the team-defense assignment before the ranged mid starts clearing it.
 function J.GetEarlyMidSiegeDefense(bot)
     local now = DotaTime()
-    if now < 4 * 60 or now > 13 * 60 or bot:GetAssignedLane() ~= LANE_MID then return nil end
+    if now < 4 * 60 or now > 16 * 60 or bot:GetAssignedLane() ~= LANE_MID then return nil end
     local tower = GetTower(bot:GetTeam(), TOWER_MID_1)
     if not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 2200) then return nil end
     local threat = J.GetOuterTowerThreat(tower, LANE_MID)
     if threat.siegeAttacking or (threat.siege and threat.waveSize >= 2 and threat.eta <= 7) then
         return tower
+    end
+    if threat.middleGroup and J.GetHP(bot) >= 0.55 and not J.IsRetreating(bot) then
+        local fountain = J.GetTeamFountain()
+        if GetUnitToLocationDistance(bot, fountain) <= GetUnitToLocationDistance(tower, fountain) + 250 then
+            return tower
+        end
     end
 end
 
@@ -6762,7 +6768,8 @@ function J.GetOuterTowerThreat(tower, lane)
 	local advancingEscort = false
 	local visibleAdvance = 0
 	for _, id in ipairs(J.GetLastSeenEnemiesNearLoc(hub, 1600)) do seen[id], near[id] = true, true end
-	for _, enemy in ipairs(J.GetEnemiesNearLoc(hub, 3200)) do
+	local forwardRange = lane == LANE_MID and string.find(tower:GetUnitName(), 'tower1_mid', 1, true) and 3800 or 3200
+	for _, enemy in ipairs(J.GetEnemiesNearLoc(hub, forwardRange)) do
 		local id = enemy:GetPlayerID()
 		local attacking = enemy:GetAttackTarget() == tower
 		local advancing = onApproach(enemy:GetLocation()) and enemy:IsFacingLocation(hub, 50)
@@ -6937,6 +6944,46 @@ local function GetWaveClearScore(hero, travelTime)
 	return best, bestReach, bestDamage
 end
 
+-- Once mid high ground is open, retain one nearby wave-clear hero after a won
+-- fight. This leaves the rest free to take a real objective without all five
+-- crossing the river at the same time.
+function J.GetExposedMidCover(team)
+	local now = DotaTime()
+	if now < 15 * 60 or J.IsValidBuilding(GetTower(team, TOWER_MID_3)) then return nil end
+	local key = 'ExposedMidCover:' .. tostring(team)
+	local cached = J.Utils.GetCachedVars(key, 0.35)
+	if cached ~= nil then return cached.hero, cached.building, cached.reach end
+	local result = {}
+	local building = GetBarracks(team, BARRACKS_MID_MELEE)
+	if not J.IsValidBuilding(building) then building = GetBarracks(team, BARRACKS_MID_RANGED) end
+	if J.IsValidBuilding(building) then
+		local hub = building:GetLocation()
+		local sight = J.GetOuterTowerThreat(building, LANE_MID)
+		local resetWindow = J.GetNumOfAliveHeroes(true) <= 3 and J.GetNumOfAliveHeroes(false) >= 3
+		if sight.waveSize >= 2 and sight.eta <= 8 or resetWindow then
+			local hold = J.AdjustLocationWithOffsetTowardsFountain(hub, 750)
+			if #J.GetEnemiesNearLoc(hold, 800) < 2 then
+				local best = -math.huge
+				for _, ally in ipairs(J.GetAlliesNearLoc(hold, 2300)) do
+					if J.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and J.GetHP(ally) >= 0.55
+						and not J.IsRetreating(ally) and not J.IsDisabled(ally)
+						and not ally:HasModifier('modifier_teleporting') and not ally:IsChanneling() then
+						local arrival = GetUnitToLocationDistance(ally, hold) / math.max(250, ally:GetCurrentMovementSpeed())
+						local score, reach, damage = GetWaveClearScore(ally, arrival)
+						score = score - arrival * 20 - (J.GetPosition(ally) == 1 and 100 or 0)
+						if damage > 0 and (score > best or score == best and ally:GetPlayerID() < result.hero:GetPlayerID())
+							and J.CanCommitToLaneTeleport(ally, hold, true, 700) then
+							result, best = {hero = ally, building = building, reach = reach}, score
+						end
+					end
+				end
+			end
+		end
+	end
+	J.Utils.SetCachedVars(key, result)
+	return result.hero, result.building, result.reach
+end
+
 local function GetOuterTowerHoldPoint(hub, reach, cover)
 	local offset = cover and 650 or math.max(250, math.min(reach >= 1100 and 800 or 600, reach - 400))
 	local hold = J.AdjustLocationWithOffsetTowardsFountain(hub, offset)
@@ -7045,7 +7092,62 @@ local function GetOuterTowerFightPlan(location, threat, fallback)
 			end
 		end
 	end
-	if not CanTakeTowerFight(threat, allies) then return nil end
+	if not CanTakeTowerFight(threat, allies) then
+		-- Separate buying time from taking a fight. A long-range clearer and
+		-- nearby cover can defend mid without claiming that three can beat five.
+		if threat.lane ~= LANE_MID or threat.waveSize < 2 or #J.GetEnemiesNearLoc(gather, 550) >= 2 then return nil end
+		local ranked = {}
+		for _, candidate in ipairs(allies) do
+			local ally = candidate.hero
+			if ally:IsBot() and candidate.eta <= window then
+				local score, reach, damage = GetWaveClearScore(ally, candidate.eta)
+				local save = J.CanCastAbility(J.GetItem2(ally, 'item_force_staff'))
+					or J.CanCastAbility(J.GetItem2(ally, 'item_glimmer_cape'))
+				local hold = GetOuterTowerHoldPoint(location, reach, false)
+				if J.CanCommitToLaneTeleport(ally, hold, true, 650) then
+					ranked[#ranked + 1] = {hero = ally, eta = candidate.eta, teleport = candidate.teleport,
+						reach = reach, damage = damage, score = score - candidate.eta * 25,
+						cover = (save and 120 or 0) - candidate.eta * 35}
+				end
+			end
+		end
+		table.sort(ranked, function(a, b) return a.score > b.score or a.score == b.score and a.hero:GetPlayerID() < b.hero:GetPlayerID() end)
+		local plans, count = {}, 0
+		for _, row in ipairs(ranked) do
+			if row.reach >= 1050 and row.damage > 0 then
+				count = count + 1
+				plans[row.hero:GetPlayerID()] = {reach = row.reach, cover = false, gather = gather, teleport = row.teleport, screen = true}
+				if count == 2 then break end
+			end
+		end
+		if count == 0 then
+			-- With the primary clearer dead/off lane, allow a medium-range
+			-- caster already under cover to act, not a short solo overextension.
+			for _, row in ipairs(ranked) do
+				if row.reach >= 825 and row.damage > 0 and row.eta <= 3 and not row.teleport then
+					for _, backup in ipairs(ranked) do
+						if backup.hero ~= row.hero and backup.eta <= 3 and not backup.teleport then
+							plans[row.hero:GetPlayerID()] = {reach = row.reach, cover = false, gather = gather, screen = true}
+							count = 1
+							break
+						end
+					end
+					if count > 0 then break end
+				end
+			end
+			if count == 0 then return nil end
+		end
+		local helper
+		for _, row in ipairs(ranked) do
+			if not plans[row.hero:GetPlayerID()] and row.eta <= 4 and not row.teleport
+				and (not helper or row.cover > helper.cover) then helper = row end
+		end
+		if helper then
+			local ally = helper.hero
+			plans[ally:GetPlayerID()] = {reach = ally:GetAttackRange(), cover = true, gather = gather, screen = true}
+		end
+		return plans
+	end
 	local assignments = {}
 	for _, candidate in ipairs(allies) do
 		local ally = candidate.hero
@@ -7228,6 +7330,36 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 	return true, assignments
 end
 
+local function GetCoveredMidPokeTarget(bot, tower, range)
+	local hub = tower:GetLocation()
+	if J.GetHP(bot) < 0.60 or bot:WasRecentlyDamagedByAnyHero(2)
+		or J.GetAvailableFightAllies(bot, bot:GetLocation(), 1000) == 0 then return nil end
+	local target, best
+	for _, enemy in ipairs(J.GetEnemiesNearLoc(hub, 1200)) do
+		if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
+			and not enemy:IsInvulnerable() and J.IsInRange(bot, enemy, range)
+			and (J.IsDisabled(enemy) or not J.IsInRange(bot, enemy, enemy:GetAttackRange() + 110)) then
+			local victim = enemy:GetAttackTarget()
+			if victim == tower or J.IsDisabled(enemy)
+				or (victim ~= bot and J.IsValidHero(victim) and victim:GetTeam() == bot:GetTeam()) then
+				local score = 1 - J.GetHP(enemy) + (J.IsDisabled(enemy) and 1 or 0)
+				if not best or score > best then target, best = enemy, score end
+			end
+		end
+	end
+	return target
+end
+
+function J.GetMidDefensePokeTarget(bot, range)
+	local state = bot._defend
+	if not state or state.waveClearLane ~= LANE_MID or state.waveClearRearTower ~= nil
+		or (bot.ohaOuterTowerHoldUntil or 0) <= DotaTime() or not J.IsDefending(bot)
+		or not J.IsValidBuilding(state.waveClearTower) then return nil end
+	local hub = state.waveClearTower:GetLocation()
+	if GetUnitToLocationDistance(bot, hub) > 1350 or #J.GetEnemiesNearLoc(bot:GetLocation(), 700) >= 2 then return nil end
+	return GetCoveredMidPokeTarget(bot, state.waveClearTower, range)
+end
+
 function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 	if bot:HasModifier('modifier_teleporting') then return false end
 	local hold = stage or GetOuterTowerHoldPoint(hub, reach, cover)
@@ -7278,7 +7410,10 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 	if target ~= nil then
 		bot:Action_AttackUnit(target, true)
 		return true
-	elseif awayFromHold then
+	end
+	local poke = range >= 425 and J.GetMidDefensePokeTarget(bot, range - 25) or nil
+	if poke then bot:Action_AttackUnit(poke, true); return true end
+	if awayFromHold then
 		bot:Action_MoveToLocation(hold)
 		return true
 	elseif J.IsValidHero(bot:GetAttackTarget()) then
@@ -7314,7 +7449,13 @@ function J.RunOuterTowerContest(bot, tower, threat, state)
 			if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and GetUnitToUnitDistance(enemy, tower) <= 900 then
 				local contact = 0
 				for _, ally in ipairs(allies) do
-					if not ally.hero:IsDisarmed() and J.IsInRange(ally.hero, enemy, ally.hero:GetAttackRange() + 125) then contact = contact + 1 end
+					local hero = ally.hero
+					if not hero:IsDisarmed() and J.IsInRange(hero, enemy, hero:GetAttackRange() + 125) then
+						contact = contact + 1
+					elseif threat.lane == LANE_MID and not hero:IsSilenced() and not hero:IsUsingAbility() then
+						local _, reach, damage = GetWaveClearScore(hero, 0)
+						if damage > 0 and J.IsInRange(hero, enemy, math.min(880, reach - 200)) then contact = contact + 1 end
+					end
 				end
 				-- All defenders choose the same reachable target. Heroes outside
 				-- spell range stay in cover instead of picking a different fight.
@@ -7332,26 +7473,32 @@ function J.RunOuterTowerContest(bot, tower, threat, state)
 			end
 		end
 	end
-	if #J.GetEnemiesNearLoc(gather, 800) >= 2 or bot:WasRecentlyDamagedByAnyHero(2)
+	if #J.GetEnemiesNearLoc(gather, state.waveClearScreen and 550 or 800) >= 2 or bot:WasRecentlyDamagedByAnyHero(2)
 		and (#J.GetEnemiesNearLoc(bot:GetLocation(), 800) >= 2 or J.GetHP(bot) < 0.5) then
 		bot:Action_MoveToLocation(J.AdjustLocationWithOffsetTowardsFountain(hub, 1200))
 		return true
 	end
-	local stage = J.GetTowerHoldFormationPoint and J.GetTowerHoldFormationPoint(bot, hub, gather,
-		state.waveClearReach or bot:GetAttackRange(), threat.enemies, J.GetAlliesNearLoc(gather, 1400)) or gather
+	local hold = gather
+	if state.waveClearScreen and not state.waveClearCover then
+		hold = GetOuterTowerHoldPoint(hub, state.waveClearReach or bot:GetAttackRange(), false)
+	end
+	local stage = J.GetTowerHoldFormationPoint and J.GetTowerHoldFormationPoint(bot, hub, hold,
+		state.waveClearReach or bot:GetAttackRange(), threat.enemies, J.GetAlliesNearLoc(gather, 1400)) or hold
 	if GetUnitToLocationDistance(bot, stage) > 275 then
 		bot:Action_MoveToLocation(stage)
 		return true
 	end
 	-- Do not let a shorter-range hero walk ahead of the rally point while the others arrive.
 	return J.RunOuterTowerHold(bot, hub, math.max(975, state.waveClearReach or bot:GetAttackRange()),
-		false, stage ~= gather and stage or nil)
+		state.waveClearScreen and state.waveClearCover or false, (state.waveClearScreen or stage ~= gather) and stage or nil)
 end
 
 function J.GetAssignedOuterTower(bot)
 	local response = bot.ohaHighGroundResponse
 	if response and DotaTime() < response.expires and J.IsValidBuilding(response.tower)
 		and GetUnitToLocationDistance(bot, response.stage) <= 500 then return response.tower end
+	local guard = bot.ohaMidCover
+	if guard and DotaTime() < guard.expires and J.IsValidBuilding(guard.tower) then return guard.tower end
 	local state = bot._defend
 	if state and not state.waveClearCover and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then
 		local tower = state.waveClearRearTower or state.waveClearTower

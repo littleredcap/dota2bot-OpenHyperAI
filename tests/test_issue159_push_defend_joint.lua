@@ -44,7 +44,7 @@ local function fixture(opts)
         local x = (opts.x or 5000) + (i-1) * 200
         members[i] = {
             x=x, IsBot=yes, IsHero=yes, IsAlive=yes, IsIllusion=no, IsInvulnerable=no, IsNull=no,
-            IsChanneling=no, IsUsingAbility=no, IsDisarmed=no, IsStunned=no, IsHexed=no, IsNightmared=no, IsRooted=no, HasModifier=no,
+            IsChanneling=no, IsUsingAbility=no, IsDisarmed=no, IsSilenced=no, IsStunned=no, IsHexed=no, IsNightmared=no, IsRooted=no, HasModifier=no,
             GetTeam=function() return 2 end, GetSecondsPerAttack=function() return 1 end,
             GetAttackDamage=function(self) return self.damage or 100 end,
             GetPlayerID=function() return i end, GetCurrentMovementSpeed=function() return 300 end,
@@ -1106,7 +1106,14 @@ do
     local _, unsafe = jmz.GetOuterTowerResponse(tower:GetLocation(), threat, nil, false)
     assert(not unsafe[3] or not unsafe[3].gather, 'disallow the fight when the required teleports are unsafe')
     defenders.unsafeLanding = false
-    same(defend.GetDefendDesire(bot, lane.Mid), 0.89, 'a credible siege gets a coordinated response')
+    members[1].scroll, members[2].scroll = false, false
+    local _, screening = jmz.GetOuterTowerResponse(tower:GetLocation(), threat, nil, false)
+    assert(screening[3] and screening[3].screen and not screening[3].cover
+        and screening[4] and screening[4].screen and screening[4].cover,
+        'when short of a full fight, early mid defense keeps a safe clearer and cover')
+    assert(not screening[1] and not screening[2], 'do not force late warriors into the partial defense')
+    members[1].scroll, members[2].scroll = true, true
+    same(defend.GetDefendDesire(bot, lane.Mid), 0.93, 'a credible mid T1 siege gets high response priority')
     defend.DefendThink(bot, lane.Mid)
     assert(orders[1].x == 5425, 'walk to the rear of the tower instead of charging the wave alone')
     bot.x = 5660
@@ -1130,7 +1137,8 @@ do
     defend.DefendThink(bot, lane.Mid)
     assert(orders[5].x == 4800 and not jmz.GetTowerDefenseTarget(bot), 'retreat when the attackers reach the hold point and local strength drops')
     local delay, weaker = jmz.GetOuterTowerResponse(tower:GetLocation(), jmz.GetOuterTowerThreat(tower, lane.Mid), nil, false)
-    assert(delay and (not weaker[3] or not weaker[3].gather), 'a lost fight falls back to clearers and releases other heroes')
+    assert(delay and (not weaker[3] or not weaker[3].gather or weaker[3].screen),
+        'a lost fight falls back to clearers and releases other heroes')
     local dying = jmz.GetOuterTowerThreat(tower, lane.Mid)
     dying.damageRate, dying.underAttack = tower:GetHealth(), true
     local _, doomed = jmz.GetOuterTowerResponse(tower:GetLocation(), dying, nil, false)
@@ -1712,6 +1720,16 @@ do
     assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.84, 'no solo commitment when the partner cannot help')
     members[2].hp, opts.postFightEnemyAlive = 1, 4
     assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.84, 'stop when enemies respawn')
+end
+
+do
+    local opts = {postFight=true, conversion=true, conversionX=5450, conversionCore=1,
+        x=5040, allyCount=5, enemyAliveAtStart=3, captureTargets=true}
+    local push, defend, members, _, lane, _, buildings, jmz = fixture(opts)
+    jmz.GetExposedMidCover = function() return members[2], buildings.outerTower, 950 end
+    assert(push.GetPushDesire(members[2], lane.Mid) ~= 0.84, 'post-fight push does not take the last exposed-mid clearer')
+    same(defend.GetDefendDesire(members[2], lane.Mid), 0.83, 'the reserved clearer has a positive hold assignment')
+    assert(members[2].ohaMidCover and not members[3].ohaMidCover, 'hold one hero, not the whole team')
 end
 
 do

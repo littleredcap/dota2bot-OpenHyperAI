@@ -211,7 +211,7 @@ function X.SkillsComplement()
 	hEnemyHeroList = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE )
 
 	local holdingTower = (J.IsDefending(bot) and J.GetAssignedOuterTower(bot) ~= nil)
-		or (DotaTime() >= 240 and DotaTime() <= 780 and J.GetEarlyMidSiegeDefense(bot) ~= nil)
+		or (DotaTime() >= 240 and DotaTime() <= 960 and J.GetEarlyMidSiegeDefense(bot) ~= nil)
 	if holdingTower then castQDesire, castQLocation = X.ConsiderQ() end
 	if not holdingTower or castQDesire <= 0 then
 		castRDesire, castRTarget = X.ConsiderR()
@@ -309,7 +309,7 @@ function X.ConsiderQ()
 	local nCanHurtCreepCount = waveLocation and J.GetInLocLaneCreepCount(bot, 1600, nRadius, waveLocation) or 0
 	local nCanHurtHeroLocationAoE = bot:FindAoELocation(true, true, botLocation, nCastRange, nRadius - 30, impactDelay, 0)
 	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
-	if not holdTower and DotaTime() >= 240 and DotaTime() <= 780 then holdTower = J.GetEarlyMidSiegeDefense(bot) end
+	if not holdTower and DotaTime() >= 240 and DotaTime() <= 960 then holdTower = J.GetEarlyMidSiegeDefense(bot) end
 	if holdTower ~= nil then
 		if waveLocation ~= nil and nCanHurtCreepCount >= 2
 			and GetUnitToLocationDistance(holdTower, waveLocation) <= 1050
@@ -336,6 +336,14 @@ function X.ConsiderQ()
 			end
 		end
 		if aim ~= nil then return BOT_ACTION_DESIRE_HIGH, aim end
+		local poke = J.GetMidDefensePokeTarget and GetShrapnelCharges() >= 2
+			and J.GetMidDefensePokeTarget(bot, nCastRange - 50)
+		if poke then
+			local point = J.GetCorrectLoc(poke, impactDelay)
+			if GetUnitToLocationDistance(bot, point) <= nCastRange and not X.IsAbiltyQCastedHere(point, nRadius) then
+				return BOT_ACTION_DESIRE_HIGH, point
+			end
+		end
 	end
 
 	if J.IsInLaningPhase() and (J.IsLaning(bot) or J.IsGoingOnSomeone(bot) or J.IsRetreating(bot)) then

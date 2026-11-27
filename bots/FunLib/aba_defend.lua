@@ -1024,6 +1024,7 @@ function ____exports.GetDefendDesireHelper(bot, lane)
         ds.waveClearRally = nil
         ds.waveClearGather = nil
         ds.waveClearNeedsGlyph = nil
+        ds.waveClearScreen = nil
         bot.ohaOuterTowerHoldUntil = nil
     end
     local trade = bot.ohaOuterTowerTrade
@@ -1053,6 +1054,15 @@ function ____exports.GetDefendDesireHelper(bot, lane)
         return 0.96
     elseif bot.ohaHighGroundResponse and bot.ohaHighGroundResponse.lane == lane then
         bot.ohaHighGroundResponse = nil
+    end
+    if lane == Lane.Mid and jmz.GetExposedMidCover and not IsBaseThreatActive() then
+        local guard, building, reach = jmz.GetExposedMidCover(team)
+        if guard == bot then
+            bot.ohaMidCover = {tower = building, reach = reach, expires = DotaTime() + 1}
+            bot.laneToDefend = lane
+            return 0.83
+        end
+        bot.ohaMidCover = nil
     end
     local botLevel = bot:GetLevel()
     if bot:GetAssignedLane() ~= lane and distanceToDefendLoc > 3000 and (jmz.GetPosition(bot) == 1 and botLevel < 6 or jmz.GetPosition(bot) == 2 and botLevel < 6 or jmz.GetPosition(bot) == 3 and botLevel < 5 or jmz.GetPosition(bot) == 4 and botLevel < 4 or jmz.GetPosition(bot) == 5 and botLevel < 4) then
@@ -1241,15 +1251,20 @@ function ____exports.GetDefendDesireHelper(bot, lane)
                     ds.waveClearRally = assignment.rally
                     ds.waveClearGather = assignment.gather
                     ds.waveClearNeedsGlyph = assignment.needsGlyph
+                    ds.waveClearScreen = assignment.screen
                     bot.ohaOuterTowerTrade = nil
-                    if rearTower and not assignment.cover and not assignment.gather and (assignment.rally or threat.count >= 3) and threat.waveSize > 0 then
+                    local keepNext = not assignment.gather or assignment.screen or assignment.reach >= 1050
+                    if rearTower and not assignment.cover and keepNext and (assignment.rally or threat.count >= 3) and threat.waveSize > 0 then
                         local march = GetUnitToUnitDistance(furthestBuilding, rearTower) / 300
                         ds.nextWave = {lane = lane, tower = rearTower, reach = assignment.reach, expires = DotaTime() + math.min(22, march + 9)}
                     end
                     bot.ohaOuterTowerHoldUntil = DotaTime() + 3
                     bot.laneToDefend = lane
                     if highGround then return 0.96 end
-                    if assignment.gather then return 0.89 end
+                    if assignment.gather then
+                        if lane == Lane.Mid and buildingTier == 1 then return 0.93 end
+                        return 0.89
+                    end
                     if assignment.rally or assignment.teleport or threat.siege and threat.count <= 1 then return 0.84 end
                     return BotModeDesire.High
                 elseif not highGround then
@@ -1475,6 +1490,12 @@ function ____exports.DefendThink(bot, lane)
             return
         end
         jmz.RunOuterTowerHold(bot, response.stage, bot:GetAttackRange(), false, response.stage)
+        return
+    end
+    local guard = bot.ohaMidCover
+    if lane == Lane.Mid and guard and now < guard.expires and not IsBaseThreatActive()
+        and (bot._ohaCreepDefenseUntil or -1) <= now and jmz.IsValidBuilding(guard.tower) then
+        jmz.RunOuterTowerHold(bot, guard.tower:GetLocation(), guard.reach, false)
         return
     end
     if jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "defend") then

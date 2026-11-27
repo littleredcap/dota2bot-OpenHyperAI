@@ -5071,6 +5071,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local itemFlask = J.IsItemAvailable( "item_flask" )
 	local response = bot.ohaHighGroundResponse
 	local highGroundResponse = response and response.expires > DotaTime()
+	local midCover = bot.ohaMidCover and bot.ohaMidCover.expires > DotaTime()
 	if highGroundResponse then
 		local anchors = {}
 		for _, id in ipairs({TOWER_BASE_1, TOWER_BASE_2, TOWER_TOP_3, TOWER_MID_3, TOWER_BOT_3}) do
@@ -5120,7 +5121,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	end
 
 	-- Go complete items
-	if X.IsInvFull(bot) and X.GetNumStashItem(bot) >= 1
+	if not midCover and X.IsInvFull(bot) and X.GetNumStashItem(bot) >= 1
 	and (X.IsThereRecipeInStash(bot) or (bot:GetStashValue() >= 1000 and bot:GetGold() > 1100))
 	and not J.IsPushing(bot) and not J.IsGoingOnSomeone(bot)
 	and not J.IsInTeamFight(bot, 1000)
@@ -5253,7 +5254,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 
 	--推塔
-	if not highGroundResponse and J.IsPushing( bot )
+	if not highGroundResponse and not midCover and J.IsPushing( bot )
 		and nModeDesire >= BOT_MODE_DESIRE_MODERATE
 		and nEnemyCount == 0
 	then
@@ -5526,6 +5527,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		end
 
 		if mostFarmDesire > ( isTravelBootsAvailable and 0.7 or 0.8 )
+			and not midCover
 			and not (J.ShouldKeepMidOpportunity and J.ShouldKeepMidOpportunity(bot, mostFarmDesireLane))
 			and #nNearEnemyList == 0
 			and #nCreeps == 0
@@ -8397,11 +8399,14 @@ local function UseGlyph()
 					and (ally.ohaOuterTowerHoldUntil or 0) > DotaTime()
 				then
 					local eta = GetGlyphClearerETA(ally, tower, defense)
-					if eta <= (defense.waveClearGather and gatherETA or 5.5) then
-						if defense.waveClearGather then
+					local forFight = defense.waveClearGather and not defense.waveClearScreen
+					if eta <= (forFight and gatherETA or 5.5) then
+						if forFight then
 							contestCount, lateETA = contestCount + 1, math.max(lateETA, eta)
 							needed = needed or defense.waveClearNeedsGlyph
 						elseif (fraction < 0.50 and secondsLeft <= math.max(12, eta + 4))
+							or (index == 2 and threat.count >= 3 and (threat.waveSize or 0) >= 2
+								and threat.underAttack and eta <= 4 and fraction <= 0.70 and secondsLeft <= 11)
 							or (fraction <= 0.20 and threat.siegeAttacking)
 							or (threat.count >= 3 and secondsLeft <= eta + 3) then
 							coverOuter = true

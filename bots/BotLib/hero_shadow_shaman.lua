@@ -300,9 +300,16 @@ function X.ConsiderQ()
 		for _, creep in ipairs(bot:GetNearbyLaneCreeps(math.min(1600, nCastRange + aetherRange), true)) do
 			if J.IsValid(creep) and not creep:HasModifier('modifier_fountain_glyph')
 				and GetUnitToUnitDistance(holdTower, creep) <= 1050
-				and J.GetInLocLaneCreepCount(bot, 1600, radius, creep:GetLocation()) >= 2 then
+				and (J.GetInLocLaneCreepCount(bot, 1600, radius, creep:GetLocation()) >= 2
+					or J.IsKeyWordUnit('_siege', creep) and creep:GetAttackTarget() == holdTower
+						and bot:GetMana() >= 2 * nManaCost) then
 				return BOT_ACTION_DESIRE_HIGH, creep, 'Q-DefendWave'
 			end
+		end
+		local poke = J.GetMidDefensePokeTarget and J.GetMidDefensePokeTarget(bot, nCastRange + aetherRange - 25)
+		if poke and J.CanCastOnNonMagicImmune(poke) and J.CanCastOnTargetAdvanced(poke)
+			and bot:GetMana() >= abilityQ:GetManaCost() * 2 then
+			return BOT_ACTION_DESIRE_HIGH, poke, 'Q-DefendPoke'
 		end
 	end
 

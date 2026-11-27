@@ -993,9 +993,10 @@ function GetPostFightPushPlan(gameState)
         or gameState.aliveAllyCount < gameState.aliveEnemyCount + 2 or gameState.aliveAllyCoreCount == 0 then return nil end
     return getCachedData("postFightPushPlan", 0.35, function()
         local ready, count = {}, 0
+        local reserve = jmz.GetExposedMidCover and jmz.GetExposedMidCover(gameState.team)
         for slot = 1, #GetTeamPlayers(gameState.team) do
             local ally = GetTeamMember(slot)
-            if jmz.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and jmz.GetHP(ally) >= 0.55
+            if reserve ~= ally and jmz.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and jmz.GetHP(ally) >= 0.55
                 and not jmz.IsRetreating(ally) and not ally:IsChanneling() and not ally:HasModifier("modifier_teleporting")
                 and not ally:IsStunned() and not ally:IsHexed() and not ally:IsNightmared() and not ally:IsDisarmed()
                 and not jmz.IsDoingRoshan(ally) and not jmz.IsDoingTormentor(ally)

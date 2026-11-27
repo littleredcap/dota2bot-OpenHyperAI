@@ -866,9 +866,10 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
         || gameState.aliveAllyCount < gameState.aliveEnemyCount + 2 || gameState.aliveAllyCoreCount === 0) return;
     return getCachedData<PostFightPlan | false>("postFightPushPlan", 0.35, () => {
         const ready: Record<number, Unit> = {};
+        const [reserve] = jmz.GetExposedMidCover(gameState.team);
         for (let slot = 1; slot <= GetTeamPlayers(gameState.team).length; slot++) {
             const ally = GetTeamMember(slot);
-            if (ally && jmz.IsValidHero(ally) && ally.IsBot() && !ally.IsIllusion() && jmz.GetHP(ally) >= 0.55
+            if (ally && ally !== reserve && jmz.IsValidHero(ally) && ally.IsBot() && !ally.IsIllusion() && jmz.GetHP(ally) >= 0.55
                 && !jmz.IsRetreating(ally) && !ally.IsChanneling() && !ally.HasModifier("modifier_teleporting")
                 && !ally.IsStunned() && !ally.IsHexed() && !ally.IsNightmared() && !ally.IsDisarmed()
                 && !jmz.IsDoingRoshan(ally) && !jmz.IsDoingTormentor(ally)
