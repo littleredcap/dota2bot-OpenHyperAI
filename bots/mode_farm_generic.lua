@@ -366,7 +366,7 @@ local function GetLaningRecoveryDesire()
 	local time = DotaTime()
 	local recoveryStart = turbo and 5 * 60 or 7 * 60
 	local carryStart = turbo and 3 * 60 + 30 or 4 * 60 + 30
-	if time < (position == 1 and carryStart or recoveryStart) or time >= (turbo and 14 * 60 or 20 * 60)
+	if time < (position <= 2 and carryStart or recoveryStart) or time >= (turbo and 14 * 60 or 20 * 60)
 		or position > 3 or bot:GetLevel() < (position == 1 and 3 or 4) or bot:GetNetWorth() >= 8000
 		or J.GetHP(bot) < 0.45 or (bot:WasRecentlyDamagedByAnyHero(2) and not J.WeAreStronger(bot, 1200))
 		or GetGameMode() == GAMEMODE_MO or GetGameMode() == GAMEMODE_1V1MID
@@ -376,7 +376,29 @@ local function GetLaningRecoveryDesire()
 	local towerId = laneTierOne[lane]
 	if towerId == nil then return BOT_MODE_DESIRE_NONE end
 	local displaced = position == 1 and (bot.ohaCarryLaneRecoveryUntil or 0) > time
-	if J.IsValidBuilding(GetTower(team, towerId)) and not displaced then
+	local tower = GetTower(team, towerId)
+	-- A recovering core should pick up a visible, reachable wave on its own
+	-- side before going to a nearby camp. Leave normal on-lane timing alone.
+	if time < (turbo and 8 * 60 or 10 * 60) and J.IsValidBuilding(tower)
+		and J.GetHP(bot) >= 0.55 and (displaced or GetAmountAlongLane(lane, bot:GetLocation()).distance > 950) then
+		local bestDistance = 3800
+		local towerTrack = GetAmountAlongLane(lane, tower:GetLocation())
+		local direction = team == TEAM_RADIANT and 1 or -1
+		for _, wave in ipairs(GetVisibleHomeWaves()) do
+			local track = GetAmountAlongLane(lane, wave.location)
+			local distance = GetUnitToLocationDistance(bot, wave.location)
+			if wave.count >= 2 and track.distance <= 475
+				and (track.amount - towerTrack.amount) * direction <= 0.07
+				and distance < bestDistance and IsFarmWaveAvailable(wave.location) and IsFarmPathSafe(wave.location) then
+				farmLaneLocation, bestDistance = wave.location, distance
+			end
+		end
+		if farmLaneLocation ~= nil then
+			recoveringLane, bot.farmLocation = true, farmLaneLocation
+			return 0.71
+		end
+	end
+	if J.IsValidBuilding(tower) and not displaced then
 		-- Before ten minutes, only a displaced carry should leave an intact lane to farm.
 		if position ~= 1 and time < (turbo and 8 * 60 or 10 * 60) then return BOT_MODE_DESIRE_NONE end
 		local laneFront = GetLaneFrontLocation(team, lane, 0)
