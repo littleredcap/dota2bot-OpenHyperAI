@@ -1292,6 +1292,13 @@ function J.GetSideLaneHoldTower(bot)
     local absent = not partner:IsAlive() or partner:DistanceFromFountain() < 1200
         or (not J.IsInRange(bot, partner, 2000) and not J.IsInRange(partner, tower, 2000))
     if not absent then
+        if not J.IsCore(bot) and (partner.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
+            and J.IsCore(partner) and J.GetPosition(partner) == 1
+            and J.IsInRange(partner, tower, 1850) and hp >= 0.58
+            and (#J.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 1550) >= 2 or J.IsRetreating(partner)) then
+            local covered = SafeLaneTower(bot, tower, bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE), hp)
+            if covered then return covered end
+        end
         local partnerHP = J.GetHP(partner)
         if partnerHP >= 0.32 and not J.IsRetreating(partner) and not partner:HasModifier('modifier_teleporting')
             and not (partnerHP < 0.72 and partner:WasRecentlyDamagedByAnyHero(5)) then
@@ -1642,6 +1649,23 @@ function J.GetSideLaneCoverAttack(bot, enemies, tower)
         and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(target:GetLocation()) then return target end
 end
 
+-- One safe shot at the enemy approaching the wave, before they start a last hit.
+-- The nearby core can keep farming: don't require it to be in melee range.
+local function HasCoveredSideLaneAngle(bot, core, enemy, enemies, wave)
+    if J.GetHP(bot) < 0.80 or J.GetHP(core) < 0.72 or not J.IsInRange(bot, core, 550)
+        or J.IsRetreating(core) or bot:WasRecentlyDamagedByAnyHero(2)
+        or not enemy.IsFacingLocation then return false end
+    for _, foe in ipairs(enemies) do
+        if foe ~= enemy and J.IsValidHero(foe) and not J.IsSuspiciousIllusion(foe)
+            and J.IsInRange(bot, foe, math.max(600, foe:GetAttackRange() + 175)) then return false end
+    end
+    for _, creep in ipairs(wave) do
+        if J.IsValid(creep) and J.IsInRange(creep, enemy, 360)
+            and J.IsInRange(bot, creep, 580) and enemy:IsFacingLocation(creep:GetLocation(), 45) then return true end
+    end
+    return false
+end
+
 -- Reapply safe pressure to an injured melee target or contest a real last hit.
 -- Do not chase or sacrifice the lane partner's last hits.
 function J.GetSideLanePressureTarget(bot, enemies, tower, range)
@@ -1669,9 +1693,10 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
             and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310
-            and (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(ally) >= 0.70
-                and IsContestForLaneCreep(enemy, bot:GetTeam())))
-            and J.IsInRange(bot, enemy, range) and J.CanFollowLaneFight(ally, enemy)
+            and J.IsInRange(bot, enemy, range)
+            and (HasCoveredSideLaneAngle(bot, ally, enemy, enemies, allyCreeps)
+                or (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(ally) >= 0.70
+                    and IsContestForLaneCreep(enemy, bot:GetTeam()))) and J.CanFollowLaneFight(ally, enemy))
             and (not J.IsValidBuilding(tower) or not (J.IsInRange(enemy, tower, 900) or J.IsInRange(bot, tower, 850)))
             and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(enemy:GetLocation()) then
             local onWave = false
@@ -1708,10 +1733,10 @@ function J.GetSideLanePressureStep(bot, enemies, tower)
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and not J.IsSuspiciousIllusion(enemy)
             and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310
-            and (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(core) >= 0.70
-                and IsContestForLaneCreep(enemy, bot:GetTeam())))
-            and J.CanFollowLaneFight(core, enemy)
             and not J.IsInRange(bot, enemy, range) and J.IsInRange(bot, enemy, range + 220)
+            and (HasCoveredSideLaneAngle(bot, core, enemy, enemies, wave)
+                or (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(core) >= 0.70
+                    and IsContestForLaneCreep(enemy, bot:GetTeam()))) and J.CanFollowLaneFight(core, enemy))
             and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 1000)) then
             for _, creep in ipairs(wave) do
                 if J.IsValid(creep) and J.IsInRange(creep, enemy, 375) then
@@ -6123,6 +6148,95 @@ function J.CanCommitToLaneTeleport(bot, location, requireClear, radius)
 	return backup >= threatCount - 1 and J.GetHP(bot) >= 0.55
 end
 
+-- Route only on information our team can observe. Sample a corridor rather than
+-- treating an empty destination as proof that the way there is clear.
+function J.IsHighGroundResponseThreat(threat)
+    return threat.count >= 3 and (threat.siegeAttacking or threat.waveSize >= 2
+        and (threat.underAttack or threat.eta <= 9))
+end
+
+local function GetHighGroundPathThreats(bot, destination)
+    local locations, seen = {}, {}
+    local start = bot:GetLocation()
+    local range = J.GetLocationToLocationDistance(start, destination) + 2300
+    for _, enemy in ipairs(J.GetEnemiesNearLoc(start, range)) do
+        if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and not seen[enemy:GetPlayerID()] then
+            seen[enemy:GetPlayerID()] = true
+            locations[#locations + 1] = {point = enemy:GetLocation(), radius = math.max(750, enemy:GetAttackRange() + 260)}
+        end
+    end
+    for _, id in ipairs(J.GetLastSeenEnemiesNearLoc(start, range)) do
+        local info = not seen[id] and GetHeroLastSeenInfo(id) or nil
+        if info and info[1] then
+            seen[id] = true
+            locations[#locations + 1] = {point = info[1].location, radius = 850}
+        end
+    end
+    return locations
+end
+
+local function HighGroundSegmentClear(a, b, threats)
+    local dx, dy = b.x - a.x, b.y - a.y
+    local length2 = dx * dx + dy * dy
+    for _, threat in ipairs(threats) do
+        local px, py = threat.point.x - a.x, threat.point.y - a.y
+        local f = length2 > 0 and math.max(0, math.min(1, (px * dx + py * dy) / length2)) or 0
+        local x, y = px - f * dx, py - f * dy
+        if x * x + y * y < threat.radius * threat.radius then return false end
+    end
+    -- A single order can otherwise route around a cliff into the enemy.
+    local steps = math.max(1, math.ceil(math.sqrt(length2) / 600))
+    for i = 1, steps do
+        if not IsLocationPassable(Vector(a.x + dx * i / steps, a.y + dy * i / steps, b.z)) then return false end
+    end
+    return true
+end
+
+function J.GetHighGroundWalkPoint(bot, stage, rear)
+    local start = bot:GetLocation()
+    local foes = GetHighGroundPathThreats(bot, stage)
+    if HighGroundSegmentClear(start, stage, foes) then return stage end
+    local dx, dy = stage.x - start.x, stage.y - start.y
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length < 1 then return nil end
+    local candidate, best = nil, math.huge
+    for _, offset in ipairs({1000, -1000, 1900, -1900}) do
+        local point = Vector(start.x + dx * 0.5 - dy / length * offset,
+            start.y + dy * 0.5 + dx / length * offset, stage.z)
+        if HighGroundSegmentClear(start, point, foes) and HighGroundSegmentClear(point, stage, foes) then
+            local route = J.GetLocationToLocationDistance(start, point) + J.GetLocationToLocationDistance(point, stage)
+            if route < best then candidate, best = point, route end
+        end
+    end
+    if candidate then return candidate end
+    -- A safe rear regroup can still be useful. If starting in danger or no route
+    -- is known, don't issue a long order; retreat/hero abilities remain in charge.
+    if rear and HighGroundSegmentClear(start, rear, foes) then return rear end
+    return nil
+end
+
+function J.GetHighGroundResponseTeleport(bot, stage, anchors)
+    if J.GetHP(bot) < 0.50 or bot:WasRecentlyDamagedByAnyHero(2)
+        or not J.CanCommitToLaneTeleport(bot, bot:GetLocation(), true, 975) then return nil end
+    local speed = math.max(1, bot:GetCurrentMovementSpeed())
+    local walk = GetUnitToLocationDistance(bot, stage) / speed
+    local best, bestTime = nil, walk - 2
+    local threats = GetHighGroundPathThreats(bot, stage)
+    for _, tower in ipairs(anchors) do
+        if J.IsValidBuilding(tower) then
+            local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 240)
+            local distance = J.GetLocationToLocationDistance(point, stage)
+            local time = 4 + distance / speed
+            if time < bestTime and IsLocationPassable(point)
+                and J.CanCommitToLaneTeleport(bot, point, true, 1050)
+                and HighGroundSegmentClear(point, stage, threats) then
+                best, bestTime = point, time
+            end
+        end
+    end
+    return best
+end
+
 -- Explicit, conservative roster knowledge. Never infer that an unseen ultimate is ready.
 -- Values are spacing heuristics, not spell radii: these spells have different shapes.
 local fightControlSpacing = {
@@ -7081,6 +7195,9 @@ function J.RunOuterTowerContest(bot, tower, threat, state)
 end
 
 function J.GetAssignedOuterTower(bot)
+	local response = bot.ohaHighGroundResponse
+	if response and DotaTime() < response.expires and J.IsValidBuilding(response.tower)
+		and GetUnitToLocationDistance(bot, response.stage) <= 500 then return response.tower end
 	local state = bot._defend
 	if state and not state.waveClearCover and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then
 		local tower = state.waveClearRearTower or state.waveClearTower

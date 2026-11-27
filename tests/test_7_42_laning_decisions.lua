@@ -480,7 +480,7 @@ do
     enemy.GetAttackRange = function() return 150 end
     local j, hp = mode.J, mode.J.GetHP
     j.GetHP = function(unit) if unit == enemy then return 0.45 end; return hp(unit) end
-    assert(mode.GetDesire() == 0.68, 'stay in lane for pressure with friendly creeps and local core')
+    assert(mode.GetDesire() == 0.71, 'stay in lane for pressure with friendly creeps and local core')
     expect(state, mode, 'attack', enemy)
     state.partnerRetreat = true
     assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'do not pressure alone')
@@ -508,6 +508,19 @@ do
     state.allies, state.enemyCreep = {friendly, friendly}, friendly
     j.GetHP = function(unit) if unit == enemy then return 0.97 end; return hp(unit) end
     assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'do not hit the full-health target just for standing nearby')
+    enemy.IsFacingLocation = yes
+    local canFollow = j.CanFollowLaneFight
+    j.CanFollowLaneFight = no
+    assert(j.GetSideLanePressureTarget(bot, {enemy}, nil, 450) == enemy,
+        'use a covered angle before enemy attack windup without interrupting the allied core')
+    local second = setmetatable({x = 425, GetAttackRange = function() return 500 end}, {__index = enemy})
+    local valid = j.IsValidHero
+    j.IsValidHero = function(unit) return unit == second or valid(unit) end
+    assert(not j.GetSideLanePressureTarget(bot, {enemy, second}, nil, 450),
+        'do not pre-pressure into the second enemy')
+    j.IsValidHero = valid
+    enemy.IsFacingLocation = nil
+    j.CanFollowLaneFight = canFollow
     state.enemyWindup = true
     assert(j.GetSideLanePressureTarget(bot, {enemy}, nil, 450) == enemy, 'contest the exposed enemy before a low-HP threshold')
     expect(state, mode, 'attack', enemy)
@@ -792,6 +805,8 @@ do
     j.GetLastSeenEnemiesNearLoc = function(at) return at == front and {6, 7} or {} end
     assert(teleport() > 0, 'a clear protected landing with a healthy support is usable despite a contested front')
     state.partner = false
+    state.mode, state.hp = 7, 0.83
+    assert(teleport() > 0, 'return from a reset into a clear rear landing even if the front is contested and support is away')
     j.GetLastSeenEnemiesNearLoc = empty
     assert(teleport() > 0, 'return on a clear lane even during the recovery window')
     state.unsafe = true

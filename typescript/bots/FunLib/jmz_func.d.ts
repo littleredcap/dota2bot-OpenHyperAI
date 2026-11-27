@@ -104,6 +104,9 @@ declare function RunOuterTowerHold(bot: Unit, location: Vector, reach: number, c
 declare function RunOuterTowerContest(bot: Unit, tower: Unit, threat: OuterTowerThreat, state: {waveClearGather?: Vector, waveClearReach?: number}): boolean;
 declare function HasPendingLaningLastHit(bot: Unit): boolean;
 declare function CanCommitToLaneTeleport(bot: Unit, location: Vector, requireClear?: boolean, radius?: number): boolean;
+export function IsHighGroundResponseThreat(threat: OuterTowerThreat): boolean;
+export function GetHighGroundWalkPoint(bot: Unit, stage: Vector, rear?: Vector): Vector | undefined;
+export function GetHighGroundResponseTeleport(bot: Unit, stage: Vector, anchors: Unit[]): Vector | undefined;
 declare function ShouldRetreatFromEnemyReinforcements(bot: Unit): boolean;
 declare function GetAlliesNearLoc(location: Vector, radius: number): Unit[];
 declare function IsCore(bot: Unit): boolean;

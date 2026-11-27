@@ -350,14 +350,16 @@ end
 
 local function UpdateCarryLaneRecovery()
 	local now = DotaTime()
-	if now < (J.IsModeTurbo() and 210 or 270) or not J.IsInLaningPhase(bot) or not bot:IsAlive()
-		or J.GetPosition(bot) ~= 1 or J.GetHP(bot) >= 0.55 or not bot:WasRecentlyDamagedByAnyHero(5) then return end
+	if now < (J.IsModeTurbo() and 150 or 180) or not J.IsInLaningPhase(bot) or not bot:IsAlive()
+		or J.GetPosition(bot) ~= 1 or J.GetHP(bot) >= 0.66 or not bot:WasRecentlyDamagedByAnyHero(5) then return end
 	local lane = bot:GetAssignedLane()
 	if lane ~= LANE_TOP and lane ~= LANE_BOT then return end
 	local front = GetLaneFrontLocation(team, lane, 0)
 	local tower = GetTower(team, laneTierOne[lane])
-	if (GetUnitToLocationDistance(bot, front) <= 2600 or (J.IsValidBuilding(tower) and J.IsInRange(bot, tower, 1600)))
-		and #J.GetLastSeenEnemiesNearLoc(front, 1700) >= 2 then
+	local underFireAtTower = J.IsValidBuilding(tower) and J.IsInRange(bot, tower, 1600)
+	local attackers = math.max(#J.GetLastSeenEnemiesNearLoc(front, 1700), #J.GetEnemiesNearLoc(bot:GetLocation(), 1250))
+	if (GetUnitToLocationDistance(bot, front) <= 2600 or underFireAtTower)
+		and (attackers >= 2 or attackers == 1 and J.GetHP(bot) <= 0.46 and underFireAtTower) then
 		-- Several of the replay's return walks outlasted the old 50s marker.
 		-- Budget one real walk back plus healing, not a permanent farm override.
 		local walkBack = bot:DistanceFromFountain() / math.max(1, bot:GetCurrentMovementSpeed())
@@ -370,7 +372,8 @@ local function GetLaningRecoveryDesire()
 	local turbo = J.IsModeTurbo()
 	local time = DotaTime()
 	local recoveryStart = turbo and 5 * 60 or 7 * 60
-	local carryStart = turbo and 3 * 60 + 30 or 4 * 60 + 30
+	local displaced = position == 1 and (bot.ohaCarryLaneRecoveryUntil or 0) > time
+	local carryStart = displaced and (turbo and 150 or 180) or (turbo and 210 or 270)
 	if time < (position <= 2 and carryStart or recoveryStart) or time >= (turbo and 14 * 60 or 20 * 60)
 		or position > 3 or bot:GetLevel() < (position == 1 and 3 or 4) or bot:GetNetWorth() >= 8000
 		or J.GetHP(bot) < 0.45 or (bot:WasRecentlyDamagedByAnyHero(2) and not J.WeAreStronger(bot, 1200))
@@ -380,7 +383,6 @@ local function GetLaningRecoveryDesire()
 	local lane = bot:GetAssignedLane()
 	local towerId = laneTierOne[lane]
 	if towerId == nil then return BOT_MODE_DESIRE_NONE end
-	local displaced = position == 1 and (bot.ohaCarryLaneRecoveryUntil or 0) > time
 	local tower = GetTower(team, towerId)
 	-- A recovering core should pick up a visible, reachable wave on its own
 	-- side before going to a nearby camp. Leave normal on-lane timing alone.
@@ -392,7 +394,8 @@ local function GetLaningRecoveryDesire()
 		for _, wave in ipairs(GetVisibleHomeWaves()) do
 			local track = GetAmountAlongLane(lane, wave.location)
 			local distance = GetUnitToLocationDistance(bot, wave.location)
-			if wave.count >= 2 and track.distance <= 475
+			if (wave.count >= 2 or (displaced and wave.count >= 1 and distance <= 1600))
+				and track.distance <= 475
 				and (track.amount - towerTrack.amount) * direction <= 0.07
 				and distance < bestDistance and IsFarmWaveAvailable(wave.location) and IsFarmPathSafe(wave.location) then
 				farmLaneLocation, bestDistance = wave.location, distance

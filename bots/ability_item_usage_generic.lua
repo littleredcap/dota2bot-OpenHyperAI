@@ -4827,10 +4827,14 @@ function X.GetLaningTPLocation( bot, nMinTPDistance, botLocation )
 		if (bot.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
 			and #J.GetLastSeenEnemiesNearLoc(GetLaneFrontLocation(team, laneToTP, 0), 1700) > 0 then
 			local partner = J.GetLanePartner(bot)
-			if J.IsValidBuilding(tower) and partner ~= nil and J.IsValidHero(partner) and J.GetHP(partner) >= 0.58
-				and J.IsInRange(partner, tower, 1100) and not J.IsRetreating(partner) then
+			if J.IsValidBuilding(tower) then
 				local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
-				if IsLocationPassable(point) and J.CanCommitToLaneTeleport(bot, point, true, 1100) then return point, true end
+				local covered = partner ~= nil and J.IsValidHero(partner) and J.GetHP(partner) >= 0.58
+					and J.IsInRange(partner, tower, 1100) and not J.IsRetreating(partner)
+				local unoccupied = #J.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 1400) == 0
+					and #J.GetEnemiesNearLoc(tower:GetLocation(), 1400) == 0
+				if (covered or unoccupied) and IsLocationPassable(point)
+					and J.CanCommitToLaneTeleport(bot, point, true, 1100) then return point, true end
 			end
 			return nil, false
 		end
@@ -5065,6 +5069,17 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local nEnemyCount = X.GetNumHeroWithinRange( 1600 )
 	local nAllyCount = J.GetAllyCount( bot, 1600 )
 	local itemFlask = J.IsItemAvailable( "item_flask" )
+	local response = bot.ohaHighGroundResponse
+	local highGroundResponse = response and response.expires > DotaTime()
+	if highGroundResponse then
+		local anchors = {}
+		for _, id in ipairs({TOWER_BASE_1, TOWER_BASE_2, TOWER_TOP_3, TOWER_MID_3, TOWER_BOT_3}) do
+			local tower = GetTower(team, id)
+			if J.IsValidBuilding(tower) then anchors[#anchors + 1] = tower end
+		end
+		local location = J.GetHighGroundResponseTeleport(bot, response.stage, anchors)
+		if location then return BOT_ACTION_DESIRE_ABSOLUTE, location, sCastType, 'high-ground-response' end
+	end
 	local defense = bot._defend
 	local plannedDefense = defense and defense.waveClearLane ~= nil and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
 		and defense.waveClearTeleport ~= nil and J.IsValidBuilding(defense.waveClearRearTower or defense.waveClearTower)
@@ -5079,7 +5094,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	if bot:GetLevel() > 12 and bot:DistanceFromFountain() < 600 then nMinTPDistance = nMinTPDistance + 600 end
 
 	local recoveringSideCore = (bot.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
-		and bot:DistanceFromFountain() < 1400 and botHP >= 0.88 and botMP >= 0.65
+		and bot:DistanceFromFountain() < 1400 and botHP >= 0.82 and botMP >= 0.40
 		and nEnemyCount == 0 and J.IsInLaningPhase(bot)
 	if nMode == BOT_MODE_LANING or recoveringSideCore
 	then
@@ -5192,7 +5207,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	end
 
 	--守塔
-	if J.IsDefending( bot )
+	if not highGroundResponse and J.IsDefending( bot )
 		and nModeDesire > BOT_MODE_DESIRE_MODERATE
 		and nEnemyCount == 0
 	then
@@ -5236,7 +5251,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 
 	--推塔
-	if J.IsPushing( bot )
+	if not highGroundResponse and J.IsPushing( bot )
 		and nModeDesire >= BOT_MODE_DESIRE_MODERATE
 		and nEnemyCount == 0
 	then

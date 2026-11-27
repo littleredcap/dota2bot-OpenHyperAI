@@ -274,6 +274,9 @@ local function fixture(opts)
     local last = assert(source:find('function J.CanCommitToLaneTeleport(', first, true))
     env.J = jmz
     setfenv(assert(loadstring(source:sub(first, last - 1))), env)()
+    local response = assert(source:find('function J.IsHighGroundResponseThreat(', last, true))
+    local responseEnd = assert(source:find('-- Explicit, conservative roster knowledge.', response, true))
+    setfenv(assert(loadstring(source:sub(response, responseEnd - 1))), env)()
     if not opts.outerSiege then jmz.GetOuterTowerThreat = function() return {score=0} end end
     if opts.outerSiege then
         local spell = {IsUltimate=no, GetManaCost=function() return 100 end,
@@ -1319,8 +1322,8 @@ end
 do
     local opts = {direct=true, outerSiege=true, highDefend=true, x=4750, bigWave=true, twoClearers=true}
     local _, defend, members, _, lane, _, buildings = fixture(opts)
-    same(defend.GetDefendDesire(members[3], lane.Mid), 0.96, 'high ground assigns the available ranged clearer')
-    assert(members[3]._defend.waveClearTower == buildings.outerTower)
+    same(defend.GetDefendDesire(members[3], lane.Mid), 0.96, 'group siege rallies the available ranged clearer')
+    assert(members[3].ohaHighGroundResponse.tower == buildings.outerTower)
 end
 
 do
@@ -1722,3 +1725,24 @@ do
     same(defend.GetDefendDesire(members[1], lane.Mid), 0.97, 'critical base assignments still take priority')
 end
 print('PASS: post-fight allies share a safe wave without abandoning base defense')
+
+do
+    local _, defend, members, orders, lane, _, buildings, jmz, advance = fixture({outerSiege=true, highDefend=true})
+    local bot = members[1]
+    local siege = {tower=buildings.outerTower, count=3, waveSize=2, eta=6, score=12, towerHP=1}
+    jmz.GetOuterTowerThreat = function(tower) return tower == buildings.outerTower and siege or {score=0} end
+    jmz.GetLastSeenEnemiesNearLoc = function() return {} end
+    jmz.GetEnemiesNearLoc = function() return {} end
+    jmz.GetHighGroundWalkPoint = function() return nil end
+    same(defend.GetDefendDesire(bot, lane.Top), 0.12, 'rally only for the threatened lane')
+    same(defend.GetDefendDesire(bot, lane.Mid), 0.96, 'react to three approaching heroes with real creeps before tower damage')
+    assert(bot.ohaHighGroundResponse.tower == buildings.outerTower)
+    bot.x = 2300
+    defend.DefendThink(bot, lane.Mid)
+    assert(orders[#orders] == 'cancel' or #orders == 0, 'unsafe return never produces a long attack move')
+    advance(2)
+    siege.count, siege.score = 1, 0
+    bot.GetLevel = function() return 2 end -- Isolate withdrawal from the unrelated ordinary tower path.
+    assert(defend.GetDefendDesire(bot, lane.Mid) ~= 0.96 and bot.ohaHighGroundResponse == nil,
+        'a dissipated group is not an emergency')
+end

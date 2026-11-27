@@ -985,7 +985,7 @@ function ConsiderPingedDefend(bot, lane, desire, building, tier, nEffAllies, nEn
         defendPings.lane = lane
     end
 end
-local function GetPrimaryTowerSiege(highGround)
+local function GetPrimaryTowerSiege(highGround, earlyResponse)
     local selectedLane, selectedThreat, selectedScore = nil, nil, 0
     for _, candidate in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
         local tower, _, tier = unpack(____exports.GetFurthestBuildingOnLane(candidate))
@@ -994,7 +994,8 @@ local function GetPrimaryTowerSiege(highGround)
             -- A visible escorted mid wave can cost two towers. Pre-position
             -- before the first hit, but do not override an active group siege elsewhere.
             local score = threat.score + (not highGround and threat.middleGroup and threat.towerHP > 0.15 and 10 or 0)
-            if score > 0 and (selectedThreat == nil or score > selectedScore
+            if score > 0 and (not earlyResponse or jmz.IsHighGroundResponseThreat(threat))
+                and (selectedThreat == nil or score > selectedScore
                 or (score == selectedScore and threat.eta < selectedThreat.eta)) then
                 selectedLane, selectedThreat, selectedScore = candidate, threat, score
             end
@@ -1037,6 +1038,21 @@ function ____exports.GetDefendDesireHelper(bot, lane)
             bot.laneToDefend = Lane.Mid
         end
         return creepBaseDesire
+    end
+    local siegeLane, siege
+    if not gameState.isLaningPhase then siegeLane, siege = GetPrimaryTowerSiege(true, true) end
+    if siege then
+        if lane ~= siegeLane then return BotModeDesire.VeryLow end
+        local rear = ancient and jmz.AdjustLocationWithOffsetTowardsFountain(ancient:GetLocation(), 350)
+        local stage = jmz.AdjustLocationWithOffsetTowardsFountain(siege.tower:GetLocation(), 1450)
+        if not IsLocationPassable(stage) or #jmz.GetLastSeenEnemiesNearLoc(stage, 850) > 0
+            or #jmz.GetEnemiesNearLoc(stage, 850) > 0 then stage = rear or stage end
+        bot.ohaHighGroundResponse = {lane = lane, tower = siege.tower, stage = stage, rear = rear, expires = DotaTime() + 1}
+        bot.laneToDefend = lane
+        ds.defendLoc = stage
+        return 0.96
+    elseif bot.ohaHighGroundResponse and bot.ohaHighGroundResponse.lane == lane then
+        bot.ohaHighGroundResponse = nil
     end
     local botLevel = bot:GetLevel()
     if bot:GetAssignedLane() ~= lane and distanceToDefendLoc > 3000 and (jmz.GetPosition(bot) == 1 and botLevel < 6 or jmz.GetPosition(bot) == 2 and botLevel < 6 or jmz.GetPosition(bot) == 3 and botLevel < 5 or jmz.GetPosition(bot) == 4 and botLevel < 4 or jmz.GetPosition(bot) == 5 and botLevel < 4) then
@@ -1443,6 +1459,22 @@ end
 function ____exports.DefendThink(bot, lane)
     local now = DotaTime()
     if jmz.CanNotUseAction(bot) then
+        return
+    end
+    local response = bot.ohaHighGroundResponse
+    if response and response.lane == lane and now < response.expires then
+        if bot:HasModifier("modifier_teleporting") or bot:IsChanneling() or bot:IsCastingAbility()
+            or bot:IsUsingAbility() then return end
+        if GetUnitToLocationDistance(bot, response.stage) > 350 then
+            local point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear)
+            if point and GetUnitToLocationDistance(bot, point) > 180 then
+                bot:Action_MoveToLocation(point)
+            elseif GetUnitToLocationDistance(bot, response.stage) > 850 and not bot:WasRecentlyDamagedByAnyHero(2) then
+                bot:Action_ClearActions(true)
+            end
+            return
+        end
+        jmz.RunOuterTowerHold(bot, response.stage, bot:GetAttackRange(), false, response.stage)
         return
     end
     if jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "defend") then

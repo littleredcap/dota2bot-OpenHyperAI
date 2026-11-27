@@ -137,12 +137,12 @@ function GetDesire()
 			and J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
 		if not local_mode_laning_generic
 			and J.GetSideLaneFinishTarget(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
+		if not local_mode_laning_generic then
+			if J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.71 end
+			if J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.68 end
+		end
 		local deny, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if deny ~= nil or reserveDeny then return 0.7 end
-		if not local_mode_laning_generic then
-			if J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.68 end
-			if J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.64 end
-		end
 		if botAssignedLane == LANE_MID and J.IsCore(bot) and (reserve or moveToCreep) then
 			return 0.7
 		end

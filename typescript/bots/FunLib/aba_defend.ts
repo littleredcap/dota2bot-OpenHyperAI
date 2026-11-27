@@ -717,17 +717,21 @@ export function GetDefendDesire(bot: Unit, lane: Lane): BotModeDesire {
     return res;
 }
 
-function GetPrimaryTowerSiege(highGround: boolean): LuaMultiReturn<[Lane | undefined, jmz.OuterTowerThreat | undefined]> {
+function GetPrimaryTowerSiege(highGround: boolean, earlyResponse = false): LuaMultiReturn<[Lane | undefined, jmz.OuterTowerThreat | undefined]> {
     let selectedLane: Lane | undefined;
     let selectedThreat: jmz.OuterTowerThreat | undefined;
+    let selectedScore = 0;
     for (const candidate of [Lane.Mid, Lane.Top, Lane.Bot]) {
         const [tower, , tier] = GetFurthestBuildingOnLane(candidate);
         if ((tier >= 3) === highGround && IsValidBuildingTarget(tower)) {
             const threat = jmz.GetOuterTowerThreat(tower, candidate);
-            if (threat.score > 0 && (selectedThreat === undefined || threat.score > selectedThreat.score
-                || (threat.score === selectedThreat.score && threat.eta < selectedThreat.eta))) {
+            const score = threat.score + (!highGround && threat.middleGroup && threat.towerHP > 0.15 ? 10 : 0);
+            if (score > 0 && (!earlyResponse || jmz.IsHighGroundResponseThreat(threat))
+                && (selectedThreat === undefined || score > selectedScore
+                || (score === selectedScore && threat.eta < selectedThreat.eta))) {
                 selectedLane = candidate;
                 selectedThreat = threat;
+                selectedScore = score;
             }
         }
     }
@@ -779,6 +783,22 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     }
 
     // -- 如果不在当前线上，且等级低，不防守
+    let siegeLane: Lane | undefined;
+    let siege: jmz.OuterTowerThreat | undefined;
+    if (!gameState.isLaningPhase) [siegeLane, siege] = GetPrimaryTowerSiege(true, true);
+    if (siege) {
+        if (lane !== siegeLane) return BotModeDesire.VeryLow;
+        const rear = ancient && jmz.AdjustLocationWithOffsetTowardsFountain(ancient.GetLocation(), 350);
+        let stage = jmz.AdjustLocationWithOffsetTowardsFountain(siege.tower.GetLocation(), 1450);
+        if (!IsLocationPassable(stage) || jmz.GetLastSeenEnemiesNearLoc(stage, 850).length > 0
+            || jmz.GetEnemiesNearLoc(stage, 850).length > 0) stage = rear || stage;
+        (bot as any).ohaHighGroundResponse = {lane, tower: siege.tower, stage, rear, expires: DotaTime() + 1};
+        bot.laneToDefend = lane;
+        ds.defendLoc = stage;
+        return 0.96;
+    } else if ((bot as any).ohaHighGroundResponse?.lane === lane) {
+        (bot as any).ohaHighGroundResponse = undefined;
+    }
     const botLevel = bot.GetLevel();
     if (
         bot.GetAssignedLane() !== lane &&
@@ -1101,6 +1121,22 @@ export function DefendThink(bot: Unit, lane: Lane) {
     const now = DotaTime();
 
     if (jmz.CanNotUseAction(bot)) return;
+    const response = (bot as any).ohaHighGroundResponse;
+    if (response && response.lane === lane && now < response.expires) {
+        if (bot.HasModifier("modifier_teleporting") || bot.IsChanneling() || bot.IsCastingAbility()
+            || bot.IsUsingAbility()) return;
+        if (GetUnitToLocationDistance(bot, response.stage) > 350) {
+            const point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear);
+            if (point && GetUnitToLocationDistance(bot, point) > 180) {
+                bot.Action_MoveToLocation(point);
+            } else if (GetUnitToLocationDistance(bot, response.stage) > 850 && !bot.WasRecentlyDamagedByAnyHero(2)) {
+                bot.Action_ClearActions(true);
+            }
+            return;
+        }
+        jmz.RunOuterTowerHold(bot, response.stage, bot.GetAttackRange(), false, response.stage);
+        return;
+    }
     if (jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "defend")) return;
 
     // a small don't-walk-through-fire guard - use cached enemies when possible
