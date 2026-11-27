@@ -510,6 +510,54 @@ local function GetSideWaveRally(members)
 	return best
 end
 
+local function GetSideWaveNudge(lane, point, pack, friendly)
+	local tierOne = laneTierOne[lane]
+	if not tierOne then return nil end
+	local home, away = GetTower(team, tierOne), GetTower(GetOpposingTeam(), tierOne)
+	if not home or home:IsNull() or not home:IsAlive() or not away or away:IsNull() or not away:IsAlive() then return nil end
+	if GetUnitToLocationDistance(home, point) < 1300 or GetUnitToLocationDistance(away, point) < 1300 then return nil end
+	local homeTrack = GetAmountAlongLane(lane, home:GetLocation()).amount
+	local awayTrack = GetAmountAlongLane(lane, away:GetLocation()).amount
+	local span = awayTrack - homeTrack
+	if math.abs(span) < 0.06 then return nil end
+	local progress = (GetAmountAlongLane(lane, point).amount - homeTrack) / span
+	if progress < 0.34 or progress > 0.66 then return nil end
+
+	local function sample(units, hostile)
+		local info = {melee = 0, meleeHP = 0, ranged = 0, siege = 0}
+		for _, unit in ipairs(units) do
+			-- Count the wave already fighting, not the approaching reinforcements.
+			if GetUnitToLocationDistance(unit, point) <= 730 then
+				local name = unit:GetUnitName()
+				if name:find('_upgraded', 1, true) then return nil end
+				if name:find('_siege', 1, true) then
+					info.siege = info.siege + 1
+					local target = unit:GetAttackTarget()
+					if hostile and J.IsValidBuilding(target) and target:GetTeam() == team then return nil end
+				elseif name:find('_ranged', 1, true) then
+					info.ranged = info.ranged + 1
+					info.rangedUnit = unit
+				elseif name:find('_melee', 1, true) or name:find('_flagbearer', 1, true) then
+					info.melee = info.melee + 1
+					info.meleeHP = info.meleeHP + unit:GetHealth()
+				else
+					return nil
+				end
+			end
+		end
+		return info
+	end
+
+	local theirs, ours = sample(pack, true), sample(friendly, false)
+	if theirs and ours and ours.melee >= 2 and ours.melee == theirs.melee
+		and ours.siege == theirs.siege and ours.siege <= 1 and ours.ranged == 1 and theirs.ranged == 1
+		and ours.meleeHP >= theirs.meleeHP * 0.80 and ours.meleeHP <= theirs.meleeHP * 1.25
+		and ours.rangedUnit:GetHealth() >= ours.rangedUnit:GetMaxHealth() * 0.45
+		and GetUnitToUnitDistance(theirs.rangedUnit, away) > 950 then
+		return theirs.rangedUnit
+	end
+end
+
 local function GetRallySideWavePlan(onlyLane)
 	local now = DotaTime()
 	if now < 14 * 60 or J.GetHP(bot) < 0.55 or J.IsInTeamFight(bot, 1200)
@@ -531,10 +579,10 @@ local function GetRallySideWavePlan(onlyLane)
 		if lane ~= rally.lane and (onlyLane == nil or onlyLane == lane) then
 			local point = GetLaneFrontLocation(team, lane, 0)
 			local own, opposing = GetAncient(team), GetAncient(GetOpposingTeam())
-			if own and opposing and GetUnitToLocationDistance(own, point) + 550 < GetUnitToLocationDistance(opposing, point)
-				and IsLocationVisible(point) and SideWavePathSafe(point, rally.location, 1250)
+			local onHomeSide = own and opposing and GetUnitToLocationDistance(own, point) + 550 < GetUnitToLocationDistance(opposing, point)
+			if own and opposing and IsLocationVisible(point) and SideWavePathSafe(point, rally.location, 1250)
 				and J.CanCommitToLaneTeleport(bot, point, true, 1350) then
-				local pack, health, support = {}, 0, 0
+				local pack, friendly, health, support = {}, {}, 0, 0
 				local front = GetAmountAlongLane(lane, point).amount * direction
 				for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
 					if SideWaveUnit(creep) and GetUnitToLocationDistance(creep, point) <= 730
@@ -547,10 +595,14 @@ local function GetRallySideWavePlan(onlyLane)
 					if SideWaveUnit(creep) and GetUnitToLocationDistance(creep, point) <= 1050 then
 						local track = GetAmountAlongLane(lane, creep:GetLocation())
 						local ahead = track.amount * direction - front
-						if track.distance <= 420 and ahead < 0.043 and ahead > -0.060 then support = support + 1 end
+						if track.distance <= 420 and ahead < 0.043 and ahead > -0.060 then
+							support = support + 1
+							friendly[#friendly + 1] = creep
+						end
 					end
 				end
-				if #pack >= 2 and support >= 2 then
+				local ranged = #pack >= 3 and support >= 3 and GetSideWaveNudge(lane, point, pack, friendly) or nil
+				if #pack >= 2 and support >= 2 and (ranged or onHomeSide) then
 					for _, hero in ipairs(members) do
 						local active = hero:GetActiveMode()
 						if hero:IsBot() and SideWaveHeroReady(hero) and J.GetPosition(hero) >= 3 and J.GetHP(hero) >= 0.62
@@ -567,13 +619,20 @@ local function GetRallySideWavePlan(onlyLane)
 							local toRally = J.GetLocationToLocationDistance(point, rally.location)
 							local damage = math.max(1, hero:GetAttackDamage() / math.max(0.3, hero:GetSecondsPerAttack()))
 							local clear = health / (damage * 0.82 + support * 24)
+							local targetNear = true
+							if ranged then
+								-- No credit for hoped-for ally hits or a walk behind the wave.
+								local perHit = ranged:GetActualIncomingDamage(hero:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+								clear = math.ceil(ranged:GetHealth() / math.max(1, perHit)) * math.max(0.3, hero:GetSecondsPerAttack())
+								targetNear = GetUnitToUnitDistance(hero, ranged) <= hero:GetAttackRange() + 225 and clear <= 2.5
+							end
 							local returnETA = 1.2 * math.max(0, toRally - 550) / speed
 							local total = toWave * 1.17 / speed + clear + returnETA
-							if toWave <= 900 and clear <= 8 and returnETA <= 8 and total <= 15
+							if targetNear and toWave <= 900 and clear <= 8 and returnETA <= 8 and total <= 15
 								and SideWavePathSafe(hero:GetLocation(), point, 1050)
 								and (not candidate or total < candidate.cost or total == candidate.cost and hero:GetPlayerID() < candidate.hero:GetPlayerID()) then
 								candidate = {hero = hero, lane = lane, mainLane = rally.lane, location = point,
-									rally = rally.anchor, targetPack = pack, cost = total}
+									rally = rally.anchor, targetPack = pack, ranged = ranged, cost = total}
 							end
 						end
 					end
@@ -594,6 +653,11 @@ local function GetSideWaveReturnPoint(task)
 end
 
 local function AttackSideWave(plan)
+	if plan.ranged then
+		if not SideWaveUnit(plan.ranged) or GetUnitToUnitDistance(bot, plan.ranged) > bot:GetAttackRange() + 225 then return false end
+		if bot:GetAttackTarget() ~= plan.ranged or not (J.IsAttacking and J.IsAttacking(bot)) then AttackFarmTarget(plan.ranged) end
+		return true
+	end
 	local best, bestScore = nil, -math.huge
 	for _, creep in ipairs(plan.targetPack) do
 		if SideWaveUnit(creep) and GetUnitToLocationDistance(creep, plan.location) <= 730 then
@@ -1062,6 +1126,13 @@ function OnEnd()
 	bot:SetTarget(nil);
 end
 
+local function RefreshSideWaveAction(request, task)
+	if task and (task.returning or task.clearUntil <= DotaTime()) then return nil end
+	local plan = GetRallySideWavePlan(request.lane)
+	if plan and plan.mainLane == request.mainLane and plan.ranged == request.ranged then return plan end
+	-- Never upgrade a one-unit nudge to a clear after death, deny, or loss of vision.
+end
+
 function Think()
 	if J.CanNotUseAction(bot) then return end
 	if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "farm") then return end
@@ -1129,15 +1200,15 @@ function Think()
 	end
 	if sideWaveDesire then
 		local now = DotaTime()
-		local plan = (not sideWaveTask or not sideWaveTask.returning and sideWaveTask.clearUntil > now)
-			and GetRallySideWavePlan(sideWaveDesire.lane) or nil
-		if plan and (not sideWaveTask or sideWaveTask.mainLane == plan.mainLane) then
+		local plan = RefreshSideWaveAction(sideWaveDesire, sideWaveTask)
+		if plan then
 			if not sideWaveTask then
-				sideWaveTask = {lane = plan.lane, mainLane = plan.mainLane, rally = plan.rally, clearUntil = now + 8, expires = now + 15}
+				sideWaveTask = {lane = plan.lane, mainLane = plan.mainLane, rally = plan.rally, ranged = plan.ranged,
+					clearUntil = now + (plan.ranged and 3.5 or 8), expires = now + 15}
 				bot.ohaRallySideWave = sideWaveTask
 				bot.ohaNextRallySideWaveAt = now + 26
 				if Customize.TraceRallySideWave then
-					print('[OHA side wave] start', now, bot:GetPlayerID(), plan.lane, plan.mainLane)
+					print('[OHA side wave] start', now, bot:GetPlayerID(), plan.lane, plan.mainLane, plan.ranged and 'ranged-only' or 'clear')
 				end
 			end
 			sideWaveTask.rally = plan.rally
