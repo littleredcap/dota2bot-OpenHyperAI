@@ -105,6 +105,10 @@ function GetDesire()
 	-- Ranged mid retains the engine's timing. This plan only belongs to side cores.
 	if not local_mode_laning_generic and not underPressure and J.GetSideLaneReturnPoint
 		and J.GetSideLaneReturnPoint(bot, botAssignedLane) ~= nil then return 0.84 end
+	if not local_mode_laning_generic and J.GetSideLaneYieldPoint and underPressure
+		and J.GetSideLaneYieldPoint(bot, nInRangeEnemy, enemyTower) then return 0.88 end
+	if not local_mode_laning_generic and not underPressure and J.GetSideLaneReturnScreen
+		and J.GetSideLaneReturnScreen(bot) then return 0.79 end
 	if J.GetLaningHoldTower(bot) ~= nil then return 0.82 end
 
 	-- if J.GetDistanceFromAncient( bot, true ) < 6900 then
@@ -215,6 +219,18 @@ local function ThinkLane()
 			return
 		end
 	end
+	if not local_mode_laning_generic and J.GetSideLaneYieldPoint then
+		local tower = bot:GetNearbyTowers(1200, true)[1]
+		if J.IsLaningUnderPressure(bot, nInRangeEnemy, tower) then
+			local point = J.GetSideLaneYieldPoint(bot, nInRangeEnemy, tower)
+			if point then
+				TraceLaneDecision('short-yield')
+				if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'short-yield') end
+				bot:Action_MoveToLocation(point)
+				return
+			end
+		end
+	end
 	local holdTower = J.GetLaningHoldTower(bot)
 	if holdTower ~= nil then
 		local wave, covered = J.GetTowerCoveredLaneCreeps(bot, holdTower, bot:GetNearbyLaneCreeps(1000, true), nInRangeEnemy)
@@ -267,6 +283,11 @@ local function ThinkLane()
 	botAssignedLane = bot:GetAssignedLane()
 	local hitCreep, moveToCreep, reserve, urgentApproach = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
 		J.GetLaningAttackDamage(bot), nInRangeEnemy)
+	-- Trace inputs as decision evidence, not as a claim that a creep was missed.
+	if J.IsCore(bot) and #nEnemyCreeps == 0 then TraceLaneDecision('no-near-wave')
+	elseif moveToCreep then TraceLaneDecision('approach-window', hitCreep)
+	elseif reserve then TraceLaneDecision('hold-for-shot')
+	elseif hitCreep == nil then TraceLaneDecision('no-lethal-window') end
 	if hitCreep ~= nil and not moveToCreep then
 		TraceLaneDecision('last-hit-order', hitCreep)
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'last-hit-now') end
@@ -296,6 +317,15 @@ local function ThinkLane()
 		bot:SetTarget(denyCreep)
 		J.IssueLaningAttack(bot, denyCreep)
 		return
+	end
+	if J.GetSideLaneReturnScreen and not J.IsFinishingLaningAttack(bot, attackTarget) then
+		local screen = J.GetSideLaneReturnScreen(bot)
+		if screen then
+			TraceLaneDecision('screen-return')
+			if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'screen-return') end
+			bot:Action_MoveToLocation(screen)
+			return
+		end
 	end
 	local cover = J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower)
 	if cover and not J.IsFinishingLaningAttack(bot, attackTarget) then

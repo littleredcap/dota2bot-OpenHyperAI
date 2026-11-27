@@ -1058,15 +1058,16 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     if jmz.GetExposedMidCover and not IsBaseThreatActive() then
         local role, plan
         if jmz.GetPostFightDuty then role, plan = jmz.GetPostFightDuty(bot) end
-        local guard, building, reach
+        local guard, building, reach, staging
         if plan and role then
             if lane ~= (plan.lane or Lane.Mid) then return BotModeDesire.VeryLow end
             guard, building, reach = bot, plan.building, role == 'clear' and plan.primary.reach or bot:GetAttackRange()
+            staging = role == 'clear' and plan.primary.staging or nil
         elseif not plan and lane == Lane.Mid then
             guard, building, reach = jmz.GetExposedMidCover(team)
         end
         if guard == bot then
-            bot.ohaMidCover = {tower = building, lane = lane, reach = reach, cover = role == 'cover', expires = DotaTime() + 1}
+            bot.ohaMidCover = {tower = building, lane = lane, reach = reach, cover = role == 'cover', staging = staging, expires = DotaTime() + 1}
             bot.laneToDefend = lane
             return role == 'cover' and 0.80 or 0.83
         end
@@ -1503,7 +1504,9 @@ function ____exports.DefendThink(bot, lane)
     local guard = bot.ohaMidCover
     if guard and lane == (guard.lane or Lane.Mid) and now < guard.expires and not IsBaseThreatActive()
         and (bot._ohaCreepDefenseUntil or -1) <= now and jmz.IsValidBuilding(guard.tower) then
-        jmz.RunOuterTowerHold(bot, guard.tower:GetLocation(), guard.reach, guard.cover)
+        local stage = guard.staging
+        if stage and not jmz.CanCommitToLaneTeleport(bot, stage, true, 650) then stage = nil end
+        jmz.RunOuterTowerHold(bot, guard.tower:GetLocation(), guard.reach, guard.cover, stage)
         return
     end
     if jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "defend") then

@@ -7,6 +7,20 @@ function X.Hits(window, contact, period, windup)
     return 1 + math.floor(left / math.max(0.2, period))
 end
 
+-- Find a small feasible chain. One handle is counted once in the short
+-- horizon; recasts, charges and unregistered effects stay unresolved.
+function X.SpellBudget(spells, mana, horizon)
+    local chosen, spentTime, damage = {}, 0, 0
+    for _, spell in ipairs(spells) do
+        local finish = math.max(spentTime, spell.eta) + spell.cast
+        if #chosen < 2 and spell.cost <= mana and finish <= horizon then
+            chosen[#chosen+1] = spell
+            spentTime, mana, damage = finish, mana - spell.cost, damage + spell.damage
+        end
+    end
+    return damage, spentTime
+end
+
 function X.Profile(row)
     local h = row.horizon
     local n = X.Hits(h, row.contact, row.period, row.windup)
@@ -20,6 +34,14 @@ function X.Profile(row)
         local opportunity = X.Hits(h, row.contact, row.period, row.windup + row.spell.cast)
         typical = math.max(typical, opportunity * row.attack + row.spell.damage * (delay <= h - 0.5 and 0.75 or 0.5))
         high = math.max(high, ceilingHits * row.attack + row.spell.damage)
+    end
+    if row.spells then
+        local damage, busy = X.SpellBudget(row.spells, math.max(0, row.mana or 0), h)
+        if damage > 0 then
+            local attacks = X.Hits(h, math.max(row.contact, busy), row.period, row.windup)
+            typical = math.max(typical, attacks * row.attack + damage * 0.70)
+            high = math.max(high, attacks * row.attack * 1.20 + damage)
+        end
     end
     if row.unknownSpell then high = high + math.max(0, row.unknownSpell) end
     return {low = low, typical = typical, high = math.max(typical, high)}

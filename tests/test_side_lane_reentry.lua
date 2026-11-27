@@ -28,7 +28,7 @@ local j={IsInLaningPhase=function() return true end,IsCore=function() return tru
     GetHP=function(unit) return unit==bot and state.hp or 0.9 end,
     IsDisabled=noop, IsValidBuilding=function(x) return x==tower end, IsValid=function(x) return x~=nil end,
     IsValidHero=function(x) return x==ally end, GetLanePartner=function() return ally end,
-    IsRetreating=noop, GetLocationTowardDistanceLocation=toward,VectorTowards=toward,
+    IsRetreating=noop, GetLocationTowardDistanceLocation=function(unit,b,d) return toward(unit:GetLocation(),b,d) end,VectorTowards=toward,
     GetLocationToLocationDistance=distance,GetEnemiesNearLoc=hostile,
     GetLastSeenEnemiesNearLoc=hostile}
 local env=setmetatable({J=j,LANE_TOP=1,LANE_BOT=2,TOWER_TOP_1=1,TOWER_BOT_1=2,
@@ -52,3 +52,22 @@ assert(not j.GetSideLaneReturnPoint(bot,1),'do not use hidden wave coordinates')
 wave.hidden=false;state.fog=true
 assert(not j.GetSideLaneReturnPoint(bot,1),'no commitment into a blind endpoint')
 print('PASS: side core reconnects to a visible wave, but not through live threat or fog.')
+
+-- Exercise the production choice of a small retreat versus a real retreat.
+bot.GetAssignedLane=function() return 1 end
+bot.GetCurrentMovementSpeed=function() return 300 end
+bot.IsRooted=noop
+bot.WasRecentlyDamagedByTower=noop
+attacker.x=2100
+attacker.GetAttackRange=function() return 300 end
+j.IsSuspiciousIllusion=noop
+j.IsValidHero=function(x) return x==ally or x==attacker end
+state.fog=false
+state.hp=0.58
+bot.x=1800
+assert(j.GetSideLaneYieldPoint(bot,{attacker})==1440,'break attack contact with one small backward step')
+state.hp=0.35
+assert(not j.GetSideLaneYieldPoint(bot,{attacker}),'a low core still commits to the real escape')
+state.hp=0.59
+state.fog=true
+assert(not j.GetSideLaneYieldPoint(bot,{attacker}),'do not select a short retreat into fog')

@@ -135,6 +135,25 @@ end
 print('PASS: an impossible first response does not steal a timely second-lane defender')
 
 do
+    objective=true
+    wave={waveSize=3,eta=2,count=2,clearAt=1200}
+    towers={}
+    bot.x,ally.x=-750,-1050
+    local previous=env.GetWaveClearScore
+    local oldThreat=j.GetOuterTowerThreat
+    j.GetOuterTowerThreat=function() return wave end
+    env.GetWaveClearScore=function(u)
+        if u==bot then return 1600,1000,300,5 end
+        return 450,2350,200,0.5
+    end
+    reinforcement,enemiesAlive=12,3
+    assert(j.GetExposedMidCover(2)==ally,'arriving early is insufficient if the cast misses the deadline')
+    env.GetWaveClearScore=previous
+    j.GetOuterTowerThreat=oldThreat
+end
+
+
+do
     local function v(x) return {x=x,y=0} end
     local function u(x,id,wealth)
         local hero=unit(x,.9,id)

@@ -40,6 +40,9 @@ function GetDesireHelper()
 	end
 
     local pit = Roshan and Roshan:GetLocation() or J.GetCurrentRoshanLocation()
+    if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, pit, false) then
+        return BOT_MODE_DESIRE_NONE
+    end
     if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() or GetUnitToLocationDistance(bot, pit) > 2400 then
         return BOT_MODE_DESIRE_NONE
     end
@@ -84,7 +87,15 @@ function GetDesireHelper()
     end
 
     local shouldKillRoshan = Roshan ~= nil or J.IsRoshanAlive()
-    local ready = shouldKillRoshan and J.GetHP(bot) > 0.5 and J.HasEnoughDPSForRoshan(aliveHeroesList, Roshan)
+    local enough, seconds = J.HasEnoughDPSForRoshan(aliveHeroesList, Roshan)
+    local ready = shouldKillRoshan and J.GetHP(bot) > 0.5 and enough
+    if ready and aliveEnemy >= 2 and aliveEnemy <= 3 and J.GetEnemyReinforcementWindow
+        and seconds ~= nil and (#pitRecent > 0 or seconds > 10) then
+        local available = J.GetEnemyReinforcementWindow()
+        local approach = math.max(0, GetUnitToLocationDistance(bot, pit) - 700)
+            / math.max(250, bot:GetCurrentMovementSpeed())
+        if available < math.huge and seconds * 1.25 + approach + 3 > available then ready = false end
+    end
     if ready and Roshan ~= nil and GetUnitToLocationDistance(bot, pit) < 1600 and #nearbyRecent == 0 and #pitRecent == 0 then
         local roshHP = J.GetHP(Roshan)
         if roshHP < 0.5 then

@@ -939,8 +939,26 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
             const arrival = Math.max(second, core, secondCreepETA);
             const time = arrival + (highGround ? 6 : 0)
                 + jmz.GetLastSeenEnemiesNearLoc(location, 1600).length * 6;
-            if (arrival <= availableTime && time < bestTime) {
-                bestTime = time;
+            let dps = 0;
+            for (const ally of Object.values(arriving)) {
+                if (!ally.GetAttackDamage || !ally.GetSecondsPerAttack || !tower.GetActualIncomingDamage) continue;
+                const eta = Math.max(0, GetUnitToUnitDistance(ally, tower) - ally.GetAttackRange())
+                    / Math.max(1, ally.GetCurrentMovementSpeed());
+                if (eta <= arrival + 1) {
+                    dps += tower.GetActualIncomingDamage(ally.GetAttackDamage(), DamageType.Physical)
+                        / Math.max(0.25, ally.GetSecondsPerAttack());
+                }
+            }
+            // A safe outer tower chip can have value when a kill won't fit.
+            const hp = tower.GetHealth ? tower.GetHealth() : 0;
+            const work = dps > 0 ? hp / (dps * 0.8) : 0;
+            const finish = time + work + (dps > 0 ? 2 : 1.25);
+            const usable = availableTime - time - 1.5;
+            const chip = !highGround && dps > 0 && usable >= 1
+                && dps * 0.8 * usable >= Math.min(hp, Math.max(70, hp * 0.075));
+            const rank = finish <= availableTime ? finish : chip ? availableTime + 2 : Infinity;
+            if (rank < bestTime) {
+                bestTime = rank;
                 best = { lane, tower, staging, highGround, ready: arriving, waveFront: wave };
             }
         }

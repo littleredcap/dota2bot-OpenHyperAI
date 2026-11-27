@@ -1065,8 +1065,28 @@ function GetPostFightPushPlan(gameState)
                         local arrival = math.max(second, core, secondCreepETA)
                         local time = arrival + (highGround and 6 or 0)
                             + #jmz.GetLastSeenEnemiesNearLoc(location, 1600) * 6
-                        if arrival <= availableTime and time < bestTime then
-                            bestTime = time
+                        local dps = 0
+                        for _, ally in pairs(arriving) do
+                            if ally.GetAttackDamage and ally.GetSecondsPerAttack and tower.GetActualIncomingDamage then
+                                local eta = math.max(0, GetUnitToUnitDistance(ally, tower) - ally:GetAttackRange())
+                                    / math.max(1, ally:GetCurrentMovementSpeed())
+                                if eta <= arrival + 1 then
+                                    dps = dps + tower:GetActualIncomingDamage(ally:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+                                        / math.max(0.25, ally:GetSecondsPerAttack())
+                                end
+                            end
+                        end
+                        -- If a kill won't fit, a safe outer tower chip can
+                        -- still be worth it. Keep an exit buffer either way.
+                        local hp = tower.GetHealth and tower:GetHealth() or 0
+                        local work = dps > 0 and hp / (dps * 0.8) or 0
+                        local finish = time + work + (dps > 0 and 2 or 1.25)
+                        local usable = availableTime - time - 1.5
+                        local chip = not highGround and dps > 0 and usable >= 1
+                            and dps * 0.8 * usable >= math.min(hp, math.max(70, hp * 0.075))
+                        local rank = finish <= availableTime and finish or chip and (availableTime + 2) or math.huge
+                        if rank < bestTime then
+                            bestTime = rank
                             best = {lane = lane, tower = tower, staging = staging, highGround = highGround, ready = arriving, waveFront = wave}
                         end
                     end

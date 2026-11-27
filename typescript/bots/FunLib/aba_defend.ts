@@ -806,7 +806,8 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
         if (role && plan) {
             if (lane !== plan.lane) return BotModeDesire.VeryLow;
             const reach = role === "clear" ? plan.primary!.reach : bot.GetAttackRange();
-            (bot as any).ohaMidCover = {tower: plan.building, lane, reach, cover: role === "cover", expires: DotaTime() + 1};
+            const staging = role === "clear" ? plan.primary?.staging : undefined;
+            (bot as any).ohaMidCover = {tower: plan.building, lane, reach, cover: role === "cover", staging, expires: DotaTime() + 1};
             bot.laneToDefend = lane;
             return (role === "cover" ? 0.80 : 0.83) as BotModeDesire;
         }
@@ -1155,7 +1156,8 @@ export function DefendThink(bot: Unit, lane: Lane) {
     const guard = (bot as any).ohaMidCover;
     if (guard && lane === guard.lane && now < guard.expires && !IsBaseThreatActive()
         && ((bot as any)._ohaCreepDefenseUntil ?? -1) <= now && jmz.IsValidBuilding(guard.tower)) {
-        jmz.RunOuterTowerHold(bot, guard.tower.GetLocation(), guard.reach, guard.cover);
+        const stage = guard.staging && jmz.CanCommitToLaneTeleport(bot, guard.staging, true, 650) ? guard.staging : undefined;
+        jmz.RunOuterTowerHold(bot, guard.tower.GetLocation(), guard.reach, guard.cover, stage);
         return;
     }
     if (jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "defend")) return;
