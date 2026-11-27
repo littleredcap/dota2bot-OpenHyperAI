@@ -246,7 +246,9 @@ local function ThinkLane()
 
 	local firingPosition = moveToCreep
 		and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) or nil
-	if urgentApproach and firingPosition ~= nil then
+	-- A recovering core should enter last-hit range before an optional deny
+	-- can pin it behind the next enemy creep. Never walk without a safe point.
+	if firingPosition ~= nil and (urgentApproach or J.IsCore(bot)) then
 		bot:Action_MoveToLocation(firingPosition)
 		return
 	end

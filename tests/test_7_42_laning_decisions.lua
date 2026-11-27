@@ -435,6 +435,20 @@ for _, overridden in ipairs({false, true}) do
     state.enemies = {enemy, state.secondEnemy}
     expect(state, mode, 'move', -1200)
 end
+do
+    local state, mode, creep = fixture(true, false)
+    local j = mode.J
+    j.GetLaningLastHitTarget = function() return creep, true, false, false end
+    local point = -250
+    j.GetLaningCreepPosition = function() return point end
+    local deny = {x = 110}
+    j.GetLaningDenyTarget = function() return deny, false end
+    mode.GetDesire()
+    expect(state, mode, 'move', point)
+    point = nil
+    mode.GetDesire()
+    expect(state, mode, 'attack', deny)
+end
 print('PASS: both lane modes prefer reachable ranged creeps, preserve attack windups and respect tower pressure')
 
 for _, overridden in ipairs({false, true}) do
