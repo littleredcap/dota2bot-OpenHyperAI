@@ -4820,12 +4820,20 @@ function X.GetLaningTPLocation( bot, nMinTPDistance, botLocation )
 		tp = true
 	end
 	if tp and laneToTP ~= LANE_MID and bot:DistanceFromFountain() < 1400 then
-		-- A recent forced reset is still relevant after the fountain restores health.
+		local tower = GetTower(team, laneToTP == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+		-- The enemy can own the front without owning our protected landing.
+		-- Return behind the tower if a healthy partner can receive us; never TP
+		-- to a contested landing merely because health recovered in fountain.
 		if (bot.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
 			and #J.GetLastSeenEnemiesNearLoc(GetLaneFrontLocation(team, laneToTP, 0), 1700) > 0 then
+			local partner = J.GetLanePartner(bot)
+			if J.IsValidBuilding(tower) and partner ~= nil and J.IsValidHero(partner) and J.GetHP(partner) >= 0.58
+				and J.IsInRange(partner, tower, 1100) and not J.IsRetreating(partner) then
+				local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
+				if IsLocationPassable(point) and J.CanCommitToLaneTeleport(bot, point, true, 1100) then return point, true end
+			end
 			return nil, false
 		end
-		local tower = GetTower(team, laneToTP == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
 		if tower and tower:IsAlive() then return J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 200), true end
 	end
 	return GetLaneFrontLocation(team, laneToTP, 100), tp
@@ -5070,7 +5078,10 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 	if bot:GetLevel() > 12 and bot:DistanceFromFountain() < 600 then nMinTPDistance = nMinTPDistance + 600 end
 
-	if nMode == BOT_MODE_LANING
+	local recoveringSideCore = (bot.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
+		and bot:DistanceFromFountain() < 1400 and botHP >= 0.88 and botMP >= 0.65
+		and nEnemyCount == 0 and J.IsInLaningPhase(bot)
+	if nMode == BOT_MODE_LANING or recoveringSideCore
 	then
 		local shouldTp
 		hEffectTarget, shouldTp = X.GetLaningTPLocation(bot, nMinTPDistance, botLocation)

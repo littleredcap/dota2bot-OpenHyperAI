@@ -255,6 +255,14 @@ local function ThinkLane()
 		return
 	end
 
+	-- Real last hits remain first. Pressure the returning offlaner before an
+	-- optional support deny, and only move a short distance with lane cover.
+	if not J.IsCore(bot) and not J.IsFinishingLaningAttack(bot, attackTarget) then
+		local press = J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
+		if press ~= nil then bot:Action_AttackUnit(press, true); return end
+		local step = J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower)
+		if step ~= nil then bot:Action_MoveToLocation(step); return end
+	end
 	local denyCreep, reserveDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 	if J.IsValid(denyCreep) then
 		bot:SetTarget(denyCreep)
@@ -273,8 +281,7 @@ local function ThinkLane()
 	end
 
 	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
-	local harassTarget = J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
-		or J.GetLaningHarassTarget(bot, nInRangeEnemy, enemyTower, #bot:GetNearbyLaneCreeps(600, true))
+	local harassTarget = J.GetLaningHarassTarget(bot, nInRangeEnemy, enemyTower, #bot:GetNearbyLaneCreeps(600, true))
 	if harassTarget ~= nil then
 		bot:Action_AttackUnit(harassTarget, true)
 		return

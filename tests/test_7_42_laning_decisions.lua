@@ -720,6 +720,11 @@ do
     bot.ohaCarryLaneRecoveryUntil = state.time + 20
     j.GetLastSeenEnemiesNearLoc = function() return {6, 7} end
     assert(teleport() == 0, 'the same contested lane is unsafe immediately after a forced reset')
+    state.partner, state.partnerHP = true, 0.9
+    local front = env.GetLaneFrontLocation()
+    j.GetLastSeenEnemiesNearLoc = function(at) return at == front and {6, 7} or {} end
+    assert(teleport() > 0, 'a clear protected landing with a healthy support is usable despite a contested front')
+    state.partner = false
     j.GetLastSeenEnemiesNearLoc = empty
     assert(teleport() > 0, 'return on a clear lane even during the recovery window')
     state.unsafe = true

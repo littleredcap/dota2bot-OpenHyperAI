@@ -1311,6 +1311,12 @@ function J.GetSideLaneHoldTower(bot)
     end
 
     local enemies = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
+    if J.IsCore(bot) and not absent and hp >= 0.45 and J.IsInRange(bot, tower, 1050)
+        and J.GetHP(partner) >= 0.58 and J.IsInRange(bot, partner, 650)
+        and J.IsLaningUnderPressure(bot, enemies, nil) then
+        local covered = SafeLaneTower(bot, tower, enemies, hp, partner)
+        if covered then return covered end
+    end
     if #enemies == 0 and not bot:WasRecentlyDamagedByAnyHero(5) and not J.IsRetreating(bot)
         and GetUnitToLocationDistance(tower, GetLaneFrontLocation(bot:GetTeam(), lane, 0)) > 1000 then
         local wave = bot:GetNearbyLaneCreeps(1000, true)
@@ -1625,7 +1631,7 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
     local best, score = nil, math.huge
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
-            and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310 and J.GetHP(enemy) <= 0.65
+            and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310 and J.GetHP(enemy) <= 0.72
             and J.IsInRange(bot, enemy, range) and J.CanFollowLaneFight(ally, enemy)
             and (not J.IsValidBuilding(tower) or not (J.IsInRange(enemy, tower, 900) or J.IsInRange(bot, tower, 850)))
             and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(enemy:GetLocation()) then
@@ -1640,6 +1646,50 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
         end
     end
     return best
+end
+
+-- Occupy a reachable angle on the wave, not the retreat path of a fleeing hero.
+function J.GetSideLanePressureStep(bot, enemies, tower)
+    local lane, now = bot:GetAssignedLane(), DotaTime()
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 30 or now > 600
+        or #enemies == 0 or #enemies > 2 or J.IsCore(bot) or bot:GetAttackRange() < 400
+        or J.GetHP(bot) < 0.72 or bot:WasRecentlyDamagedByAnyHero(2)
+        or J.IsLaningUnderPressure(bot, enemies, tower) then return end
+    local core = J.GetLanePartner(bot)
+    if not J.IsValidHero(core) or not J.IsCore(core) or J.GetHP(core) < 0.65
+        or J.IsRetreating(core) or not J.IsInRange(bot, core, 700) then return end
+    local wave = bot:GetNearbyLaneCreeps(1150, false)
+    if #wave < math.max(2, #bot:GetNearbyLaneCreeps(850, true)) then return end
+    if not J.IsValidBuilding(tower) then
+        local opponent = GetOpposingTeam()
+        tower = GetTower(opponent, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+        if not J.IsValidBuilding(tower) then tower = GetTower(opponent, lane == LANE_TOP and TOWER_TOP_2 or TOWER_BOT_2) end
+    end
+    local range = bot:GetAttackRange()
+    for _, enemy in ipairs(enemies) do
+        if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and not J.IsSuspiciousIllusion(enemy)
+            and enemy:GetAttackRange() < 310 and J.GetHP(enemy) <= 0.72 and J.CanFollowLaneFight(core, enemy)
+            and not J.IsInRange(bot, enemy, range) and J.IsInRange(bot, enemy, range + 220)
+            and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 1000)) then
+            for _, creep in ipairs(wave) do
+                if J.IsValid(creep) and J.IsInRange(creep, enemy, 375) then
+                    local origin = bot:GetLocation()
+                    local point = J.VectorTowards(origin, enemy:GetLocation(), GetUnitToUnitDistance(bot, enemy) - range + 25)
+                    if IsLocationPassable(point) and GetHeightLevel(point) >= GetHeightLevel(enemy:GetLocation())
+                        and GetUnitToLocationDistance(core, point) <= 720
+                        and (not J.IsValidBuilding(tower) or GetUnitToLocationDistance(tower, point) > 1000)
+                        and #J.GetLastSeenEnemiesNearLoc(point, 850) <= #enemies then
+                        local safe = true
+                        for _, foe in ipairs(enemies) do
+                            if foe ~= enemy and J.IsValidHero(foe) and GetUnitToLocationDistance(foe, point)
+                                <= math.max(500, foe:GetAttackRange() + 160) then safe = false; break end
+                        end
+                        if safe then return point end
+                    end
+                end
+            end
+        end
+    end
 end
 
 function J.GetLaningHarassTarget(bot, enemies, tower, enemyCreepCount)
