@@ -516,6 +516,7 @@ local function fixture(opts)
     -- Legacy scenarios do not implement live public death sampling.
     -- New coverage integration cases inject a shared plan explicitly.
     jmz.GetPostFightCoverage = function() return nil end
+    jmz.GetScheduledFarmWaveOwner = function() return nil end
     return push,defend,members,orders,Lan,farm,
         {ancient=enemy, ourAncient=ancient, melee=melee, ranged=ranged, outerTower=outerTower, counterTower=counterTower, fightTower=fightTower}, jmz, advanceTime
 end

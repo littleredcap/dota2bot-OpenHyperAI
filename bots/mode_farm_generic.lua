@@ -109,6 +109,8 @@ end
 
 local function IsFarmWaveAvailable(location)
 	if IsReleasedFarmLane(location) or not IsFarmLocationSafe(location) then return false end
+	local owner=J.GetScheduledFarmWaveOwner and J.GetScheduledFarmWaveOwner(bot,location)
+	if owner~=nil then return owner==bot:GetPlayerID() end
 	if not recoveringLane then return true end
 	for _, ally in ipairs(J.GetAlliesNearLoc(location, 1000)) do
 		if CanReserveWave(ally) and J.IsCore(ally)
@@ -474,6 +476,8 @@ end
 local function CanCollectWave(location, distance)
 	if IsReleasedFarmLane(location) or not IsFarmLocationSafe(location) or not IsFarmPathSafe(location)
 		or #J.GetLastSeenEnemiesNearLoc(location, 1400) > 0 then return false end
+	local owner=J.GetScheduledFarmWaveOwner and J.GetScheduledFarmWaveOwner(bot,location)
+	if owner~=nil then return owner==bot:GetPlayerID() end
 	for _, ally in ipairs(J.GetAlliesNearLoc(location, math.max(1250, distance + 400))) do
 		if CanReserveWave(ally) then
 			local claim = ally.ohaWaveClaim

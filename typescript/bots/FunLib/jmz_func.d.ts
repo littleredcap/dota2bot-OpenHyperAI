@@ -100,7 +100,7 @@ interface OuterTowerThreat {
 }
 declare function GetOuterTowerThreat(tower: Unit, lane: Lane): OuterTowerThreat;
 declare function GetExposedMidCover(team: Team): LuaMultiReturn<[Unit | undefined, Unit | undefined, number | undefined]>;
-declare function GetPostFightDuty(bot: Unit): LuaMultiReturn<["clear" | "cover" | undefined, { building: Unit; primary?: {reach: number} } | undefined]>;
+declare function GetPostFightDuty(bot: Unit): LuaMultiReturn<["clear" | "cover" | undefined, { building: Unit; lane: Lane; primary?: {reach: number} } | undefined]>;
 declare function CanTakePostFightTrip(bot: Unit, point?: Vector, spendTeleport?: boolean): boolean;
 declare function GetOuterTowerResponse(location: Vector, threat: OuterTowerThreat, fallback?: Vector, highGround?: boolean): LuaMultiReturn<[boolean, Record<number, {reach: number, cover: boolean, teleport?: Vector, rally?: Vector, gather?: Vector, screen?: boolean, needsGlyph?: boolean} | undefined>]>;
 declare function RunOuterTowerHold(bot: Unit, location: Vector, reach: number, cover: boolean): boolean;

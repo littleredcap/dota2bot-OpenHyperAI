@@ -8383,6 +8383,20 @@ local function UseGlyph()
 	}
 
 	local coverOuter = false
+	local coverage = J.GetPostFightCoverage and J.GetPostFightCoverage(team)
+	for _, front in ipairs(coverage and (coverage.lanes or {coverage}) or {}) do
+		local tower, clear = front.building, front.primary
+		if clear and J.IsValidBuilding(tower) and not tower:HasModifier('modifier_fountain_glyph') and HasGlyphPressure(tower) then
+			local threat = J.GetOuterTowerThreat(tower, front.lane or LANE_MID)
+			if threat.damageRate and threat.damageRate > 0 then
+				local life = tower:GetHealth() / threat.damageRate
+				local timeToAction = clear.arrival + 1
+				if life < timeToAction and timeToAction <= life + 5 and threat.waveSize > 0 then
+					coverOuter=true
+				end
+			end
+		end
+	end
 	for index = #T1, 1, -1
 	do
 		local tower = GetTower(team, T1[index])

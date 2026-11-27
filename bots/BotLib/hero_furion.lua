@@ -214,9 +214,12 @@ function X.SkillsComplement()
     and bot.ProphetTPLocation ~= nil
     and J.CanCastAbility(Teleportation)
     then
-        bot:Action_UseAbilityOnLocation(Teleportation, bot.ProphetTPLocation)
+        local location=bot.ProphetTPLocation
         bot.useProphetTP = false
-        return
+        if not J.CanTakePostFightTrip or J.IsRetreating(bot) or J.CanTakePostFightTrip(bot,location,true) then
+            bot:Action_UseAbilityOnLocation(Teleportation, location)
+            return
+        end
     end
 
     -- Sprout+NaturesCall combo for farming/pushing
@@ -230,7 +233,8 @@ function X.SkillsComplement()
     end
 
     local tpDesire, tpLoc = X.ConsiderTeleportation()
-    if tpDesire > 0 then
+    if tpDesire > 0 and (not J.CanTakePostFightTrip or J.IsRetreating(bot) or J.IsStuck(bot)
+        or J.CanTakePostFightTrip(bot,tpLoc,true)) then
         J.SetQueuePtToINT(bot, false)
         bot:ActionQueue_UseAbilityOnLocation(Teleportation, tpLoc)
         bot.useProphetTP = false

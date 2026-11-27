@@ -1055,21 +1055,22 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     elseif bot.ohaHighGroundResponse and bot.ohaHighGroundResponse.lane == lane then
         bot.ohaHighGroundResponse = nil
     end
-    if lane == Lane.Mid and jmz.GetExposedMidCover and not IsBaseThreatActive() then
+    if jmz.GetExposedMidCover and not IsBaseThreatActive() then
         local role, plan
         if jmz.GetPostFightDuty then role, plan = jmz.GetPostFightDuty(bot) end
         local guard, building, reach
-        if plan then
-            if role then guard, building, reach = bot, plan.building, role == 'clear' and plan.primary.reach or bot:GetAttackRange() end
-        else
+        if plan and role then
+            if lane ~= (plan.lane or Lane.Mid) then return BotModeDesire.VeryLow end
+            guard, building, reach = bot, plan.building, role == 'clear' and plan.primary.reach or bot:GetAttackRange()
+        elseif not plan and lane == Lane.Mid then
             guard, building, reach = jmz.GetExposedMidCover(team)
         end
         if guard == bot then
-            bot.ohaMidCover = {tower = building, reach = reach, cover = role == 'cover', expires = DotaTime() + 1}
+            bot.ohaMidCover = {tower = building, lane = lane, reach = reach, cover = role == 'cover', expires = DotaTime() + 1}
             bot.laneToDefend = lane
             return role == 'cover' and 0.80 or 0.83
         end
-        bot.ohaMidCover = nil
+        if bot.ohaMidCover and bot.ohaMidCover.lane == lane then bot.ohaMidCover = nil end
     end
     local botLevel = bot:GetLevel()
     if bot:GetAssignedLane() ~= lane and distanceToDefendLoc > 3000 and (jmz.GetPosition(bot) == 1 and botLevel < 6 or jmz.GetPosition(bot) == 2 and botLevel < 6 or jmz.GetPosition(bot) == 3 and botLevel < 5 or jmz.GetPosition(bot) == 4 and botLevel < 4 or jmz.GetPosition(bot) == 5 and botLevel < 4) then
@@ -1500,7 +1501,7 @@ function ____exports.DefendThink(bot, lane)
         return
     end
     local guard = bot.ohaMidCover
-    if lane == Lane.Mid and guard and now < guard.expires and not IsBaseThreatActive()
+    if guard and lane == (guard.lane or Lane.Mid) and now < guard.expires and not IsBaseThreatActive()
         and (bot._ohaCreepDefenseUntil or -1) <= now and jmz.IsValidBuilding(guard.tower) then
         jmz.RunOuterTowerHold(bot, guard.tower:GetLocation(), guard.reach, guard.cover)
         return

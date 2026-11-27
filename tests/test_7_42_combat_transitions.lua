@@ -123,6 +123,7 @@ local function fixture(rescue)
         return setfenv(assert(loadfile(name .. '.lua')), env)()
     end
     setfenv(assert(loadstring(source:sub(allyFirst, allyLast - 1) .. source:sub(first, last - 1))), env)()
+    j.GetPostFightCoverage=function() return nil end
     local path = rescue and 'bots/mode_team_roam_generic.lua' or 'bots/mode_attack_generic.lua'
     setfenv(assert(loadfile(path)), env)()
     return state, env, bot, core, backup, enemy, reinforcement, j

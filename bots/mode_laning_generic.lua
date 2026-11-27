@@ -23,6 +23,15 @@ local nH, enemyBots = J.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam())
 local teamHumans, teamBots = J.Utils.NumHumanBotPlayersInTeam(GetTeam())
 local firstWaveReached = false
 local campPlan
+local nextLaneTrace, lastLaneTrace = -math.huge, nil
+local function TraceLaneDecision(kind, target)
+	if not J.Customize or not J.Customize.TraceLaneDecisions then return end
+	local now=DotaTime()
+	if now>600 or kind==lastLaneTrace and now<nextLaneTrace then return end
+	lastLaneTrace,nextLaneTrace=kind,now+4
+	print('[OHA lane]',now,bot:GetPlayerID(),bot:GetAssignedLane(),kind,
+		target and target:GetUnitName() or '-',math.floor(J.GetHP(bot)*100))
+end
 local laneTierOne = {[LANE_TOP] = TOWER_TOP_1, [LANE_MID] = TOWER_MID_1, [LANE_BOT] = TOWER_BOT_1}
 
 -- Announcer state
@@ -232,6 +241,7 @@ local function ThinkLane()
 		return
 	end
 	if underPressure then
+		TraceLaneDecision('yield-pressure')
 		bot:Action_MoveToLocation(GetLaneFrontLocation(GetTeam(), botAssignedLane or bot:GetAssignedLane(), -1200))
 		return
 	end
@@ -244,6 +254,7 @@ local function ThinkLane()
 	local hitCreep, moveToCreep, reserve, urgentApproach = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
 		J.GetLaningAttackDamage(bot), nInRangeEnemy)
 	if hitCreep ~= nil and not moveToCreep then
+		TraceLaneDecision('last-hit-order', hitCreep)
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'last-hit-now') end
 		bot:SetTarget(hitCreep)
 		J.IssueLaningAttack(bot, hitCreep)
@@ -266,6 +277,7 @@ local function ThinkLane()
 
 	local denyCreep, reserveDeny, urgentDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 	if urgentDeny and J.IsValid(denyCreep) then
+		TraceLaneDecision('deny-order',denyCreep)
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'deny-now') end
 		bot:SetTarget(denyCreep)
 		J.IssueLaningAttack(bot, denyCreep)
@@ -273,6 +285,7 @@ local function ThinkLane()
 	end
 	local cover = J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower)
 	if cover and not J.IsFinishingLaningAttack(bot, attackTarget) then
+		TraceLaneDecision('cover-core',cover)
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'protect-core-now') end
 		bot:Action_AttackUnit(cover, true)
 		return

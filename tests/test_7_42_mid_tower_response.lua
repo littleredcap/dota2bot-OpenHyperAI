@@ -15,6 +15,7 @@ local function unit(x,hp,id)
 end
 local bot, ally, tower, foe = unit(-700,.86,1),unit(-840,.85,2),unit(0,1,8),unit(0,.72,11)
 local danger, cover, attack, objective, incoming = false,true,true,true,{}
+local towers, secondWave = {}, nil
 foe.target=tower
 bot._defend={waveClearLane=2,waveClearTower=tower}
 bot.ohaOuterTowerHoldUntil=1001
@@ -22,11 +23,11 @@ local now, enemiesAlive, reinforcement, wave = 1000, 2, 24, {waveSize=0,eta=0}
 local j={
     IsValidHero=function(u) return u and u~=tower end, GetHP=function(u) return u.hp end,
     IsSuspiciousIllusion=no, CanBeAttacked=yes, IsDefending=yes, IsDisabled=no, IsRetreating=no,
-    IsValidBuilding=function(u) return objective and u==tower end,
+    IsValidBuilding=function(u) return objective and (u==tower or u and u.structure) end,
     GetAvailableFightAllies=function() return cover and 1 or 0 end,
     GetEnemiesNearLoc=function(point, radius) return point==0 and attack and {foe} or (danger and {foe,foe} or {}) end,
     IsInRange=function(a,b,n) return math.abs(a.x-b.x)<=n end,
-    GetAlliesNearLoc=function() return {bot,ally} end, GetOuterTowerThreat=function() return wave end,
+    GetAlliesNearLoc=function() return {bot,ally} end, GetOuterTowerThreat=function(b) return b==tower and wave or secondWave end,
     GetNumOfAliveHeroes=function(enemy) return enemy and enemiesAlive or 4 end,
     AdjustLocationWithOffsetTowardsFountain=function(point, offset) return point-offset end,
     CanCommitToLaneTeleport=yes, GetPosition=function() return 2 end,
@@ -36,9 +37,13 @@ local j={
     GetItem2=function() end, CanCastAbility=no,
     Utils={GetCachedVars=function() end, SetCachedVars=no},
 }
-local env=setmetatable({J=j, LANE_MID=2, TOWER_MID_3=31, BARRACKS_MID_MELEE=10,
+local env=setmetatable({J=j, LANE_MID=2, TOWER_MID_3=23, BARRACKS_MID_MELEE=10,
     DotaTime=function() return now end, GetUnitToLocationDistance=function(a,x) return math.abs(a.x-x) end,
-    GetTower=function() end, GetBarracks=function() return tower end, GetAncient=function() end,
+    GetTower=function(_,id) return towers[id] end, GetBarracks=function(_,id) return id==10 and tower or nil end,
+    GetAncient=function() end, LANE_TOP=1, LANE_BOT=3,
+    TOWER_TOP_1=11,TOWER_TOP_2=12,TOWER_TOP_3=13,TOWER_MID_1=21,TOWER_MID_2=22,
+    TOWER_BOT_1=31,TOWER_BOT_2=32,TOWER_BOT_3=33,BARRACKS_MID_RANGED=20,
+    BARRACKS_TOP_MELEE=30,BARRACKS_TOP_RANGED=34,BARRACKS_BOT_MELEE=35,BARRACKS_BOT_RANGED=36,
     GetIncomingTeleports=function() return incoming end, TOWER_BASE_1=40, TOWER_BASE_2=41,
     GetWaveClearScore=function(u) return u==bot and 400 or 220,1000,250 end}, {__index=_G})
 extract('local function GetCoveredMidPokeTarget','function J.RunOuterTowerHold',env)
@@ -52,7 +57,7 @@ assert(not j.GetMidDefensePokeTarget(bot,800),'do not poke without another avail
 cover,danger=true,true
 assert(not j.GetMidDefensePokeTarget(bot,800),'do not poke into a group already at the defender')
 danger=false
-extract('function J.GetPostFightCoverage','local function GetOuterTowerHoldPoint',env)
+extract('local function BuildDefenseLanePlan','local function GetOuterTowerHoldPoint',env)
 local spare=unit(-1000,.90,3)
 local guard, building, reach=j.GetExposedMidCover(2)
 assert(guard==bot and building==tower and reach==1000, 'retain one nearby clearer when the window is safe')
@@ -88,3 +93,53 @@ danger=false
 objective=false
 assert(not j.GetExposedMidCover(2) and j.CanTakePostFightTrip(spare,6500,true),'release if no vulnerable objective remains')
 print('PASS: shared post-fight cover protects the return budget, validates handoff, and preserves safe conversion')
+
+do
+    objective=true
+    wave={waveSize=3,eta=5,count=2}
+    local outer, rear = unit(5200,1,9), unit(3600,1,10)
+    outer.structure,rear.structure=true,true
+    outer.GetHealth=function() return 60 end
+    rear.GetHealth=function() return 1000 end
+    towers[env.TOWER_TOP_1],towers[env.TOWER_TOP_2]=outer,rear
+    secondWave={waveSize=4,eta=0,count=3,underAttack=true,damageRate=40}
+    bot.x, ally.x=-760,3050
+    local plan=j.GetPostFightCoverage(2)
+    assert(#plan.lanes==2 and plan.lanes[1].lane==env.LANE_TOP and plan.lanes[1].building==rear,
+        'transfer a doomed outer front to the rear tower regardless of lane identity')
+    assert(plan.lanes[1].primary.hero==ally and plan.lanes[2].primary.hero==bot,
+        'two credible fronts recruit distinct clearers, never assign one hero twice')
+end
+print('PASS: generic simultaneous top and mid deadlines allocate two defenders and skip a doomed tower')
+
+do
+    local function v(x) return {x=x,y=0} end
+    local function u(x,id,wealth)
+        local hero=unit(x,.9,id)
+        hero.GetLocation=function(self) return v(self.x) end
+        hero.GetNetWorth=function() return wealth end
+        return hero
+    end
+    local strong, recovering, injured=u(1300,1,10500),u(1450,2,4500),u(4650,3,9500)
+    injured.hp=.35
+    local function c(x)
+        return {CanBeSeen=yes,GetLocation=function() return v(x) end,
+            GetUnitName=function() return 'npc_dota_creep_enemy_ranged' end}
+    end
+    local roster={strong,recovering,injured}
+    j.IsInLaningPhase, j.IsGoingOnSomeone, j.IsDoingRoshan, j.IsDoingTormentor=no,no,no,no
+    j.IsInAllyArea,j.IsCore,j.IsValid=yes,yes,yes
+    j.GetAlliesNearLoc=function() return roster end
+    j.GetEnemiesNearLoc,j.GetLastSeenEnemiesNearLoc=function() return {} end,function() return {} end
+    j.GetPostFightDuty=function() return nil end
+    j.CanTakePostFightTrip=yes
+    j.GetLocationToLocationDistance=function(a,b) return math.abs(a.x-b.x) end
+    j.VectorTowards=function(a,b,d) return v(a.x+(b.x>=a.x and d or -d)) end
+    env.GetUnitToLocationDistance=function(a,p) return math.abs(a.x-p.x) end
+    env.GetUnitList=function() return {c(1700),c(1730),c(1760),c(3900),c(3925)} end
+    assert(j.GetScheduledFarmWaveOwner(strong,v(1700))==recovering.id,'prefer the recovering but still timely core')
+    assert(j.GetScheduledFarmWaveOwner(recovering,v(3900))==strong.id,'assign the other wave to a distinct healthy core')
+    j.GetPostFightDuty=function(hero) return hero==recovering and 'clear' or nil end
+    assert(j.GetScheduledFarmWaveOwner(strong,v(1700))==strong.id,'defensive coverage outranks a farm grant')
+end
+print('PASS: opponent-neutral resource assignments prefer timely recovering cores without double claims')
