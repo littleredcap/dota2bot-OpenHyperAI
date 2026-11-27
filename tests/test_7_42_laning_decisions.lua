@@ -1018,3 +1018,28 @@ do
     expect(state, mode, 'attack', creep)
 end
 print('PASS: punish a ranged creep attack from a covered range advantage and still take the immediate last hit')
+
+do
+    local state, mode, creep, enemy, bot = fixture(false, false)
+    local j = mode.J
+    state.partner, state.enemy, state.enemyWindup = true, true, true
+    local partner = j.GetLanePartner(bot)
+    partner.x, partner.IsCreep = 380, no
+    partner.GetLocation = function(self) return self.x end
+    enemy.x = 778
+    mode.GetTower().x = 2100
+    enemy.GetAttackRange, bot.GetAttackRange = function() return 400 end, function() return 600 end
+    enemy.IsFacingLocation = yes
+    enemy.GetAttackTarget = function() return partner end
+    state.creepHP, state.allies = 320, {creep, creep, creep}
+    j.VectorTowards = function(origin, _, distance) return origin + distance end
+    assert(mode.GetDesire() == 0.68)
+    expect(state, mode, 'move', 198)
+    enemy.x = 948
+    assert(not j.GetSideLanePressureStep(bot, {enemy}), 'do not follow an opponent off the wave')
+    enemy.x, enemy.IsFacingLocation = 778, no
+    assert(not j.GetSideLanePressureStep(bot, {enemy}), 'cancel a step after the opponent turns away')
+    enemy.IsFacingLocation, state.allies, state.creeps = yes, {creep}, {creep, creep, creep}
+    assert(not j.GetSideLanePressureStep(bot, {enemy}), 'do not take a one-against-three creep trade')
+end
+print('PASS: a covered support can contest a ranged attack on its core from a short step away')

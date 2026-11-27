@@ -1890,6 +1890,40 @@ local function HasCoveredSideLaneAngle(bot, core, enemy, enemies, wave)
     return false
 end
 
+-- Trade from a range advantage while a lone opponent attacks the wave or our core.
+local function GetRangedLaneTrade(bot, enemies, tower, range, step)
+    if #enemies ~= 1 or J.GetHP(bot) < 0.75 or bot:WasRecentlyDamagedByAnyHero(2)
+        or bot:WasRecentlyDamagedByCreep(1.5) or J.IsRetreating(bot) then return nil end
+    local enemy = enemies[1]
+    if not J.IsValidHero(enemy) or J.IsSuspiciousIllusion(enemy) or not J.CanBeAttacked(enemy)
+        or enemy:IsInvulnerable() or enemy:GetAttackRange() < 310 or not J.IsAttacking(enemy) then return nil end
+    local distance = GetUnitToUnitDistance(bot, enemy)
+    if (distance > range) ~= step or distance > range + 200 then return nil end
+    local victim = enemy:GetAttackTarget()
+    if not J.IsValid(victim) or not J.IsInRange(victim, enemy, enemy:GetAttackRange() + 50)
+        or not J.IsInRange(bot, victim, 800) or #bot:GetNearbyLaneCreeps(650, false) == 0 then return nil end
+    local onWave = victim:IsCreep() and (J.IsKeyWordUnit('npc_dota_creep_', victim) or J.IsKeyWordUnit('_siege', victim))
+    if not onWave and not (J.IsValidHero(victim) and victim == J.GetLanePartner(bot) and J.IsCore(victim)) then return nil end
+    local origin, target = bot:GetLocation(), enemy:GetLocation()
+    if step and not enemy:IsFacingLocation(victim:GetLocation(), 60) then return nil end
+    local point = step and J.VectorTowards(origin, target, distance - range + 20) or origin
+    if GetUnitToLocationDistance(enemy, point) <= enemy:GetAttackRange() + 65
+        or (step and not IsLocationPassable(point)) or GetHeightLevel(point) < GetHeightLevel(target)
+        or (J.IsValidBuilding(tower) and (J.IsInRange(enemy, tower, 900) or GetUnitToLocationDistance(tower, point) <= 900))
+        or #J.GetLastSeenEnemiesNearLoc(target, 1000) > 1 then return nil end
+    if step then
+        local function countNearPoint(creeps)
+            local count = 0
+            for _, creep in ipairs(creeps) do
+                if J.IsValid(creep) and GetUnitToLocationDistance(creep, point) <= 500 then count = count + 1 end
+            end
+            return count
+        end
+        if countNearPoint(bot:GetNearbyLaneCreeps(750, false)) < math.max(2, countNearPoint(bot:GetNearbyLaneCreeps(750, true))) then return nil end
+    end
+    return step and point or enemy
+end
+
 -- Reapply safe pressure to an injured melee target or contest a real last hit.
 -- Do not chase or sacrifice the lane partner's last hits.
 function J.GetSideLanePressureTarget(bot, enemies, tower, range)
@@ -1913,22 +1947,8 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
     local enemyCreeps = bot:GetNearbyLaneCreeps(850, true)
     if #allyCreeps < math.max(2, #enemyCreeps - 1) or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
     local evenWave = #allyCreeps >= #enemyCreeps
-    -- A longer-ranged support can punish a committed last hit or deny from its
-    -- current position even when its own core is elsewhere.
-    local solo = #enemies == 1 and enemies[1] or nil
-    if solo and evenWave and J.GetHP(bot) >= 0.75 and not bot:WasRecentlyDamagedByAnyHero(2)
-        and J.IsValidHero(solo) and not J.IsSuspiciousIllusion(solo) and J.CanBeAttacked(solo)
-        and not solo:IsInvulnerable() and solo:GetAttackRange() >= 310
-        and J.IsInRange(bot, solo, range) and not J.IsInRange(bot, solo, solo:GetAttackRange() + 65)
-        and J.IsAttacking(solo) then
-        local creep = solo:GetAttackTarget()
-        if J.IsValid(creep) and creep:IsCreep()
-            and (J.IsKeyWordUnit('npc_dota_creep_', creep) or J.IsKeyWordUnit('_siege', creep))
-            and J.IsInRange(creep, solo, solo:GetAttackRange() + 50) and #bot:GetNearbyLaneCreeps(650, false) > 0
-            and J.IsInRange(bot, creep, 800) and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(solo:GetLocation())
-            and (not J.IsValidBuilding(tower) or not (J.IsInRange(solo, tower, 900) or J.IsInRange(bot, tower, 850)))
-            and #J.GetLastSeenEnemiesNearLoc(solo:GetLocation(), 1000) <= 1 then return solo end
-    end
+    local trade = evenWave and GetRangedLaneTrade(bot, enemies, tower, range, false)
+    if trade then return trade end
     if not J.IsValidHero(ally) or not J.IsCore(ally) or not J.IsInRange(bot, ally, 850) then return nil end
     local best, score = nil, math.huge
     for _, enemy in ipairs(enemies) do
@@ -1960,9 +1980,6 @@ function J.GetSideLanePressureStep(bot, enemies, tower)
         or #enemies == 0 or #enemies > 2 or J.IsCore(bot) or bot:GetAttackRange() < 400
         or J.GetHP(bot) < 0.72 or bot:WasRecentlyDamagedByAnyHero(2)
         or J.IsLaningUnderPressure(bot, enemies, tower) then return end
-    local core = J.GetLanePartner(bot)
-    if not J.IsValidHero(core) or not J.IsCore(core) or J.GetHP(core) < 0.65
-        or J.IsRetreating(core) or not J.IsInRange(bot, core, 700) then return end
     local wave = bot:GetNearbyLaneCreeps(1150, false)
     if #wave < math.max(2, #bot:GetNearbyLaneCreeps(850, true)) then return end
     if not J.IsValidBuilding(tower) then
@@ -1971,6 +1988,11 @@ function J.GetSideLanePressureStep(bot, enemies, tower)
         if not J.IsValidBuilding(tower) then tower = GetTower(opponent, lane == LANE_TOP and TOWER_TOP_2 or TOWER_BOT_2) end
     end
     local range = bot:GetAttackRange()
+    local rangedStep = GetRangedLaneTrade(bot, enemies, tower, range, true)
+    if rangedStep then return rangedStep end
+    local core = J.GetLanePartner(bot)
+    if not J.IsValidHero(core) or not J.IsCore(core) or J.GetHP(core) < 0.65
+        or J.IsRetreating(core) or not J.IsInRange(bot, core, 700) then return end
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and not J.IsSuspiciousIllusion(enemy)
             and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310
