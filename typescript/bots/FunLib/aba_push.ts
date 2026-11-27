@@ -761,7 +761,7 @@ function GetHighGroundObjective(lane: Lane, enemyTeam: Team): Unit | undefined {
     return building && building.IsAlive() ? building : undefined;
 }
 
-type PostFightPushPlan = { lane: Lane; tower: Unit; staging: Vector; highGround: boolean; ready: Record<number, Unit> };
+type PostFightPushPlan = { lane: Lane; tower: Unit; staging: Vector; highGround: boolean; ready: Record<number, Unit>; waveFront: Vector };
 
 function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>): PostFightPushPlan | false | undefined {
     if (gameState.currentTime < StartToPushTime || gameState.aliveEnemyCount > 3
@@ -772,6 +772,7 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
             const ally = GetTeamMember(slot);
             if (ally && jmz.IsValidHero(ally) && ally.IsBot() && !ally.IsIllusion() && jmz.GetHP(ally) >= 0.55
                 && !jmz.IsRetreating(ally) && !ally.IsChanneling() && !ally.HasModifier("modifier_teleporting")
+                && !ally.IsStunned() && !ally.IsHexed() && !ally.IsNightmared() && !ally.IsDisarmed()
                 && !jmz.IsDoingRoshan(ally) && !jmz.IsDoingTormentor(ally)
                 && ((ally as any).ohaOuterTowerHoldUntil ?? 0) <= DotaTime()
                 && !(jmz.IsDefending(ally) && ally.GetActiveModeDesire() >= 0.8)) {
@@ -796,8 +797,9 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
             const front = GetLaneFrontLocation(gameState.team, lane, 0);
             const targetProgress = GetAmountAlongLane(lane, location).amount * direction;
             let wave: Vector | undefined;
-            let waveCount = 0;
             let waveProgress = -Infinity;
+            let firstCreepETA = Infinity;
+            let secondCreepETA = Infinity;
             for (const creep of creeps) {
                 if (!jmz.IsValid(creep) || GetUnitToLocationDistance(creep, front) > 1600) continue;
                 const name = creep.GetUnitName();
@@ -806,10 +808,12 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
                 const track = GetAmountAlongLane(lane, point);
                 const progress = track.amount * direction;
                 if (track.distance > 550 || progress > targetProgress + 0.04) continue;
-                waveCount++;
+                const eta = Math.max(0, GetUnitToLocationDistance(creep, location) - 775) / Math.max(1, creep.GetCurrentMovementSpeed());
+                if (eta < firstCreepETA) { secondCreepETA = firstCreepETA; firstCreepETA = eta; }
+                else if (eta < secondCreepETA) secondCreepETA = eta;
                 if (progress > waveProgress) { wave = point; waveProgress = progress; }
             }
-            if (!wave || waveCount < 2) continue;
+            if (!wave || secondCreepETA > availableTime) continue;
             const waveDistance = GetLocationToLocationDistance(wave, location);
             const staging = (waveDistance <= 1200 && GetLaneStaging(location, lane, 900)) || GetLaneStaging(wave, lane, 280);
             if (!staging || !IsLocationPassable(staging)) continue;
@@ -818,20 +822,22 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
             let core = Infinity;
             const arriving: Record<number, Unit> = {};
             for (const ally of participants) {
-                const eta = GetUnitToLocationDistance(ally, staging) / Math.max(250, ally.GetCurrentMovementSpeed());
+                const reach = Math.max(0, GetUnitToUnitDistance(ally, tower) - ally.GetAttackRange());
+                if (ally.IsRooted() && reach > 0) continue;
+                const distance = reach === 0 ? 0 : Math.max(reach, GetUnitToLocationDistance(ally, staging));
+                const eta = distance / Math.max(1, ally.GetCurrentMovementSpeed());
                 if (eta <= availableTime) arriving[ally.GetPlayerID()] = ally;
                 if (eta < first) { second = first; first = eta; }
                 else if (eta < second) second = eta;
                 if (jmz.IsCore(ally)) core = Math.min(core, eta);
             }
-            // The heroes and the wave are approaching at the same time.
-            const waveETA = Math.max(0, waveDistance - 775) / 325;
-            const arrival = Math.max(second, core, waveETA);
+            // First creep or arrival at the staging point alone cannot start the siege.
+            const arrival = Math.max(second, core, secondCreepETA);
             const time = arrival + (highGround ? 6 : 0)
                 + jmz.GetLastSeenEnemiesNearLoc(location, 1600).length * 6;
             if (arrival <= availableTime && time < bestTime) {
                 bestTime = time;
-                best = { lane, tower, staging, highGround, ready: arriving };
+                best = { lane, tower, staging, highGround, ready: arriving, waveFront: wave };
             }
         }
         return best;
@@ -1179,7 +1185,7 @@ export function PushThink(bot: Unit, lane: Lane): void {
             CancelPushOrder(bot, lane);
             return;
         }
-        RunOuterTowerPlan(bot, { tower, staging: canAttack ? undefined : advance.staging });
+        RunOuterTowerPlan(bot, { tower, lane, waveFront: advance.waveFront, staging: canAttack ? undefined : advance.staging });
         return;
     }
     const plan = (bot as any).ohaOuterTowerPush;

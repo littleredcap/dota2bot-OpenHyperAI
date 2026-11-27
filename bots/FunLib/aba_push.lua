@@ -892,6 +892,7 @@ function GetPostFightPushPlan(gameState)
             local ally = GetTeamMember(slot)
             if jmz.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and jmz.GetHP(ally) >= 0.55
                 and not jmz.IsRetreating(ally) and not ally:IsChanneling() and not ally:HasModifier("modifier_teleporting")
+                and not ally:IsStunned() and not ally:IsHexed() and not ally:IsNightmared() and not ally:IsDisarmed()
                 and not jmz.IsDoingRoshan(ally) and not jmz.IsDoingTormentor(ally)
                 and (ally.ohaOuterTowerHoldUntil or 0) <= DotaTime()
                 and not (jmz.IsDefending(ally) and ally:GetActiveModeDesire() >= 0.8)
@@ -913,7 +914,8 @@ function GetPostFightPushPlan(gameState)
                 local location = tower:GetLocation()
                 local front = GetLaneFrontLocation(gameState.team, lane, 0)
                 local targetProgress = GetAmountAlongLane(lane, location).amount * direction
-                local wave, waveCount, waveProgress = nil, 0, -math.huge
+                local wave, waveProgress = nil, -math.huge
+                local firstCreepETA, secondCreepETA = math.huge, math.huge
                 for _, creep in ipairs(creeps) do
                     if jmz.IsValid(creep) and GetUnitToLocationDistance(creep, front) <= 1600 then
                         local name, point = creep:GetUnitName(), creep:GetLocation()
@@ -921,12 +923,15 @@ function GetPostFightPushPlan(gameState)
                         local progress = track.amount * direction
                         if track.distance <= 550 and progress <= targetProgress + 0.04
                             and (string.find(name, "npc_dota_creep_", 1, true) or string.find(name, "_siege", 1, true)) then
-                            waveCount = waveCount + 1
+                            local eta = math.max(0, GetUnitToLocationDistance(creep, location) - 775)
+                                / math.max(1, creep:GetCurrentMovementSpeed())
+                            if eta < firstCreepETA then firstCreepETA, secondCreepETA = eta, firstCreepETA
+                            elseif eta < secondCreepETA then secondCreepETA = eta end
                             if progress > waveProgress then wave, waveProgress = point, progress end
                         end
                     end
                 end
-                if waveCount >= 2 then
+                if wave and secondCreepETA <= availableTime then
                     local waveDistance = GetLocationToLocationDistance(wave, location)
                     local staging = waveDistance <= 1200 and GetLaneStaging(location, lane, 900)
                         or GetLaneStaging(wave, lane, 280)
@@ -934,20 +939,23 @@ function GetPostFightPushPlan(gameState)
                         local first, second, core = math.huge, math.huge, math.huge
                         local arriving = {}
                         for _, ally in pairs(ready) do
-                            local eta = GetUnitToLocationDistance(ally, staging) / math.max(250, ally:GetCurrentMovementSpeed())
-                            if eta <= availableTime then arriving[ally:GetPlayerID()] = ally end
-                            if eta < first then first, second = eta, first
-                            elseif eta < second then second = eta end
-                            if jmz.IsCore(ally) then core = math.min(core, eta) end
+                            local reach = math.max(0, GetUnitToUnitDistance(ally, tower) - ally:GetAttackRange())
+                            if not ally:IsRooted() or reach == 0 then
+                                local distance = reach == 0 and 0 or math.max(reach, GetUnitToLocationDistance(ally, staging))
+                                local eta = distance / math.max(1, ally:GetCurrentMovementSpeed())
+                                if eta <= availableTime then arriving[ally:GetPlayerID()] = ally end
+                                if eta < first then first, second = eta, first
+                                elseif eta < second then second = eta end
+                                if jmz.IsCore(ally) then core = math.min(core, eta) end
+                            end
                         end
-                        -- The heroes and the wave are approaching at the same time.
-                        local waveETA = math.max(0, waveDistance - 775) / 325
-                        local arrival = math.max(second, core, waveETA)
+                        -- First creep or arrival at the staging point alone cannot start the siege.
+                        local arrival = math.max(second, core, secondCreepETA)
                         local time = arrival + (highGround and 6 or 0)
                             + #jmz.GetLastSeenEnemiesNearLoc(location, 1600) * 6
                         if arrival <= availableTime and time < bestTime then
                             bestTime = time
-                            best = {lane = lane, tower = tower, staging = staging, highGround = highGround, ready = arriving}
+                            best = {lane = lane, tower = tower, staging = staging, highGround = highGround, ready = arriving, waveFront = wave}
                         end
                     end
                 end
@@ -1182,7 +1190,7 @@ function ____exports.PushThink(bot, lane)
             ____exports.CancelPushOrder(bot, lane)
             return
         end
-        RunOuterTowerPlan(bot, {tower = tower, staging = not canAttack and advance.staging or nil})
+        RunOuterTowerPlan(bot, {tower = tower, lane = lane, waveFront = advance.waveFront, staging = not canAttack and advance.staging or nil})
         return
     end
     local plan = bot.ohaOuterTowerPush

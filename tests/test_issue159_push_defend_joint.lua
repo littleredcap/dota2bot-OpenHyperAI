@@ -108,7 +108,10 @@ local function fixture(opts)
         if opts.postFight then
             local wave = {}
             for lane, front in pairs(opts.fightWaves or {}) do
-                for i=1,3 do wave[#wave+1] = laneCreep(front + i * 30, lane, false) end
+                for i=1,3 do
+                    local point = opts.fightCreepOffsets and opts.fightCreepOffsets[i] or i * 30
+                    wave[#wave+1] = laneCreep(front + point, lane, false)
+                end
             end
             return wave
         end
@@ -665,7 +668,24 @@ do
     local expired, _, nearby, _, expiredLane = fixture(opts)
     assert(expired.GetPushDesire(nearby[2], expiredLane.Mid) ~= 0.88, 'skip a rally that exceeds the remaining enemy downtime')
 end
-print('PASS: coordinated post-fight lane, real wave, tower cover, respawns and base defense')
+do
+    local opts = {postFight=true, fightWaves={[2]=6830}, allyCount=5, enemyAliveAtStart=3,
+        reinforcementWindow=5, x=6450, fightCreepOffsets={0,-1500,-1570}}
+    local push, _, members, _, lane = fixture(opts)
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.88,
+        'only the lead creep reaches the tower before respawn')
+    opts.fightCreepOffsets = {0,-150,-250}
+    same(push.GetPushDesire(members[1], lane.Mid), 0.88, 'send the team when two creeps reach attack cover')
+    for i=2,5 do members[i].IsDisarmed = function() return true end end
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.88, 'disarmed bodies do not form an attack pair')
+    members[2].IsDisarmed = function() return false end
+    members[2].x = 6250
+    members[2].IsRooted = function() return true end
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.88, 'rooted ally cannot travel into attack range')
+    members[2].x = 6550
+    same(push.GetPushDesire(members[1], lane.Mid), 0.88, 'rooted ally already in attack range can contribute')
+end
+print('PASS: coordinated post-fight lane, second creep ETA, attack-ready allies and base defense')
 
 do
     local opts = {farmBot = 1, attackers = 1, visible = false}
