@@ -36,6 +36,8 @@ local function fixture(opts)
     end
     ranged.IsAlive = function() return not opts.rangedDestroyed end
     local orders, members, creeps = {}, {}, {}
+    local conversionCreep = {x=opts.conversionX or 5450, GetUnitName=function() return "npc_dota_creep_badguys_ranged" end,
+        GetLocation=function(self) return {x=self.x, lane=Lan.Mid} end}
     local now = opts.time or 1800
     local function advanceTime(seconds) now = now + seconds end
     for i=1,(opts.allyCount or 4) do
@@ -124,7 +126,7 @@ local function fixture(opts)
         IsValid=function(u) return u ~= nil and u.visible ~= false end,
         IsValidHero=function(u) return u and u.IsHero and u:IsHero() end,
         CanBeAttacked=yes, IsValidBuilding=function(u) return opts.direct and u ~= nil and u.IsBuilding ~= nil and u:IsAlive() end,
-        IsCore=yes, IsLateGame=yes, IsTormentor=no, IsRoshan=no,
+        IsCore=function(unit) return not opts.conversionCore or unit:GetPlayerID() == opts.conversionCore end, IsLateGame=yes, IsTormentor=no, IsRoshan=no,
         IsDoingRoshan=no, IsDoingTormentor=no, CanNotUseAction=no,
         ShouldRetreatFromEnemyReinforcements=function() return opts.retreatNow end,
         GetHP=function(u) return u == enemy and enemy:GetHealth() / 1000 or (u and u.hp) or opts.hp or 1 end,
@@ -160,6 +162,7 @@ local function fixture(opts)
         end,
         GetLastSeenEnemiesNearLoc=empty,
         CanCommitToLaneTeleport=function(_, point, clear)
+            if clear and opts.unsafeConversion and point.x == conversionCreep.x then return false end
             return not opts.unsafeLanding and (not clear or point.x ~= outerTower.x
                 or (opts.safeSiege and (opts.visibleDefenders or 0) == 0))
         end,
@@ -185,7 +188,7 @@ local function fixture(opts)
     local modules = {
         ['bots/FunLib/jmz_func']=jmz,
         ['bots/ts_libs/dota/index']={Lane=Lan, BotModeDesire=want, BotMode={}, Barracks={TopMelee=1, MidMelee=2, MidRanged=3},
-            UnitType={Enemies=1, AlliedHeroes=2, AlliedCreeps=3, EnemyBuildings=4},
+            UnitType={Enemies=1, AlliedHeroes=2, AlliedCreeps=3, EnemyBuildings=4, EnemyCreeps=9},
             Tower={Base1=1,Base2=2,Mid1=11,Top1=10,Top2=20,Mid2=21,Mid3=31}, Team={Radiant=2,Dire=3}},
         ['bots/FunLib/global_cache']={
             getGlobalGameState=function()
@@ -234,6 +237,10 @@ local function fixture(opts)
         GetUnitList=function(kind)
             if kind == 1 then return creeps end
             if kind == 3 then return stagedWave() end
+            if kind == 9 and opts.conversion then
+                conversionCreep.visible = not opts.conversionFog
+                return {conversionCreep}
+            end
             if kind == 4 and opts.objectives then return {melee,ranged} end
             return {}
         end,
@@ -1647,3 +1654,43 @@ do
     assert(orders[#orders].x < members[1].x)
 end
 print('PASS: rotate from wave to safe camp, share live camp claims, and siege only with timely damage')
+
+do
+    -- 46-minute river window: no two allied creeps can reach the tower, but
+    -- a core and its nearest partner can clear one verified wave together.
+    local opts = {postFight=true, conversion=true, conversionCore=1, x=5040,
+        allyCount=5, enemyAliveAtStart=3, captureTargets=true, attackers=1}
+    local push, defend, members, orders, lane = fixture(opts)
+    members[5].x = 200 -- The sole responder stays at the threatened Ancient.
+    members[3].x, members[4].x = 7600, 8000
+    same(defend.GetDefendDesire(members[5], lane.Mid), 0.97, 'reserve the home defender')
+    same(push.GetPushDesire(members[5], lane.Mid), 0, 'the home defender may not convert')
+    same(push.GetPushDesire(members[1], lane.Top), 0.12, 'do not split the pair onto another lane')
+    same(push.GetPushDesire(members[1], lane.Mid), 0.84, 'the core takes the shared clear task')
+    same(push.GetPushDesire(members[2], lane.Mid), 0.84, 'the partner takes the same task')
+    push.PushThink(members[1], lane.Mid)
+    push.PushThink(members[2], lane.Mid)
+    assert(orders[#orders] == orders[#orders-1] and orders[#orders].x == 5450, 'both issue orders to the same real creep')
+    opts.unsafeConversion = true
+    push.PushThink(members[1], lane.Mid)
+    assert(orders[#orders] == 'cancel', 'a newly unsafe target cancels the action')
+    opts.unsafeConversion, opts.conversionFog = false, true
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.84, 'no play from a wave that is no longer visible')
+    opts.conversionFog = false
+    members[2].hp = 0.35
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.84, 'no solo commitment when the partner cannot help')
+    members[2].hp, opts.postFightEnemyAlive = 1, 4
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.84, 'stop when enemies respawn')
+end
+
+do
+    -- 44-minute defensive fight: keep defending multiple creeps inside the base.
+    local opts = {postFight=true, conversion=true, conversionX=1400, conversionCore=1,
+        x=350, allyCount=5, enemyAliveAtStart=2, attackers=5}
+    local push, defend, members, _, lane = fixture(opts)
+    for _, ally in ipairs(members) do
+        assert(push.GetPushDesire(ally, lane.Mid) ~= 0.84, 'the critical base stops the counter-advance')
+    end
+    same(defend.GetDefendDesire(members[1], lane.Mid), 0.97, 'critical base assignments still take priority')
+end
+print('PASS: post-fight allies share a safe wave without abandoning base defense')

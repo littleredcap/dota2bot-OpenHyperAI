@@ -197,6 +197,7 @@ function ____exports.GetPushDesireHelper(bot, lane)
             bot.ohaCounterPushLane = nil
             bot.ohaOuterTowerPush = nil
             bot.laneToPush = lane
+            if plan.waveTarget then return 0.84 end
             if waitingForDamage then return 0.76 end
             return 0.88
         end
@@ -914,6 +915,60 @@ local function GetHighGroundObjective(lane, enemyTeam)
     return objective and objective:IsAlive() and objective or nil
 end
 
+-- A lost siege window is not a reason to split up. Pair a core and a second
+-- ready bot for one visible wave, outside enemy tower range, without drafting
+-- the base responder. Never substitute a blind move or an uphill approach.
+local function GetPostFightWavePlan(gameState, ready, availableTime)
+    if availableTime < 6 then return false end
+    local best, bestScore = false, math.huge
+    local direction = gameState.team == Team.Radiant and 1 or -1
+    local enemies = GetUnitList(UnitType.EnemyCreeps)
+    for _, lane in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
+        local tower = GetFirstOuterTower(lane, gameState.enemyTeam, IsStandingBuilding)
+        if not tower then tower = GetHighGroundObjective(lane, gameState.enemyTeam) end
+        for _, creep in ipairs(enemies) do
+            if jmz.IsValid(creep) and jmz.CanBeAttacked(creep)
+                and (string.find(creep:GetUnitName(), "npc_dota_creep_", 1, true)
+                    or string.find(creep:GetUnitName(), "_siege", 1, true)) then
+                local point = creep:GetLocation()
+                local track = GetAmountAlongLane(lane, point)
+                local staging = GetLaneStaging(point, lane, 360)
+                local beforeTower = not tower or ((GetAmountAlongLane(lane, tower:GetLocation()).amount - track.amount) * direction > 0
+                    and GetUnitToLocationDistance(tower, point) > 1250)
+                if track.distance <= 460 and beforeTower
+                    and (not gameState.enemyAncient or GetUnitToLocationDistance(gameState.enemyAncient, point) > 3400)
+                    and staging and IsLocationPassable(staging) then
+                    local candidates = {}
+                    for _, ally in pairs(ready) do
+                        local distance = GetUnitToLocationDistance(ally, staging)
+                        local eta = distance / math.max(1, ally:GetCurrentMovementSpeed())
+                        if eta <= math.min(8, availableTime - 4) and not ally:IsRooted()
+                            and not ally:WasRecentlyDamagedByAnyHero(2)
+                            and GetHeightLevel(point) <= GetHeightLevel(ally:GetLocation())
+                            and jmz.CanCommitToLaneTeleport(ally, point, true, 1200)
+                            and jmz.CanCommitToLaneTeleport(ally, staging, true, 1000) then
+                            candidates[#candidates + 1] = {ally = ally, eta = eta}
+                        end
+                    end
+                    for i = 1, #candidates do
+                        for j = i + 1, #candidates do
+                            local a, b = candidates[i], candidates[j]
+                            local aId, bId = a.ally:GetPlayerID(), b.ally:GetPlayerID()
+                            local score = math.max(a.eta, b.eta) + (a.eta + b.eta) * 0.15
+                                + (aId + bId) * 0.0001 + math.min(aId, bId) * 0.000001
+                            if score < bestScore and (jmz.IsCore(a.ally) or jmz.IsCore(b.ally)) then
+                                bestScore = score
+                                best = {lane = lane, staging = staging, waveTarget = creep, ready = {[aId] = a.ally, [bId] = b.ally}}
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
 function GetPostFightPushPlan(gameState)
     if gameState.currentTime < StartToPushTime or gameState.aliveEnemyCount > 3
         or gameState.aliveAllyCount < gameState.aliveEnemyCount + 2 or gameState.aliveAllyCoreCount == 0 then return nil end
@@ -992,7 +1047,7 @@ function GetPostFightPushPlan(gameState)
                 end
             end
         end
-        return best
+        return best or GetPostFightWavePlan(gameState, ready, availableTime)
     end)
 end
 
@@ -1203,11 +1258,37 @@ function ____exports.PushThink(bot, lane)
     if bot.ohaPostFightPushLane == lane then
         local advance = not criticalBaseCreeps and (bot.ohaOuterTowerHoldUntil or 0) <= now and GetPostFightPushPlan(gameState)
         if not advance or advance.lane ~= lane or not advance.ready[bot:GetPlayerID()] or jmz.GetHP(bot) < 0.55
-            or not IsStandingBuilding(advance.tower) or not jmz.CanCommitToLaneTeleport(bot, advance.staging) then
+            or not jmz.CanCommitToLaneTeleport(bot, advance.staging) then
             ____exports.CancelPushOrder(bot, lane)
             return
         end
+        if advance.waveTarget then
+            local target, paired = advance.waveTarget, false
+            if not jmz.IsValid(target) or not jmz.CanBeAttacked(target) or bot:WasRecentlyDamagedByTower(2)
+                or not jmz.CanCommitToLaneTeleport(bot, target:GetLocation(), true, 1200) then
+                ____exports.CancelPushOrder(bot, lane)
+                return
+            end
+            for id, ally in pairs(advance.ready) do
+                if id ~= bot:GetPlayerID() and jmz.IsValidHero(ally) and jmz.GetHP(ally) >= 0.55
+                    and not jmz.IsRetreating(ally) and not ally:IsStunned() and not ally:HasModifier("modifier_teleporting")
+                    and GetUnitToUnitDistance(ally, target) <= 1100 and GetUnitToUnitDistance(ally, bot) <= 1400 then
+                    paired = true
+                end
+            end
+            if paired and GetUnitToUnitDistance(bot, target) <= math.max(550, bot:GetAttackRange() + 100) then
+                bot._ohaIssuedPushOrder = true
+                if bot:GetAttackTarget() ~= target then bot:Action_AttackUnit(target, false) end
+            elseif GetUnitToLocationDistance(bot, advance.staging) > 120 then
+                bot._ohaIssuedPushOrder = true
+                bot:Action_MoveToLocation(advance.staging)
+            else
+                ____exports.CancelPushOrder(bot)
+            end
+            return
+        end
         local tower = advance.tower
+        if not IsStandingBuilding(tower) then ____exports.CancelPushOrder(bot, lane); return end
         if bot:WasRecentlyDamagedByTower(2) or (jmz.IsValidBuilding(tower) and tower:GetAttackTarget() == bot) then
             ____exports.CancelPushOrder(bot, lane)
             bot:Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(bot:GetLocation(), 350))

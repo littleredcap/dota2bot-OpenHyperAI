@@ -325,6 +325,7 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
             (bot as any).ohaCounterPushLane = undefined;
             (bot as any).ohaOuterTowerPush = undefined;
             (bot as any).laneToPush = lane;
+            if ("waveTarget" in plan) return 0.84 as BotModeDesire;
             if (waitingForDamage) return 0.76 as BotModeDesire;
             return 0.88 as BotModeDesire;
         }
@@ -789,10 +790,62 @@ function GetHighGroundObjective(lane: Lane, enemyTeam: Team): Unit | undefined {
 
 type PostFightPushPlan = { lane: Lane; tower: Unit; staging: Vector; highGround: boolean; ready: Record<number, Unit>; waveFront: Vector };
 
-function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>): PostFightPushPlan | false | undefined {
+type PostFightWavePlan = { lane: Lane; staging: Vector; waveTarget: Unit; ready: Record<number, Unit>; highGround?: false };
+type PostFightPlan = PostFightPushPlan | PostFightWavePlan;
+
+// Use a nearby, visible wave when no building can be reached together.
+function GetPostFightWavePlan(gameState: ReturnType<typeof getGlobalGameState>, ready: Unit[], availableTime: number): PostFightWavePlan | false {
+    if (availableTime < 6) return false;
+    let best: PostFightWavePlan | false = false;
+    let bestScore = Infinity;
+    const direction = gameState.team === Team.Radiant ? 1 : -1;
+    const enemies = GetUnitList(UnitType.EnemyCreeps);
+    for (const lane of [Lane.Mid, Lane.Top, Lane.Bot]) {
+        const tower = GetFirstOuterTower(lane, gameState.enemyTeam, IsStandingBuilding) || GetHighGroundObjective(lane, gameState.enemyTeam);
+        for (const creep of enemies) {
+            if (!jmz.IsValid(creep) || !jmz.CanBeAttacked(creep)) continue;
+            const name = creep.GetUnitName();
+            if (!name.includes("npc_dota_creep_") && !name.includes("_siege")) continue;
+            const point = creep.GetLocation();
+            const track = GetAmountAlongLane(lane, point);
+            const staging = GetLaneStaging(point, lane, 360);
+            const beforeTower = !tower || ((GetAmountAlongLane(lane, tower.GetLocation()).amount - track.amount) * direction > 0
+                && GetUnitToLocationDistance(tower, point) > 1250);
+            if (track.distance > 460 || !beforeTower
+                || (gameState.enemyAncient && GetUnitToLocationDistance(gameState.enemyAncient, point) <= 3400)
+                || !staging || !IsLocationPassable(staging)) continue;
+            const candidates: { ally: Unit; eta: number }[] = [];
+            for (const ally of ready) {
+                const eta = GetUnitToLocationDistance(ally, staging) / Math.max(1, ally.GetCurrentMovementSpeed());
+                if (eta <= Math.min(8, availableTime - 4) && !ally.IsRooted()
+                    && !ally.WasRecentlyDamagedByAnyHero(2)
+                    && GetHeightLevel(point) <= GetHeightLevel(ally.GetLocation())
+                    && jmz.CanCommitToLaneTeleport(ally, point, true, 1200)
+                    && jmz.CanCommitToLaneTeleport(ally, staging, true, 1000)) {
+                    candidates.push({ ally, eta });
+                }
+            }
+            for (let i = 0; i < candidates.length; i++) {
+                for (let j = i + 1; j < candidates.length; j++) {
+                    const [a, b] = [candidates[i], candidates[j]];
+                    const [aId, bId] = [a.ally.GetPlayerID(), b.ally.GetPlayerID()];
+                    const score = Math.max(a.eta, b.eta) + (a.eta + b.eta) * 0.15
+                        + (aId + bId) * 0.0001 + Math.min(aId, bId) * 0.000001;
+                    if (score < bestScore && (jmz.IsCore(a.ally) || jmz.IsCore(b.ally))) {
+                        bestScore = score;
+                        best = { lane, staging, waveTarget: creep, ready: { [aId]: a.ally, [bId]: b.ally } };
+                    }
+                }
+            }
+        }
+    }
+    return best;
+}
+
+function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>): PostFightPlan | false | undefined {
     if (gameState.currentTime < StartToPushTime || gameState.aliveEnemyCount > 3
         || gameState.aliveAllyCount < gameState.aliveEnemyCount + 2 || gameState.aliveAllyCoreCount === 0) return;
-    return getCachedData<PostFightPushPlan | false>("postFightPushPlan", 0.35, () => {
+    return getCachedData<PostFightPlan | false>("postFightPushPlan", 0.35, () => {
         const ready: Record<number, Unit> = {};
         for (let slot = 1; slot <= GetTeamPlayers(gameState.team).length; slot++) {
             const ally = GetTeamMember(slot);
@@ -866,7 +919,7 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
                 best = { lane, tower, staging, highGround, ready: arriving, waveFront: wave };
             }
         }
-        return best;
+        return best || GetPostFightWavePlan(gameState, participants, availableTime);
     });
 }
 
@@ -1193,11 +1246,33 @@ export function PushThink(bot: Unit, lane: Lane): void {
     if ((bot as any).ohaPostFightPushLane === lane) {
         const advance = !criticalBaseCreeps && ((bot as any).ohaOuterTowerHoldUntil ?? 0) <= now && GetPostFightPushPlan(gameState);
         if (!advance || advance.lane !== lane || !advance.ready[bot.GetPlayerID()] || jmz.GetHP(bot) < 0.55
-            || !IsStandingBuilding(advance.tower) || !jmz.CanCommitToLaneTeleport(bot, advance.staging)) {
+            || !jmz.CanCommitToLaneTeleport(bot, advance.staging)) {
             CancelPushOrder(bot, lane);
             return;
         }
+        if ("waveTarget" in advance) {
+            const target = advance.waveTarget;
+            if (!jmz.IsValid(target) || !jmz.CanBeAttacked(target) || bot.WasRecentlyDamagedByTower(2)
+                || !jmz.CanCommitToLaneTeleport(bot, target.GetLocation(), true, 1200)) {
+                CancelPushOrder(bot, lane);
+                return;
+            }
+            const paired = Object.values(advance.ready).some(ally => ally.GetPlayerID() !== bot.GetPlayerID() && jmz.IsValidHero(ally)
+                && jmz.GetHP(ally) >= 0.55 && !jmz.IsRetreating(ally) && !ally.IsStunned() && !ally.HasModifier("modifier_teleporting")
+                && GetUnitToUnitDistance(ally, target) <= 1100 && GetUnitToUnitDistance(ally, bot) <= 1400);
+            if (paired && GetUnitToUnitDistance(bot, target) <= Math.max(550, bot.GetAttackRange() + 100)) {
+                (bot as any)._ohaIssuedPushOrder = true;
+                if (bot.GetAttackTarget() !== target) bot.Action_AttackUnit(target, false);
+            } else if (GetUnitToLocationDistance(bot, advance.staging) > 120) {
+                (bot as any)._ohaIssuedPushOrder = true;
+                bot.Action_MoveToLocation(advance.staging);
+            } else {
+                CancelPushOrder(bot);
+            }
+            return;
+        }
         const tower = advance.tower;
+        if (!IsStandingBuilding(tower)) { CancelPushOrder(bot, lane); return; }
         if (bot.WasRecentlyDamagedByTower(2) || (jmz.IsValidBuilding(tower) && tower.GetAttackTarget() === bot)) {
             CancelPushOrder(bot, lane);
             bot.Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(bot.GetLocation(), 350));
