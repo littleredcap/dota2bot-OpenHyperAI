@@ -1405,7 +1405,7 @@ function J.GetEarlyMidSiegeDefense(bot)
     local tower = GetTower(bot:GetTeam(), TOWER_MID_1)
     if not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 2200) then return nil end
     local threat = J.GetOuterTowerThreat(tower, LANE_MID)
-    if threat.siegeAttacking or (threat.siege and threat.waveSize >= 2 and threat.eta <= 7) then
+    if threat.siegeAttacking or (threat.siege and threat.waveSize >= 1 and threat.eta <= 7) then
         return tower
     end
     if threat.middleGroup and J.GetHP(bot) >= 0.55 and not J.IsRetreating(bot) then
@@ -6836,7 +6836,9 @@ function J.GetOuterTowerThreat(tower, lane)
 	local escortedWave = advancingEscort and ((siege and waveSize >= 2) or waveSize >= 4
 		or enemyCount >= 3 and waveSize >= 2) and eta <= 10
 	local middleGroup = lane == LANE_MID and visibleAdvance >= 3 and waveSize >= 2 and eta <= 10
-	local wavePressure = attackingCreeps >= 2 or siegeAttacking or escortedWave
+	-- A visible lone catapult on the mid approach earns one clearer, not a teamfight.
+	local soloMidSiege = lane == LANE_MID and siege and waveSize == 1 and eta <= 8
+	local wavePressure = attackingCreeps >= 2 or siegeAttacking or escortedWave or soloMidSiege
 		or (siege and waveSize >= 2 and eta <= 8) or (enemyCount == 1 and waveSize >= 3 and eta <= 5)
 	local active = activeAttackers > 0 or (enemyCount >= 2 and (waveSize > 0 or nearCount >= 2)) or wavePressure
 	local underAttack = activeAttackers > 0 or attackingCreeps > 0
@@ -6966,14 +6968,16 @@ function J.GetExposedMidCover(team)
 	local key = 'ExposedMidCover:' .. tostring(team)
 	local cached = J.Utils.GetCachedVars(key, 0.35)
 	if cached ~= nil then return cached.hero, cached.building, cached.reach end
-	local result = {}
+	local result, refreshCover = {}, false
 	local building = GetBarracks(team, BARRACKS_MID_MELEE)
 	if not J.IsValidBuilding(building) then building = GetBarracks(team, BARRACKS_MID_RANGED) end
 	if J.IsValidBuilding(building) then
 		local hub = building:GetLocation()
 		local sight = J.GetOuterTowerThreat(building, LANE_MID)
 		local resetWindow = J.GetNumOfAliveHeroes(true) <= 3 and J.GetNumOfAliveHeroes(false) >= 3
-		if sight.waveSize >= 2 and sight.eta <= 8 or resetWindow then
+		local urgentWave = sight.waveSize >= 2 and sight.eta <= 8
+		refreshCover = urgentWave or resetWindow
+		if refreshCover or (building.ohaCoverUntil or 0) > now then
 			local hold = J.AdjustLocationWithOffsetTowardsFountain(hub, 750)
 			if #J.GetEnemiesNearLoc(hold, 800) < 2 then
 				local best = -math.huge
@@ -6992,6 +6996,10 @@ function J.GetExposedMidCover(team)
 				end
 			end
 		end
+	end
+	if result.hero and refreshCover then
+		-- Keep one eligible clearer through the brief respawn / wave transition.
+		result.building.ohaCoverUntil = now + 8
 	end
 	J.Utils.SetCachedVars(key, result)
 	return result.hero, result.building, result.reach
@@ -7178,7 +7186,7 @@ function J.GetOuterTowerResponse(location, threat, fallback, highGround)
 	if contest then return true, contest end
 	local ready = {}
 	local closeCount, closest, closestDistance = 0, nil, math.huge
-	local approaching = not highGround and not threat.briefHold and (threat.eta >= 2 or threat.count == 0 and threat.waveSize >= 2
+	local approaching = not highGround and not threat.briefHold and (threat.eta >= 2 or threat.count == 0 and (threat.waveSize >= 2 or threat.lane == LANE_MID and threat.siege)
 		or threat.underAttack and threat.towerHP >= 0.35 and threat.count >= 2)
 	local function SafeLanding(point)
 		return point ~= nil and IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 1650) == 0
@@ -7413,11 +7421,24 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 		end
 	end
 	local range = bot:GetAttackRange()
-	for _, creep in ipairs(bot:GetNearbyLaneCreeps(canStepUp and range + 400 or range, true)) do
-		if J.IsValid(creep) and J.CanBeAttacked(creep)
-			and (J.IsInRange(bot, creep, range) or (canStepUp and GetUnitToLocationDistance(creep, hub) <= 650)) then
-			local weight = string.find(creep:GetUnitName(), 'siege', 1, true) and 2 or 1
-			if weight > priority then target, priority = creep, weight end
+	for _, creep in ipairs(bot:GetNearbyLaneCreeps(canStepUp and math.min(1600, range + 650) or range, true)) do
+		if J.IsValid(creep) and J.CanBeAttacked(creep) then
+			local siege = string.find(creep:GetUnitName(), 'siege', 1, true) ~= nil
+			local closeToHub = GetUnitToLocationDistance(creep, hub) <= 650
+			-- A catapult can fire from beyond the ordinary lane-creep leash.
+			-- Only follow it in an uncontested area, on a short, safe route.
+			local siegeStep = false
+			if siege and canStepUp and not closeToHub and GetUnitToLocationDistance(creep, hub) <= 1150 then
+				local point = creep:GetLocation()
+				local staging = J.VectorTowards(bot:GetLocation(), point,
+					math.max(0, GetUnitToUnitDistance(bot, creep) - range + 20))
+				siegeStep = IsLocationPassable(staging) and IsLocationVisible(staging)
+					and J.CanCommitToLaneTeleport(bot, staging, true, 950)
+			end
+			if J.IsInRange(bot, creep, range) or canStepUp and (closeToHub or siegeStep) then
+				local weight = siege and 2 or 1
+				if weight > priority then target, priority = creep, weight end
+			end
 		end
 	end
 	if target ~= nil then

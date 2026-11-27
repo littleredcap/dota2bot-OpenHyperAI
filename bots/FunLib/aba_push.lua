@@ -785,7 +785,7 @@ end
 -- A brief mid T1 attack behind a living wave is not a general push.
 local function GetEarlyMidTowerChip(bot, lane, gameState)
     local now = gameState.currentTime
-    if lane ~= Lane.Mid or now < 240 or now > 780
+    if lane ~= Lane.Mid or now < 240 or now > 960
         or bot:GetAssignedLane() ~= Lane.Mid or bot:GetAttackRange() < 550
         or not jmz.IsCore(bot) or jmz.GetHP(bot) < 0.65 or bot:IsDisarmed()
         or jmz.IsRetreating(bot) or bot:WasRecentlyDamagedByAnyHero(2)
@@ -795,7 +795,7 @@ local function GetEarlyMidTowerChip(bot, lane, gameState)
         or tower:HasModifier('modifier_fountain_glyph') or ____exports.HasBackdoorProtect(tower)
         or (bot.ohaLaningAttackTarget ~= nil and jmz.HasPendingLaningLastHit(bot)) then return end
     local gap = GetUnitToUnitDistance(bot, tower) - bot:GetAttackRange()
-    if gap > 260 then return end
+    if gap > 260 or (now > 780 and gap > 0) then return end
     local tank = tower:GetAttackTarget()
     if not jmz.IsValid(tank) or tank:GetTeam() ~= bot:GetTeam()
         or not jmz.IsKeyWordUnit('npc_dota_creep_', tank)

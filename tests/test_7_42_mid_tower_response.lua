@@ -18,7 +18,7 @@ local danger, cover, attack, objective = false,true,true,true
 foe.target=tower
 bot._defend={waveClearLane=2,waveClearTower=tower}
 bot.ohaOuterTowerHoldUntil=1001
-local now=1000
+local now, enemiesAlive=1000, 2
 local j={
     IsValidHero=function(u) return u and u~=tower end, GetHP=function(u) return u.hp end,
     IsSuspiciousIllusion=no, CanBeAttacked=yes, IsDefending=yes, IsDisabled=no, IsRetreating=no,
@@ -27,7 +27,7 @@ local j={
     GetEnemiesNearLoc=function(point, radius) return point==0 and attack and {foe} or (danger and {foe,foe} or {}) end,
     IsInRange=function(a,b,n) return math.abs(a.x-b.x)<=n end,
     GetAlliesNearLoc=function() return {bot,ally} end, GetOuterTowerThreat=function() return {waveSize=0,eta=0} end,
-    GetNumOfAliveHeroes=function(enemy) return enemy and 2 or 4 end,
+    GetNumOfAliveHeroes=function(enemy) return enemy and enemiesAlive or 4 end,
     AdjustLocationWithOffsetTowardsFountain=function(point, offset) return point-offset end,
     CanCommitToLaneTeleport=yes, GetPosition=function() return 2 end,
     Utils={GetCachedVars=function() end, SetCachedVars=no},
@@ -50,6 +50,12 @@ danger=false
 extract('function J.GetExposedMidCover','local function GetOuterTowerHoldPoint',env)
 local guard, building, reach=j.GetExposedMidCover(2)
 assert(guard==bot and building==tower and reach==1000, 'retain exactly one nearby clearer in the won-fight window')
+enemiesAlive,now=4,1003
+assert(j.GetExposedMidCover(2)==bot,'retain a clearer for the brief transition after respawns')
+now=1009
+assert(not j.GetExposedMidCover(2),'the cover window expires with no renewed threat')
+enemiesAlive=2
+assert(j.GetExposedMidCover(2)==bot)
 objective=false
 assert(not j.GetExposedMidCover(2),'release after the threatened structure falls')
 print('PASS: active safe mid defender poke and exposed-mid post-fight cover')

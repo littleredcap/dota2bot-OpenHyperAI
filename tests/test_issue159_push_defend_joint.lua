@@ -1764,3 +1764,41 @@ do
     assert(defend.GetDefendDesire(bot, lane.Mid) ~= 0.96 and bot.ohaHighGroundResponse == nil,
         'a dissipated group is not an emergency')
 end
+
+do
+    local opts = {direct=true, outerSiege=true, safeSiege=true, captureTargets=true, x=4800,
+        spellCooldown=30}
+    local _, _, members, orders, lane, _, buildings, j = fixture(opts)
+    local function yes() return true end
+    local function no() return false end
+    local tower = buildings.outerTower
+    local cart = {x=tower.x + 850, IsCreep=yes, IsAncientCreep=no, GetHealth=function() return 350 end,
+        GetCurrentMovementSpeed=function() return 300 end,
+        GetUnitName=function() return 'npc_dota_badguys_siege' end,
+        GetLocation=function(self) return {x=self.x,y=0} end,
+        GetAttackTarget=function() return nil end}
+    local env = getfenv(j.GetOuterTowerThreat)
+    env.GetUnitList = function(kind) return kind == env.UNIT_LIST_ENEMY_CREEPS and {cart} or {} end
+    env.IsLocationVisible = yes
+    j.CanBeAttacked, j.VectorTowards = yes, function(a,b,d) return {x=a.x+d,y=0} end
+    local function noEnemies() return {} end
+    j.GetEnemiesNearLoc, j.GetLastSeenEnemiesNearLoc = noEnemies, noEnemies
+    j.CanCommitToLaneTeleport = yes
+    local threat = j.GetOuterTowerThreat(tower, lane.Mid)
+    assert(threat.score > 0 and threat.waveSize == 1 and threat.count == 0 and not threat.underAttack,
+        'a lone visible mid catapult warrants a response before its first shot')
+    local ok, plan = j.GetOuterTowerResponse(tower:GetLocation(), threat, nil, false)
+    local n=0
+    for _ in pairs(plan) do n=n+1 end
+    assert(ok and n==1,'one clearer, never a multihero recall against a lone catapult')
+    local bot=members[1]
+    bot.x=tower.x+50
+    bot.GetNearbyLaneCreeps=function(_, radius) return radius>=800 and {cart} or {} end
+    j.RunOuterTowerHold(bot,tower:GetLocation(),650,false)
+    assert(orders[#orders]==cart, 'issue the actual attack beyond the ordinary creep leash')
+    local old=#orders
+    j.CanCommitToLaneTeleport=no
+    j.RunOuterTowerHold(bot,tower:GetLocation(),650,false)
+    assert(#orders == old or orders[#orders] ~= cart,'do not pursue the catapult across an unsafe angle')
+end
+print('PASS: 9107324797 lone mid cart claims one defender and receives an attack from a safe route')

@@ -657,7 +657,7 @@ function CanEscortOuterWave(bot: Unit, tower: Unit, lane: Lane, travel: number):
 
 function GetEarlyMidTowerChip(bot: Unit, lane: Lane, gameState: ReturnType<typeof getGlobalGameState>): OuterTowerPlan | undefined {
     const now = gameState.currentTime;
-    if (lane !== Lane.Mid || now < 240 || now > 780 || bot.GetAssignedLane() !== Lane.Mid
+    if (lane !== Lane.Mid || now < 240 || now > 960 || bot.GetAssignedLane() !== Lane.Mid
         || bot.GetAttackRange() < 550 || !jmz.IsCore(bot) || jmz.GetHP(bot) < 0.65 || bot.IsDisarmed()
         || jmz.IsRetreating(bot) || bot.WasRecentlyDamagedByAnyHero(2) || bot.WasRecentlyDamagedByTower(2)) return;
     const tower = GetTower(gameState.enemyTeam, Tower.Mid1);
@@ -665,7 +665,7 @@ function GetEarlyMidTowerChip(bot: Unit, lane: Lane, gameState: ReturnType<typeo
         || tower.HasModifier("modifier_fountain_glyph") || HasBackdoorProtect(tower)
         || ((bot as any).ohaLaningAttackTarget && jmz.HasPendingLaningLastHit(bot))) return;
     const gap = GetUnitToUnitDistance(bot, tower) - bot.GetAttackRange();
-    if (gap > 260) return;
+    if (gap > 260 || (now > 780 && gap > 0)) return;
     const tank = tower.GetAttackTarget();
     if (!tank || !jmz.IsValid(tank) || tank.GetTeam() !== bot.GetTeam() || !jmz.IsKeyWordUnit("npc_dota_creep_", tank)
         || tank.GetHealth() <= Math.max(100, tower.GetAttackDamage())) return;
