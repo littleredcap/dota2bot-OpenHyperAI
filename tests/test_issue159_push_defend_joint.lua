@@ -383,7 +383,7 @@ local function fixture(opts)
         bot.WasRecentlyDamagedByAnyHero = function(_, seconds) return opts.carryHarass and seconds >= 5 end
         bot.WasRecentlyDamagedByCreep = no
         bot.GetNearbyTowers, bot.GetNearbyBarracks, bot.GetNearbyNeutralCreeps = empty, empty, empty
-        bot.DistanceFromFountain = function() return 1000 end
+        bot.DistanceFromFountain = function() return opts.fountainDistance or 1000 end
         if opts.resetMode then
             bot.GetActiveMode, bot.GetActiveModeDesire = function() return 7 end, function() return 0.9 end
         end
@@ -833,6 +833,20 @@ do
     assert(members[1].ohaCarryLaneRecoveryUntil > opts.time)
     farm.AdvanceTime(35)
     same(farm.GetDesire(), 0, 'a past bad trade no longer keeps the carry off a clear lane')
+end
+
+do
+    local opts = {farmBot=1, route=true, time=315, laning=true, direct=true, hp=0.42,
+        carryHarass=true, farmLevel=5, farmNetWorth=1500, laneTower=true, laneThreat=true,
+        fountainDistance=9500, farmAssignedLane=3}
+    local _, _, members, _, _, farm = fixture(opts)
+    farm.GetDesire()
+    local untilTime = members[1].ohaCarryLaneRecoveryUntil
+    assert(untilTime and untilTime > 375 and untilTime <= 400,
+        'retain return intent for a long walk after a forced reset, but cap it')
+    opts.hp, opts.carryHarass, opts.laneThreat = 1, false, false
+    farm.AdvanceTime(86)
+    same(farm.GetDesire(), 0, 'an expired reset never keeps the carry off a clear lane')
 end
 
 do

@@ -355,8 +355,13 @@ local function UpdateCarryLaneRecovery()
 	local lane = bot:GetAssignedLane()
 	if lane ~= LANE_TOP and lane ~= LANE_BOT then return end
 	local front = GetLaneFrontLocation(team, lane, 0)
-	if GetUnitToLocationDistance(bot, front) <= 2600 and #J.GetLastSeenEnemiesNearLoc(front, 1700) >= 2 then
-		bot.ohaCarryLaneRecoveryUntil = now + 50
+	local tower = GetTower(team, laneTierOne[lane])
+	if (GetUnitToLocationDistance(bot, front) <= 2600 or (J.IsValidBuilding(tower) and J.IsInRange(bot, tower, 1600)))
+		and #J.GetLastSeenEnemiesNearLoc(front, 1700) >= 2 then
+		-- Several of the replay's return walks outlasted the old 50s marker.
+		-- Budget one real walk back plus healing, not a permanent farm override.
+		local walkBack = bot:DistanceFromFountain() / math.max(1, bot:GetCurrentMovementSpeed())
+		bot.ohaCarryLaneRecoveryUntil = now + math.min(85, math.max(50, walkBack * 1.4 + 25))
 	end
 end
 

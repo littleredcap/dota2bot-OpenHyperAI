@@ -322,6 +322,26 @@ for _, overridden in ipairs({false, true}) do
 end
 
 do
+    local state, mode, _, enemy, bot = fixture(true, false)
+    local j = mode.J
+    j.IsDoingRoshan, j.IsDoingTormentor, j.IsInTeamFight = no, no, no
+    bot.DistanceFromFountain, bot.GetActiveMode = function() return 5900 end, function() return 0 end
+    local tower = mode.GetTower()
+    tower.x = 300
+    state.partner, state.partnerSupport, state.partnerHP, state.hp = true, true, 0.8, 0.42
+    state.enemy, enemy.x = true, 1450
+    assert(j.GetSafeLaneSupplyTower(bot) == tower, 'wait for real supply behind a covered T1 even when the lane is contested')
+    state.partnerRetreat = true
+    assert(not j.GetSafeLaneSupplyTower(bot), 'without the support a low core may reset')
+    state.partnerRetreat = false
+    bot.x = 550
+    assert(not j.GetSafeLaneSupplyTower(bot), 'standing in front of the tower is not shelter')
+    bot.x, enemy.x, state.pressure = 0, 400, true
+    assert(not j.GetSafeLaneSupplyTower(bot), 'actual pursuit cannot be masked by the nearby support')
+end
+print('PASS: low carry can receive real lane supply from a sheltered tower, never through a dive')
+
+do
     local carryState, carryMode, _, _, carry = fixture(true, false)
     local supportState, supportMode, _, _, support = fixture(false, false)
     local function afterTrade(state, hp, otherHP)

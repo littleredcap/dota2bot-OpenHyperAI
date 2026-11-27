@@ -1244,9 +1244,9 @@ function J.IsLaningUnderPressure(bot, enemies, tower)
     return false
 end
 
-local function SafeLaneTower(bot, tower, enemies, hp, partner)
+local function SafeLaneTower(bot, tower, enemies, hp, partner, sheltered)
     local hold = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
-    if hp < 0.48 and (#enemies > 0 or bot:WasRecentlyDamagedByAnyHero(3) or not J.IsInRange(bot, tower, 1000)
+    if hp < 0.48 and not sheltered and (#enemies > 0 or bot:WasRecentlyDamagedByAnyHero(3) or not J.IsInRange(bot, tower, 1000)
         or #J.GetLastSeenEnemiesNearLoc(hold, 1400) > 0) then return nil end
     if #J.GetLastSeenEnemiesNearLoc(hold, 850) >= 2 or bot:WasRecentlyDamagedByTower(2) then return nil end
     local pursuers = J.GetHeroesTargetingUnit(enemies, bot)
@@ -1355,7 +1355,17 @@ function J.GetSafeLaneSupplyTower(bot)
         or (bot:GetActiveMode() == BOT_MODE_ATTACK and J.IsValidHero(bot:GetAttackTarget())) then return nil end
     local enemies = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
     if J.IsLaningUnderPressure(bot, enemies, bot:GetNearbyTowers(1200, true)[1]) then return nil end
-    return SafeLaneTower(bot, tower, enemies, J.GetHP(bot))
+    local hp = J.GetHP(bot)
+    local partner = lane ~= LANE_MID and J.IsCore(bot) and J.GetLanePartner(bot) or nil
+    local hold = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
+    local sheltered = partner ~= nil and J.IsValidHero(partner) and J.GetHP(partner) >= 0.62
+        and not J.IsRetreating(partner) and not J.IsDisabled(partner) and not partner:HasModifier('modifier_teleporting')
+        and J.IsInRange(bot, tower, 650) and J.IsInRange(bot, partner, 650)
+        and GetUnitToLocationDistance(bot, hold) <= 300 and IsLocationPassable(hold)
+        and not bot:WasRecentlyDamagedByAnyHero(2)
+        and #J.GetEnemiesNearLoc(hold, 1000) == 0 and #J.GetLastSeenEnemiesNearLoc(hold, 1000) == 0
+        and #J.GetHeroesTargetingUnit(enemies, bot) == 0
+    return SafeLaneTower(bot, tower, enemies, hp, partner, sheltered)
 end
 
 function J.GetLaningPeelTarget(bot, ally, enemies, castRange)
