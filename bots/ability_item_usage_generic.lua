@@ -5071,7 +5071,12 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local itemFlask = J.IsItemAvailable( "item_flask" )
 	local response = bot.ohaHighGroundResponse
 	local highGroundResponse = response and response.expires > DotaTime()
-	local midCover = bot.ohaMidCover and bot.ohaMidCover.expires > DotaTime()
+	local postFightDuty, postFightPlan
+	if J.GetPostFightDuty then postFightDuty, postFightPlan = J.GetPostFightDuty(bot) end
+	local midCover = postFightDuty or (bot.ohaMidCover and bot.ohaMidCover.expires > DotaTime())
+	local function CanSpendOnTrip(loc)
+		return not J.CanTakePostFightTrip or J.CanTakePostFightTrip(bot, loc, true)
+	end
 	if highGroundResponse then
 		local anchors = {}
 		for _, id in ipairs({TOWER_BASE_1, TOWER_BASE_2, TOWER_TOP_3, TOWER_MID_3, TOWER_BOT_3}) do
@@ -5090,6 +5095,13 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		and J.CanCommitToLaneTeleport(bot, defense.waveClearTeleport, true, defense.waveClearGather and 1250 or nil) then
 		return BOT_ACTION_DESIRE_ABSOLUTE, defense.waveClearTeleport, sCastType,
 			defense.waveClearGather and '集结守塔' or '提前转线清兵守塔'
+	end
+
+	if postFightDuty and nEnemyCount == 0 then
+		local assignment = postFightDuty == 'clear' and postFightPlan.primary or postFightPlan.backup
+		if assignment and assignment.teleport and J.CanCommitToLaneTeleport(bot, assignment.teleport, true, 1050) then
+			return BOT_ACTION_DESIRE_ABSOLUTE, assignment.teleport, sCastType, 'post-fight-cover'
+		end
 	end
 
 	if bot:GetLevel() > 12 and bot:DistanceFromFountain() < 600 then nMinTPDistance = nMinTPDistance + 600 end
@@ -5161,7 +5173,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 		if tpLocDist > 8000
 		and roshanLocDist > 8000
-		and roshanLocDist > tpLocDist
+		and roshanLocDist > tpLocDist and CanSpendOnTrip(targetLoc)
 		then
 			if botName == 'npc_dota_hero_furion'
 			then
@@ -5190,7 +5202,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		if GetUnitToLocationDistance(bot, torLoc) > 8000 then
 			hEffectTarget = J.GetNearbyLocationToTp(torLoc)
 			sCastMotive = 'tormentor'
-			if J.GetLocationToLocationDistance(bot:GetLocation(), hEffectTarget) > 4400
+			if J.GetLocationToLocationDistance(bot:GetLocation(), hEffectTarget) > 4400 and CanSpendOnTrip(hEffectTarget)
 			then
 				if botName == 'npc_dota_hero_furion'
 				then
@@ -5274,7 +5286,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 			if tpLoc ~= nil
 				and GetUnitToLocationDistance( bot, tpLoc ) > nMinTPDistance - 600
-				and J.CanCommitToLaneTeleport(bot, tpLoc)
+				and J.CanCommitToLaneTeleport(bot, tpLoc) and CanSpendOnTrip(tpLoc)
 			then
 				hEffectTarget = tpLoc
 				sCastMotive = '前往推塔:'..sLane
@@ -5306,7 +5318,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		local target = bot:GetTarget()
 		if target ~= nil
 			and target:IsHero()
-			and GetUnitToUnitDistance( bot, target ) > nMinTPDistance
+			and GetUnitToUnitDistance( bot, target ) > nMinTPDistance and CanSpendOnTrip(target:GetLocation())
 		then
 			local bestTpLoc = J.GetNearbyLocationToTp( target:GetLocation() )
 			if bestTpLoc ~= nil
@@ -5475,7 +5487,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 			if bestTpLoc ~= nil and farmTpLoc ~= nil
 				and J.IsLocHaveTower( 2000, false, farmTpLoc )
 				and GetUnitToLocationDistance( bot, bestTpLoc ) > nMinTPDistance
-				and X.CanTeleportToFarm(farmTpLoc, bestTpLoc)
+				and X.CanTeleportToFarm(farmTpLoc, bestTpLoc) and CanSpendOnTrip(farmTpLoc)
 			then
 				tpLoc = bestTpLoc
 			end
@@ -5540,7 +5552,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 				local nNearAllyList = J.GetAlliesNearLoc( tpLoc, 1600 )
 				if GetUnitToLocationDistance( bot, tpLoc ) > nMinTPDistance - 1500
 					and #nNearAllyList == 0
-					and X.CanTeleportToFarm(GetLaneFrontLocation(team, mostFarmDesireLane, 0), tpLoc)
+					and X.CanTeleportToFarm(GetLaneFrontLocation(team, mostFarmDesireLane, 0), tpLoc) and CanSpendOnTrip(tpLoc)
 				then
 					J.Role['lastFarmTpTime'] = DotaTime()
 					sCastMotive = '飞鞋带线'
@@ -5568,7 +5580,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 				and J.IsLocHaveTower( 1850, false, tpLoc )
 				and GetUnitToLocationDistance( bot, bestTpLoc ) > nMinTPDistance - 800
 				and #nNearAllyList == 0
-				and X.CanTeleportToFarm(tpLoc, bestTpLoc)
+				and X.CanTeleportToFarm(tpLoc, bestTpLoc) and CanSpendOnTrip(tpLoc)
 			then
 				J.Role['lastFarmTpTime'] = DotaTime()
 				sCastMotive = '线上打钱'
@@ -5623,7 +5635,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		if #nNearEnemyList == 0
 			and nTeamFightLocation ~= nil
 			and GetUnitToLocationDistance( bot, nTeamFightLocation ) > nMinTPDistance - 1200
-			and J.CanJoinObservedFightByTeleport(bot, nTeamFightLocation)
+			and J.CanJoinObservedFightByTeleport(bot, nTeamFightLocation) and CanSpendOnTrip(nTeamFightLocation)
 		then
 
 			if isTravelBootsAvailable and J.CanCommitToLaneTeleport(bot, nTeamFightLocation)

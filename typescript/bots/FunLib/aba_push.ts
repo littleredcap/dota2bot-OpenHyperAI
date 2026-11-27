@@ -289,7 +289,9 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
     const enemiesAtAncient = jmz.Utils.CountEnemyHeroesNear(teamAncientLoc, BASE_ANC_RADIUS);
     // If Ancient under direct pressure → strongly deprioritize pushes
     if (enemiesAtAncient >= 1) return BotModeDesire.ExtraLow;
-    if (((bot as any).ohaOuterTowerHoldUntil ?? 0) > DotaTime()) return BotModeDesire.None;
+    const [postFightDuty] = jmz.GetPostFightDuty(bot);
+    if (((bot as any).ohaOuterTowerHoldUntil ?? 0) > DotaTime() || postFightDuty
+        || !jmz.CanTakePostFightTrip(bot, GetLaneFrontLocation(team, lane, 0))) return BotModeDesire.None;
     const tradeLane = !criticalBaseCreeps && GetPreferredCounterPushLane(bot, gameState.enemyTeam);
     if (tradeLane) {
         if (tradeLane !== lane) return BotModeDesire.VeryLow;
@@ -840,7 +842,8 @@ function GetPostFightWavePlan(gameState: ReturnType<typeof getGlobalGameState>, 
                     && !ally.WasRecentlyDamagedByAnyHero(2)
                     && GetHeightLevel(point) <= GetHeightLevel(ally.GetLocation())
                     && jmz.CanCommitToLaneTeleport(ally, point, true, 1200)
-                    && jmz.CanCommitToLaneTeleport(ally, staging, true, 1000)) {
+                    && jmz.CanCommitToLaneTeleport(ally, staging, true, 1000)
+                    && jmz.CanTakePostFightTrip(ally, point)) {
                     candidates.push({ ally, eta });
                 }
             }
@@ -869,7 +872,9 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
         const [reserve] = jmz.GetExposedMidCover(gameState.team);
         for (let slot = 1; slot <= GetTeamPlayers(gameState.team).length; slot++) {
             const ally = GetTeamMember(slot);
-            if (ally && ally !== reserve && jmz.IsValidHero(ally) && ally.IsBot() && !ally.IsIllusion() && jmz.GetHP(ally) >= 0.55
+            if (!ally) continue;
+            const [duty] = jmz.GetPostFightDuty(ally);
+            if (ally !== reserve && !duty && jmz.IsValidHero(ally) && ally.IsBot() && !ally.IsIllusion() && jmz.GetHP(ally) >= 0.55
                 && !jmz.IsRetreating(ally) && !ally.IsChanneling() && !ally.HasModifier("modifier_teleporting")
                 && !ally.IsStunned() && !ally.IsHexed() && !ally.IsNightmared() && !ally.IsDisarmed()
                 && !jmz.IsDoingRoshan(ally) && !jmz.IsDoingTormentor(ally)
@@ -922,7 +927,7 @@ function GetPostFightPushPlan(gameState: ReturnType<typeof getGlobalGameState>):
             const arriving: Record<number, Unit> = {};
             for (const ally of participants) {
                 const reach = Math.max(0, GetUnitToUnitDistance(ally, tower) - ally.GetAttackRange());
-                if (ally.IsRooted() && reach > 0) continue;
+                if ((ally.IsRooted() && reach > 0) || !jmz.CanTakePostFightTrip(ally, location)) continue;
                 const distance = reach === 0 ? 0 : Math.max(reach, GetUnitToLocationDistance(ally, staging));
                 const eta = distance / Math.max(1, ally.GetCurrentMovementSpeed());
                 if (eta <= availableTime) arriving[ally.GetPlayerID()] = ally;
@@ -1237,8 +1242,10 @@ export function PushThink(bot: Unit, lane: Lane): void {
     // An active push mode can still think before the next desire arbitration.
     const ourAncient = GetAncient(GetTeam());
     const [baseResponder, criticalBaseCreeps] = GetBaseCreepResponse(bot, ourAncient);
+    const [postFightDuty] = jmz.GetPostFightDuty(bot);
     if (baseResponder || (ourAncient && jmz.Utils.CountEnemyHeroesNear(ourAncient.GetLocation(), BASE_ANC_RADIUS) > 0)
-        || jmz.ShouldRetreatFromEnemyReinforcements(bot)) {
+        || jmz.ShouldRetreatFromEnemyReinforcements(bot) || postFightDuty
+        || !jmz.CanTakePostFightTrip(bot, GetLaneFrontLocation(GetTeam(), lane, 0))) {
         CancelPushOrder(bot, lane);
         return;
     }

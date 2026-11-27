@@ -77,6 +77,7 @@ local function ShouldYieldForBaseDefense()
 end
 
 local function IsFarmLocationSafe(location)
+	if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, location) then return false end
 	if #J.GetEnemiesNearLoc(location, 1400) > 0
 		or (recoveringLane and #J.GetLastSeenEnemiesNearLoc(location, 1400) > 0) then return false end
 	if tradingTowerLocation == nil then return true end
@@ -117,20 +118,25 @@ local function IsFarmWaveAvailable(location)
 	return true
 end
 
+local function CancelFarmOrder()
+	if not issuedFarmOrder then return end
+	bot:Action_ClearActions(true)
+	issuedFarmOrder = false
+end
+
 local function MoveToFarm(location)
+	if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, location) then CancelFarmOrder(); return end
 	bot:Action_MoveToLocation(location)
 	issuedFarmOrder = true
 end
 
 local function AttackFarmTarget(target)
+	if J.CanTakePostFightTrip and target.GetLocation and not J.CanTakePostFightTrip(bot, target:GetLocation()) then
+		CancelFarmOrder()
+		return
+	end
 	bot:Action_AttackUnit(target, true)
 	issuedFarmOrder = true
-end
-
-local function CancelFarmOrder()
-	if not issuedFarmOrder then return end
-	bot:Action_ClearActions(true)
-	issuedFarmOrder = false
 end
 
 local function IsFarmPathSafe(location)
@@ -819,7 +825,8 @@ function GetDesireHelper()
 		teamTime = DotaTime()
 		return BOT_MODE_DESIRE_NONE
 	end
-	if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then return BOT_MODE_DESIRE_NONE end
+	if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
+		or (J.GetPostFightDuty and J.GetPostFightDuty(bot)) then return BOT_MODE_DESIRE_NONE end
 	RefreshFarmCamps()
 	local tradeDesire = GetOuterTowerRecoveryDesire()
 	if tradeDesire > BOT_MODE_DESIRE_NONE then return tradeDesire end
@@ -1221,7 +1228,8 @@ function Think()
 		end
 	end
 
-	if ShouldYieldForBaseDefense() or (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then
+	if ShouldYieldForBaseDefense() or (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
+		or (J.GetPostFightDuty and J.GetPostFightDuty(bot)) then
 		sideWaveTask, sideWaveDesire, bot.ohaRallySideWave = nil, nil, nil
 		bot.ohaOuterFarmClaim = nil
 		bot.ohaFarmCampClaim = nil

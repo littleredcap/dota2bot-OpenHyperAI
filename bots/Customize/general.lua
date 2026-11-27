@@ -22,6 +22,7 @@ local Customize = { }
 
 -- Local diagnostics only: log lane-pull transitions to the game console.
 Customize.TraceLanePull = false
+Customize.TracePostFightCoverage = false
 -- Local A/B only: position 4 Warlock buys Mekansm before Glimmer Cape.
 Customize.TestWarlockEarlyMek = false
 

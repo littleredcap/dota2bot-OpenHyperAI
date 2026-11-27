@@ -162,7 +162,11 @@ function ____exports.GetPushDesireHelper(bot, lane)
     if enemiesAtAncient >= 1 then
         return BotModeDesire.ExtraLow
     end
-    if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then return BotModeDesire.None end
+    if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
+        or (jmz.GetPostFightDuty and jmz.GetPostFightDuty(bot))
+        or (jmz.CanTakePostFightTrip and not jmz.CanTakePostFightTrip(bot, GetLaneFrontLocation(team, lane, 0))) then
+        return BotModeDesire.None
+    end
     local tradeLane = not criticalBaseCreeps and GetPreferredCounterPushLane(bot, gameState.enemyTeam)
     if tradeLane then
         if tradeLane ~= lane then return BotModeDesire.VeryLow end
@@ -965,7 +969,8 @@ local function GetPostFightWavePlan(gameState, ready, availableTime)
                             and not ally:WasRecentlyDamagedByAnyHero(2)
                             and GetHeightLevel(point) <= GetHeightLevel(ally:GetLocation())
                             and jmz.CanCommitToLaneTeleport(ally, point, true, 1200)
-                            and jmz.CanCommitToLaneTeleport(ally, staging, true, 1000) then
+                            and jmz.CanCommitToLaneTeleport(ally, staging, true, 1000)
+                            and (not jmz.CanTakePostFightTrip or jmz.CanTakePostFightTrip(ally, point)) then
                             candidates[#candidates + 1] = {ally = ally, eta = eta}
                         end
                     end
@@ -996,7 +1001,7 @@ function GetPostFightPushPlan(gameState)
         local reserve = jmz.GetExposedMidCover and jmz.GetExposedMidCover(gameState.team)
         for slot = 1, #GetTeamPlayers(gameState.team) do
             local ally = GetTeamMember(slot)
-            if reserve ~= ally and jmz.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and jmz.GetHP(ally) >= 0.55
+            if reserve ~= ally and jmz.IsValidHero(ally) and (not jmz.GetPostFightDuty or not jmz.GetPostFightDuty(ally)) and ally:IsBot() and not ally:IsIllusion() and jmz.GetHP(ally) >= 0.55
                 and not jmz.IsRetreating(ally) and not ally:IsChanneling() and not ally:HasModifier("modifier_teleporting")
                 and not ally:IsStunned() and not ally:IsHexed() and not ally:IsNightmared() and not ally:IsDisarmed()
                 and not jmz.IsDoingRoshan(ally) and not jmz.IsDoingTormentor(ally)
@@ -1046,7 +1051,8 @@ function GetPostFightPushPlan(gameState)
                         local arriving = {}
                         for _, ally in pairs(ready) do
                             local reach = math.max(0, GetUnitToUnitDistance(ally, tower) - ally:GetAttackRange())
-                            if not ally:IsRooted() or reach == 0 then
+                            if (not ally:IsRooted() or reach == 0)
+                                and (not jmz.CanTakePostFightTrip or jmz.CanTakePostFightTrip(ally, location)) then
                                 local distance = reach == 0 and 0 or math.max(reach, GetUnitToLocationDistance(ally, staging))
                                 local eta = distance / math.max(1, ally:GetCurrentMovementSpeed())
                                 if eta <= availableTime then arriving[ally:GetPlayerID()] = ally end
@@ -1251,7 +1257,9 @@ function ____exports.PushThink(bot, lane)
     if baseResponder or ourAncient and jmz.Utils.CountEnemyHeroesNear(
         ourAncient:GetLocation(),
         BASE_ANC_RADIUS
-    ) > 0 or jmz.ShouldRetreatFromEnemyReinforcements(bot) then
+    ) > 0 or jmz.ShouldRetreatFromEnemyReinforcements(bot)
+        or (jmz.GetPostFightDuty and jmz.GetPostFightDuty(bot))
+        or (jmz.CanTakePostFightTrip and not jmz.CanTakePostFightTrip(bot, GetLaneFrontLocation(GetTeam(), lane, 0))) then
         ____exports.CancelPushOrder(bot, lane)
         return
     end

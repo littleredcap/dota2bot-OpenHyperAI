@@ -6960,50 +6960,144 @@ local function GetWaveClearScore(hero, travelTime)
 	return best, bestReach, bestDamage
 end
 
--- Once mid high ground is open, retain one nearby wave-clear hero after a won
--- fight. This leaves the rest free to take a real objective without all five
--- crossing the river at the same time.
-function J.GetExposedMidCover(team)
+-- Shared coverage for an open lane. Estimates use only live visible / previously
+-- sighted threats and the bounded public death-status estimate, never replay data.
+function J.GetPostFightCoverage(team)
 	local now = DotaTime()
-	if now < 15 * 60 or J.IsValidBuilding(GetTower(team, TOWER_MID_3)) then return nil end
-	local key = 'ExposedMidCover:' .. tostring(team)
-	local cached = J.Utils.GetCachedVars(key, 0.35)
-	if cached ~= nil then return cached.hero, cached.building, cached.reach end
-	local result, refreshCover = {}, false
+	if now < 0 or J.IsValidBuilding(GetTower(team, TOWER_MID_3)) then return nil end
+	local key = 'PostFightCoverage:' .. tostring(team)
+	local cached = J.Utils.GetCachedVars(key, 0.25)
+	if cached ~= nil then return cached or nil end
 	local building = GetBarracks(team, BARRACKS_MID_MELEE)
 	if not J.IsValidBuilding(building) then building = GetBarracks(team, BARRACKS_MID_RANGED) end
-	if J.IsValidBuilding(building) then
-		local hub = building:GetLocation()
-		local sight = J.GetOuterTowerThreat(building, LANE_MID)
-		local resetWindow = J.GetNumOfAliveHeroes(true) <= 3 and J.GetNumOfAliveHeroes(false) >= 3
-		local urgentWave = sight.waveSize >= 2 and sight.eta <= 8
-		refreshCover = urgentWave or resetWindow
-		if refreshCover or (building.ohaCoverUntil or 0) > now then
-			local hold = J.AdjustLocationWithOffsetTowardsFountain(hub, 750)
-			if #J.GetEnemiesNearLoc(hold, 800) < 2 then
-				local best = -math.huge
-				for _, ally in ipairs(J.GetAlliesNearLoc(hold, 2300)) do
-					if J.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and J.GetHP(ally) >= 0.55
-						and not J.IsRetreating(ally) and not J.IsDisabled(ally)
-						and not ally:HasModifier('modifier_teleporting') and not ally:IsChanneling() then
-						local arrival = GetUnitToLocationDistance(ally, hold) / math.max(250, ally:GetCurrentMovementSpeed())
-						local score, reach, damage = GetWaveClearScore(ally, arrival)
-						score = score - arrival * 20 - (J.GetPosition(ally) == 1 and 100 or 0)
-						if damage > 0 and (score > best or score == best and ally:GetPlayerID() < result.hero:GetPlayerID())
-							and J.CanCommitToLaneTeleport(ally, hold, true, 700) then
-							result, best = {hero = ally, building = building, reach = reach}, score
-						end
+	if not J.IsValidBuilding(building) then building = GetAncient(team) end
+	if not J.IsValidBuilding(building) then J.Utils.SetCachedVars(key, false); return nil end
+	local hub = building:GetLocation()
+	local hold = J.AdjustLocationWithOffsetTowardsFountain(hub, 750)
+	local sight = J.GetOuterTowerThreat(building, LANE_MID)
+	local enemies = J.GetNumOfAliveHeroes(true)
+	local reinforcement = J.GetEnemyReinforcementWindow()
+	-- When we cannot see the next wave, do not assume a long reset window.
+	local deadline = math.max(5, math.min(18, reinforcement + (enemies >= 2 and 5 or 8)))
+	if enemies >= 4 then deadline = math.min(deadline, 13) end
+	if (sight.waveSize or 0) > 0 then deadline = math.min(deadline, math.max(2, sight.eta + 2)) end
+	if sight.underAttack then deadline = 2
+	elseif (sight.count or 0) >= 2 then deadline = math.min(deadline, 6) end
+	local waveSize = sight.waveSize or 0
+	local needsBackup = (sight.count or 0) >= 2 or deadline <= 10 and
+		(waveSize >= 3 or waveSize >= 2 and sight.siege
+			or waveSize == 0 and enemies >= 2 and reinforcement <= 5)
+	local plan = {building=building, hold=hold, deadline=deadline, needsBackup=needsBackup == true}
+	local unsafe = #J.GetEnemiesNearLoc(hold, 800) >= 2
+	local rows, incumbent = {}, nil
+	local anchors = {GetTower(team, TOWER_BASE_1), GetTower(team, TOWER_BASE_2)}
+	-- Array holes must not drop the other standing base tower.
+	if anchors[1] == nil then anchors[1], anchors[2] = anchors[2], nil end
+	local incoming = {}
+	for _, tp in ipairs(GetIncomingTeleports()) do
+		if tp.playerid ~= nil and tp.location and tp.time_remaining and tp.time_remaining >= 0
+			and tp.time_remaining <= 6 and J.GetLocationToLocationDistance(tp.location, hold) <= 1350 then
+			incoming[tp.playerid] = tp
+		end
+	end
+	for _, ally in ipairs(not unsafe and J.GetAlliesNearLoc(hold, 24000) or {}) do
+		if J.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion()
+			and J.GetHP(ally) >= 0.50 and not J.IsRetreating(ally) and not J.IsDisabled(ally) then
+			local tp = ally:HasModifier('modifier_teleporting') and incoming[ally:GetPlayerID()]
+			if tp or not ally:IsChanneling() and not ally:HasModifier('modifier_teleporting') then
+				local point = ally:GetLocation()
+				local gap = GetUnitToLocationDistance(ally, hold)
+				local speed = math.max(250, ally:GetCurrentMovementSpeed())
+				local walk = math.max(0, gap - 550) / speed * 1.25 + 0.6
+				local midpoint = J.VectorTowards(point, hold, gap / 2)
+				local safe = J.CanCommitToLaneTeleport(ally, hold, true, 700)
+					and (gap <= 1200 or J.CanCommitToLaneTeleport(ally, midpoint, true, 850))
+				local arrival, teleport = safe and walk or math.huge, nil
+				if tp then
+					arrival = tp.time_remaining + math.max(0, J.GetLocationToLocationDistance(tp.location, hold) - 550) / speed * 1.25
+				elseif arrival > deadline and J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')) then
+					local landing = J.GetHighGroundResponseTeleport(ally, hold, anchors)
+					if landing then
+						local tpETA = 4 + math.max(0, J.GetLocationToLocationDistance(landing, hold) - 550) / speed * 1.25
+						if tpETA < arrival and tpETA < deadline then arrival, teleport = tpETA, landing end
 					end
+				end
+				if arrival < 24 then
+					local score, reach, damage = GetWaveClearScore(ally, math.min(arrival, deadline))
+					local row = {hero=ally, id=ally:GetPlayerID(), walk=not tp and safe and walk or math.huge, arrival=arrival,
+						teleport=teleport, reach=reach, canClear=damage > 0,
+						onStation=not tp and gap <= 750 and damage > 0 and J.GetHP(ally) >= 0.55,
+						score=score - arrival * 34 - (J.GetPosition(ally) == 1 and 100 or 0)}
+					rows[#rows+1] = row
+					if building.ohaCoverOwner == row.id then incumbent = row end
 				end
 			end
 		end
 	end
-	if result.hero and refreshCover then
-		-- Keep one eligible clearer through the brief respawn / wave transition.
-		result.building.ohaCoverUntil = now + 8
+	table.sort(rows, function(a,b)
+		if a.onStation ~= b.onStation then return a.onStation end
+		if a.canClear ~= b.canClear then return a.canClear end
+		if (a.arrival <= deadline) ~= (b.arrival <= deadline) then return a.arrival <= deadline end
+		if a.score == b.score then return a.id < b.id end
+		return a.score > b.score
+	end)
+	local first = rows[1]
+	if first and first.canClear then
+		-- Do not replace a usable incumbent with someone who has only promised to arrive.
+		if incumbent and incumbent.canClear and incumbent.arrival <= deadline and not first.onStation then first=incumbent end
+		if incumbent and incumbent.onStation then first=incumbent end
+		plan.primary=first
+		building.ohaCoverOwner=first.id
+		if plan.needsBackup then
+			local backup
+			for _, row in ipairs(rows) do
+				if row ~= first and row.arrival <= deadline and (not backup or row.arrival < backup.arrival
+					or row.arrival == backup.arrival and row.id < backup.id) then backup=row end
+			end
+			plan.backup=backup
+		end
 	end
-	J.Utils.SetCachedVars(key, result)
-	return result.hero, result.building, result.reach
+	if J.Customize and J.Customize.TracePostFightCoverage then
+		local stamp = (plan.primary and plan.primary.id or -1) .. ':' .. (plan.backup and plan.backup.id or -1)
+			.. ':' .. (plan.primary and plan.primary.onStation and 'hold' or 'pending') .. ':' .. tostring(math.floor(deadline / 4))
+		if building.ohaCoverLog ~= stamp then
+			building.ohaCoverLog = stamp
+			print(string.format('[OHA cover] %.1f team=%d assignments=%s deadline=%.1f', now, team, stamp, deadline))
+		end
+	end
+	J.Utils.SetCachedVars(key, plan)
+	return plan
+end
+
+-- Compatibility for consumers that only need the primary wave-clear role.
+function J.GetExposedMidCover(team)
+	local plan = J.GetPostFightCoverage(team)
+	if plan and plan.primary then return plan.primary.hero, plan.building, plan.primary.reach end
+end
+
+function J.GetPostFightDuty(bot)
+	local plan = J.GetPostFightCoverage(bot:GetTeam())
+	if not plan then return end
+	if plan.primary and plan.primary.hero == bot then return 'clear', plan end
+	if plan.backup and plan.backup.hero == bot then return 'cover', plan end
+	return nil, plan
+end
+
+function J.CanTakePostFightTrip(bot, point, spendTeleport)
+	local role, plan = J.GetPostFightDuty(bot)
+	if not plan then return true end
+	local covered = plan.primary and plan.primary.onStation
+		and (not plan.needsBackup or plan.backup and plan.backup.walk <= plan.deadline)
+	if not point then return role == nil and covered == true end
+	local reach = J.GetLocationToLocationDistance(point, plan.hold)
+	if reach <= (role == 'clear' and 850 or 1350) then return true end
+	-- An outbound TP cannot be used again for the immediate return. Use a
+	-- conservative walking budget for roles and for uncovered commitments.
+	if role == nil and covered then return true end
+	local speed = math.max(250, bot:GetCurrentMovementSpeed())
+	local returnTime = math.max(0, reach - 550) / speed * 1.25 + 2
+	local outboundTime = spendTeleport and 4 or GetUnitToLocationDistance(bot, point) / speed * 1.25
+	return role ~= 'clear' and outboundTime + returnTime < plan.deadline
 end
 
 local function GetOuterTowerHoldPoint(hub, reach, cover)
@@ -7533,7 +7627,7 @@ function J.GetAssignedOuterTower(bot)
 	if response and DotaTime() < response.expires and J.IsValidBuilding(response.tower)
 		and GetUnitToLocationDistance(bot, response.stage) <= 500 then return response.tower end
 	local guard = bot.ohaMidCover
-	if guard and DotaTime() < guard.expires and J.IsValidBuilding(guard.tower) then return guard.tower end
+	if guard and not guard.cover and DotaTime() < guard.expires and J.IsValidBuilding(guard.tower) then return guard.tower end
 	local state = bot._defend
 	if state and not state.waveClearCover and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then
 		local tower = state.waveClearRearTower or state.waveClearTower

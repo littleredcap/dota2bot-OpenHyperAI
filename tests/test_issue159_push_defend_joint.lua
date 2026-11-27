@@ -513,6 +513,9 @@ local function fixture(opts)
         farm.AdvanceTime = advanceTime
         farm.lanes, farm.camps = lanes, {closeCamp, farCamp}
     end
+    -- Legacy scenarios do not implement live public death sampling.
+    -- New coverage integration cases inject a shared plan explicitly.
+    jmz.GetPostFightCoverage = function() return nil end
     return push,defend,members,orders,Lan,farm,
         {ancient=enemy, ourAncient=ancient, melee=melee, ranged=ranged, outerTower=outerTower, counterTower=counterTower, fightTower=fightTower}, jmz, advanceTime
 end
@@ -1802,3 +1805,18 @@ do
     assert(#orders == old or orders[#orders] ~= cart,'do not pursue the catapult across an unsafe angle')
 end
 print('PASS: 9107324797 lone mid cart claims one defender and receives an attack from a safe route')
+
+do
+    local opts = {postFight=true, direct=true, outerSiege=true, safeSiege=true, captureTargets=true, time=2100, farmBot=1}
+    local push, defend, members, _, lane, farm, buildings, j = fixture(opts)
+    local plan={building=buildings.outerTower,hold=buildings.outerTower:GetLocation(),deadline=6,needsBackup=true,
+        primary={hero=members[1],reach=1020,onStation=true},backup={hero=members[2],walk=2}}
+    j.GetPostFightCoverage=function() return plan end
+    assert(j.GetPostFightDuty(members[1])=='clear' and j.GetPostFightDuty(members[2])=='cover')
+    assert(defend.GetDefendDesire(members[1],lane.Mid)==0.83,'reserve clearer through defense entry point')
+    assert(defend.GetDefendDesire(members[2],lane.Mid)==0.80,'reserve distinct backup through same entry point')
+    assert(push.GetPushDesire(members[1],lane.Top)==0 and push.GetPushDesire(members[2],lane.Top)==0,
+        'push cannot steal the live coverage roles')
+    assert(farm.GetDesire()==0,'farming also respects the assigned clearing duty')
+end
+print('PASS: shared coverage is consumed by production push, farm and defend modes')
