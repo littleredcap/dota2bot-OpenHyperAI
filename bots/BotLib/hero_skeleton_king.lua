@@ -234,6 +234,14 @@ function X.ConsiderQ()
 	local nEnemysHerosInRange = J.GetNearbyHeroes(bot, nCastRange + 43, true, BOT_MODE_NONE )
 	local nEnemysHerosInBonus = J.GetNearbyHeroes(bot, nCastRange + 330, true, BOT_MODE_NONE )
 
+	local function canOpenOn(enemy)
+		-- Preserve defensive use during a real engagement; do not mistake
+		-- one backline right-click for a team that can follow a ranged stun.
+		return bot:WasRecentlyDamagedByHero(enemy, 2) and J.IsInRange(bot, enemy, bot:GetAttackRange() + 150)
+			or J.IsInLaningPhase() and J.HasLaneFightFollowUp(bot, enemy)
+			or J.HasCommittedStunFollowUp(bot, enemy, enemy:GetActualIncomingDamage(nDamage, DAMAGE_TYPE_MAGICAL))
+	end
+
 	--打断和击杀
 	for _, npcEnemy in pairs( nEnemysHerosInBonus )
 	do
@@ -271,7 +279,7 @@ function X.ConsiderQ()
 				and not npcEnemy:IsDisarmed()
 			then
 				local npcEnemyDamage = npcEnemy:GetEstimatedDamageToTarget( false, bot, 3.0, DAMAGE_TYPE_PHYSICAL )
-				if ( npcEnemyDamage > nMostDangerousDamage )
+				if npcEnemyDamage > nMostDangerousDamage and canOpenOn(npcEnemy)
 				then
 					nMostDangerousDamage = npcEnemyDamage
 					npcMostDangerousEnemy = npcEnemy
@@ -279,7 +287,7 @@ function X.ConsiderQ()
 			end
 		end
 
-		if ( npcMostDangerousEnemy ~= nil )
+		if npcMostDangerousEnemy ~= nil
 		then
 			return BOT_ACTION_DESIRE_HIGH, npcMostDangerousEnemy
 		end
@@ -333,8 +341,8 @@ function X.ConsiderQ()
 			and not J.IsDisabled( npcTarget )
 			and not npcTarget:IsDisarmed()
 		then
-			if nSkillLV >= 3 or nMP > 0.68 or J.GetHP( npcTarget ) < 0.38 or nHP < 0.25
-			then
+			if (nSkillLV >= 3 or nMP > 0.68 or J.GetHP(npcTarget) < 0.38 or nHP < 0.25)
+				and canOpenOn(npcTarget) then
 				return BOT_ACTION_DESIRE_HIGH, npcTarget
 			end
 		end

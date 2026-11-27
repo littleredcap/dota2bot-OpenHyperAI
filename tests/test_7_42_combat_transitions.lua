@@ -473,6 +473,17 @@ do
     assert(j.ShouldHoldFightApproach(bot, enemy), 'do not walk uphill into an unsupported target')
     state.time = 300
     assert(not j.ShouldHoldFightApproach(bot, enemy), 'do not disrupt existing early laning micro')
+    state.time, enemy.x, core.x = 1800, 600, 500
+    j.GetEnemiesNearLoc = function() return {enemy} end
+    j.GetAlliesNearLoc = function() return {core} end
+    enemy.GetHealth = function() return 900 end
+    core.IsDisarmed = no
+    core.GetEstimatedDamageToTarget = function() return 90 end
+    assert(not j.HasCommittedStunFollowUp(bot, enemy, 80), 'one ranged hero chipping is not follow-up for an exposed melee opener')
+    enemy.GetHealth = function() return 150 end
+    assert(j.HasCommittedStunFollowUp(bot, enemy, 80), 'a ranged teammate can secure a reachable low-HP target')
+    core.IsDisarmed = yes
+    assert(not j.HasCommittedStunFollowUp(bot, enemy, 80), 'unavailable ally cannot finish the target')
 end
 
 do

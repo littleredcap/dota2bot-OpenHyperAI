@@ -5978,6 +5978,22 @@ local function HasFightContact(unit, enemy, buffer)
 	return J.IsInRange(unit, enemy, unit:GetAttackRange() + (unit:IsRooted() and 0 or buffer))
 end
 
+-- Follow-up for a proactive single-target opening, not a peel or interrupt.
+function J.HasCommittedStunFollowUp(bot, target, damage)
+	local enemies = J.GetEnemiesNearLoc(target:GetLocation(), 1250)
+	local hits = HasFightContact(bot, target, 75) and 1 or 0
+	local participants = hits
+	for _, ally in ipairs(J.GetAlliesNearLoc(target:GetLocation(), 1600)) do
+		if ally ~= bot and CanProvideFightContact(ally) and HasFightContact(ally, target, 100) then
+			participants = participants + 1
+			hits = hits + 1
+			damage = damage + ally:GetEstimatedDamageToTarget(false, target, 1.6, DAMAGE_TYPE_PHYSICAL)
+		end
+	end
+	if damage >= target:GetHealth() * 1.08 and participants >= 1 then return true end
+	return hits >= math.max(2, #enemies) and not J.ShouldHoldFightApproach(bot, target)
+end
+
 function J.GetSupportedFightTarget(bot, enemies, allies)
 	if DotaTime() < 8 * 60 or J.GetHP(bot) < 0.45 or not CanProvideFightContact(bot) then return nil end
 	local towers = bot:GetNearbyTowers(1600, true)
