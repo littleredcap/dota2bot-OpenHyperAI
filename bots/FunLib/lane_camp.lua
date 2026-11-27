@@ -1,6 +1,19 @@
 local J = require(GetScriptDirectory() .. '/FunLib/jmz_func')
 
 local Camp = {}
+local Customize = require(GetScriptDirectory() .. '/Customize/general')
+
+local function TracePull(bot, plan, stage, detail)
+    if not Customize.TraceLanePull or plan.kind ~= 'pull' then return end
+    print(string.format('[OHA lane-pull] t=%.2f player=%d lane=%d stage=%s %s',
+        DotaTime(), bot:GetPlayerID(), plan.lane, stage, detail or ''))
+end
+
+local function PullIntercept(bot, target, point)
+    local speed = math.max(150, math.min(bot:GetCurrentMovementSpeed(), target:GetCurrentMovementSpeed()))
+    local impact = J.GetAttackProDelayTime(bot, target) or 0.5
+    return impact, J.GetLocationToLocationDistance(target:GetLocation(), point) / speed
+end
 
 local function NearCamp(bot, location)
     local creeps = {}
@@ -119,9 +132,7 @@ local function PlanPull(bot, camp, lane, lanePoint, neutral)
         and GetUnitToLocationDistance(enemyTower, front) <= 1550
     if pushed <= 0 or not (nearEnemyTower or GetUnitToLocationDistance(tower, front) >= 1200) then return end
     local eta = PullWaveETA(bot, lane, lanePoint)
-    local speed = math.max(150, math.min(bot:GetCurrentMovementSpeed(), neutral:GetCurrentMovementSpeed()))
-    local impact = J.GetAttackProDelayTime(bot, neutral) or 0.5
-    local travel = J.GetLocationToLocationDistance(neutral:GetLocation(), lanePoint) / speed
+    local impact, travel = PullIntercept(bot, neutral, lanePoint)
     local intercept = impact + travel
     if eta and eta >= intercept - 0.9 and eta <= intercept + 2.4 then
         local _, release = J.GetAttackProDelayTime(bot, neutral)
@@ -156,8 +167,9 @@ local function PlanStack(bot, camp, lanePoint, distance)
     end
 end
 
-function Camp.Cancel(bot)
+function Camp.Cancel(bot, reason)
     if bot.ohaLaneCamp == nil then return end
+    if reason ~= 'confirmed' then TracePull(bot, bot.ohaLaneCamp, 'cancel', reason or 'mode-exit') end
     bot.ohaLaneCamp.expires = DotaTime()
     bot.ohaLaneCamp = nil
     bot.ohaNextCampWork = DotaTime() + 5
@@ -207,9 +219,10 @@ function Camp.Think(bot, plan)
         or (plan.kind == 'pull' and not CanPullLane(bot, plan.lane, plan.tower, plan.goal))
         or (plan.kind == 'stack' and not J.CanLeaveLane(bot))
         or CampTaken(bot, plan.camp.location) then
-        Camp.Cancel(bot)
+        Camp.Cancel(bot, plan.expires <= now and 'expired' or 'unsafe-or-claimed')
         return false
     end
+    if bot.ohaLaneCamp ~= plan then TracePull(bot, plan, 'plan') end
     bot.ohaLaneCamp = plan
     if plan.drawAt == nil then
         if plan.attackAt ~= nil and now > plan.attackAt + 0.85 then Camp.Cancel(bot); return false end
@@ -225,9 +238,14 @@ function Camp.Think(bot, plan)
         if not J.IsInRange(bot, target, bot:GetAttackRange() + 35) then
             bot:Action_MoveToLocation(plan.camp.location)
         elseif plan.attackAt == nil or now >= plan.attackAt then
-            if plan.kind == 'pull' and PullWaveETA(bot, plan.lane, plan.goal) == nil then
-                Camp.Cancel(bot)
-                return false
+            if plan.kind == 'pull' then
+                local eta = PullWaveETA(bot, plan.lane, plan.goal)
+                local impact, travel = PullIntercept(bot, target, plan.goal)
+                if not eta or eta < impact + travel - 0.9 or eta > impact + travel + 2.4 then
+                    Camp.Cancel(bot, 'intercept-window')
+                    return false
+                end
+                TracePull(bot, plan, 'attack-order', string.format('eta=%.2f intercept=%.2f', eta, impact + travel))
             end
             local _, release = J.GetAttackProDelayTime(bot, target)
             plan.attackTime, plan.drawAt = bot:GetLastAttackTime(), now + math.min(1, (release or 0.3) + 0.25)
@@ -242,7 +260,7 @@ function Camp.Think(bot, plan)
         local aggro = J.IsValid(plan.target) and plan.target:GetAttackTarget() == bot
         if plan.kind == 'pull' and not aggro then
             if now <= plan.drawAt + math.max(0.4, plan.impact or 0.5) then return true end
-            Camp.Cancel(bot)
+            Camp.Cancel(bot, 'no-aggro')
             return false
         elseif not aggro and bot:GetLastAttackTime() == plan.attackTime then
             if now < plan.drawAt then return true end
@@ -250,6 +268,7 @@ function Camp.Think(bot, plan)
             return false
         end
         plan.released = true
+        TracePull(bot, plan, 'aggro')
     end
     if plan.kind == 'pull' then
         local count = 0
@@ -264,7 +283,8 @@ function Camp.Think(bot, plan)
         end
         if count >= 2 then
             bot.ohaLastConfirmedPull = {time = now, lane = plan.lane, caught = count}
-            Camp.Cancel(bot)
+            TracePull(bot, plan, 'confirmed', 'caught=' .. count)
+            Camp.Cancel(bot, 'confirmed')
             bot.ohaNextCampWork = now + 25
             return false
         end

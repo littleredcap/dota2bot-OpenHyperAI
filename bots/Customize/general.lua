@@ -20,6 +20,9 @@ This is a place for you to customize the Open Hyper AI bots.
 -- The variable to hold the settings. Only modify if you know exactly what you are doing.
 local Customize = { }
 
+-- Local diagnostics only: log lane-pull transitions to the game console.
+Customize.TraceLanePull = false
+
 -- Set it to true to turn on ALL of the custom settings in this file, or set it to false to turn off the settings.
 Customize.Enable = true
 

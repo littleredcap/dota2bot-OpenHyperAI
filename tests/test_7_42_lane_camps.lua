@@ -169,4 +169,12 @@ do
     assert(not mode.Plan(support, 1), 'do not leave the endangered core')
 end
 
+do
+    local state, support, _, neutral, wave, mode = fixture(false)
+    local plan = assert(mode.Plan(support, 3))
+    state.now = plan.attackAt + 0.8
+    wave.x, state.wave[2].x, neutral.y = 520, 490, 500
+    assert(not mode.Think(support, plan) and #state.orders == 0, 'recompute interception after the neutral moves')
+end
+
 print('PASS: lane pull interception, camp claims, attack windup, stack confirmation and farm owner')
