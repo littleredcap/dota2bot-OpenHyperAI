@@ -117,4 +117,15 @@ do
     tick()
     assert(#state.orders == 1 and state.orders[1] == 'spell_c', 'ARDM fallback chooses a currently legal ability')
 end
+
+do
+    local state, tick = fixture({'obsolete_spell', 'spell_c'})
+    tick()
+    assert(#state.orders == 0, 'wait briefly before removing a missing default ability')
+    for _ = 1, 7 do tick() end
+    assert(state.orders[1] == 'spell_c' and state.points == 0, 'a permanent missing default entry cannot block later skills')
+    local custom, customTick = fixture({'obsolete_spell', 'spell_c'}, {AbilityUpgrade = {2, 3}})
+    for _ = 1, 8 do customTick() end
+    assert(#custom.orders == 0 and custom.points == 1, 'do not substitute a skill into an explicit build')
+end
 print('PASS: generic leveling waits for availability and confirmation, rebuilds by actual ranks, and respects overrides')

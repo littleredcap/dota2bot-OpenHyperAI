@@ -329,50 +329,32 @@ function X.WarlockShouldMove()
 	end
 end
 
-function X.ConsiderR()
-
-	if not abilityR:IsFullyCastable() then return BOT_ACTION_DESIRE_NONE, nil	end
-
-	if abilityQ:IsFullyCastable()
-		and bot:GetMana() >= ( abilityQ:GetManaCost() + abilityR:GetManaCost() )
-		and nHP > 0.5
-	then
-		return BOT_ACTION_DESIRE_NONE, nil
-	end
-
-	local nCastRange = abilityR:GetCastRange() + aetherRange
-	local nCastPoint = abilityR:GetCastPoint()
-	local manaCost = abilityR:GetManaCost()
-	local nRadius = abilityR:GetSpecialValueInt( "aoe" )
-	local hTrueHeroList = J.GetEnemyList( bot, 1400 )
-
-
-	local locationAoE = bot:FindAoELocation( true, true, bot:GetLocation(), nCastRange, nRadius, 0, 0 )
-	if ( locationAoE.count >= 2 and #hTrueHeroList >= 2 )
-		or locationAoE.count >= 3
-	then
-		return BOT_ACTION_DESIRE_LOW, locationAoE.targetloc
-	end
-	if locationAoE.count >= 1 and J.GetHP( bot ) < 0.38 and #hTrueHeroList >= 1
-	then
-		return BOT_ACTION_DESIRE_LOW, locationAoE.targetloc
-	end
-
-
-	--进攻时
-	if J.IsGoingOnSomeone( bot )
-	then
-		local npcTarget = J.GetProperTarget( bot )
-		if J.IsValidHero( npcTarget )
-			and J.CanCastOnMagicImmune( npcTarget )
-			and J.IsInRange( npcTarget, bot, nCastRange + 200 )
-		then
-			if #hTrueHeroList >= 2 then
-				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetExtrapolatedLocation( nCastPoint )
-			end
+local function GetOfferingCluster(range, radius, enemies)
+	local area = bot:FindAoELocation(true, true, bot:GetLocation(), range, radius, 0, 0)
+	local count = 0
+	if area.count > 0 then
+		for _, enemy in ipairs(enemies) do
+			if GetUnitToLocationDistance(enemy, area.targetloc) <= radius then count = count + 1 end
 		end
 	end
+	return area.targetloc, count
+end
 
+function X.ConsiderR()
+	if not abilityR:IsFullyCastable() then return BOT_ACTION_DESIRE_NONE, nil end
+
+	local range = abilityR:GetCastRange() + aetherRange
+	local enemies = J.GetEnemyList(bot, 1600)
+	local point, count = GetOfferingCluster(range, abilityR:GetSpecialValueInt("aoe"), enemies)
+	if count >= 2 or (count == 1 and nHP < 0.38) then return BOT_ACTION_DESIRE_HIGH, point end
+
+	if J.IsGoingOnSomeone(bot) and #enemies >= 2 then
+		local target = J.GetProperTarget(bot)
+		if J.IsValidHero(target) and J.CanCastOnMagicImmune(target) and J.IsInRange(bot, target, range)
+			and J.GetAvailableFightAllies(bot, target:GetLocation(), 900) >= 1 then
+			return BOT_ACTION_DESIRE_HIGH, target:GetExtrapolatedLocation(abilityR:GetCastPoint())
+		end
+	end
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 
@@ -383,55 +365,35 @@ function X.ConsiderRFR()
 		or not abilityRef:IsFullyCastable()
 	then return BOT_ACTION_DESIRE_NONE, nil end
 
-	if abilityQ:IsFullyCastable()
-		and bot:GetMana() >= ( abilityQ:GetManaCost() + abilityR:GetManaCost() )
-		and nHP > 0.5
-	then
-		return BOT_ACTION_DESIRE_NONE, nil
-	end
-
 	if bot:GetMana() < abilityR:GetManaCost() * 2 + abilityRef:GetManaCost()
 	then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
 
-	local nCastRange = abilityR:GetCastRange() + aetherRange
-	local nCastPoint = abilityR:GetCastPoint()
-	local manaCost = abilityR:GetManaCost()
-	local nRadius = abilityR:GetSpecialValueInt( "aoe" )
-	local hTrueHeroList = J.GetEnemyList( bot, 1600 )
-
-	--进攻时
-	if J.IsGoingOnSomeone( bot )
-	then
-		local npcTarget = J.GetProperTarget( bot )
-		if J.IsValidHero( npcTarget )
-			and J.CanCastOnMagicImmune( npcTarget )
-			and J.IsInRange( npcTarget, bot, nCastRange + 200 )
-		then
-			if #hTrueHeroList >= 3 then
-				return BOT_ACTION_DESIRE_HIGH, npcTarget:GetExtrapolatedLocation( nCastPoint )
-			end
-		end
-	end
-
+	local enemies = J.GetEnemyList(bot, 1600)
+	if #enemies < 3 then return BOT_ACTION_DESIRE_NONE, nil end
+	local point, count = GetOfferingCluster(abilityR:GetCastRange() + aetherRange, abilityR:GetSpecialValueInt("aoe"), enemies)
+	if count >= 3 then return BOT_ACTION_DESIRE_HIGH, point end
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 
 function X.ConsiderE()
 
-	if not abilityE:IsFullyCastable() then return BOT_ACTION_DESIRE_NONE, nil end
-
-	if abilityR:IsFullyCastable()
-		or abilityQ:IsFullyCastable()
-		or abilityW:IsFullyCastable()
-	then
+	if not abilityE:IsFullyCastable() or J.IsRetreating(bot) then return BOT_ACTION_DESIRE_NONE, nil end
+	-- Other spells have already checked their targets. Keep mana for a ready golem.
+	if abilityR:IsFullyCastable() and bot:GetMana() - abilityE:GetManaCost() < abilityR:GetManaCost() then
 		return BOT_ACTION_DESIRE_NONE, nil
+	end
+	for _, enemy in ipairs(hEnemyHeroList or {}) do
+		if J.IsValidHero(enemy) and not J.IsDisabled(enemy)
+			and J.IsInRange(bot, enemy, math.max(550, enemy:GetAttackRange() + 150))
+			and (enemy:GetAttackTarget() == bot or J.IsChasingTarget(enemy, bot)) then
+			return BOT_ACTION_DESIRE_NONE, nil
+		end
 	end
 
 	local nCastRange = abilityE:GetCastRange() + 30 + aetherRange
 	local nCastPoint = abilityE:GetCastPoint()
-	local manaCost = abilityE:GetManaCost()
 	local nRadius = abilityE:GetSpecialValueInt( "aoe" )
 
 	if J.IsInTeamFight( bot, 1200 )
@@ -467,12 +429,23 @@ function X.ConsiderW()
 	local laning = J.IsInLaningPhase()
 	local healTarget, bestScore = nil, 0
 	local function ConsiderHeal(ally)
-		if not J.IsValidHero(ally) or ally:IsIllusion() or ally:IsInvulnerable()
-			or ally:HasModifier('modifier_warlock_shadow_word')
-		then return end
+		if not J.IsValidHero(ally) or ally:IsIllusion() or ally:IsInvulnerable() then return end
 		local hp = J.GetHP(ally)
 		local core = J.IsCore(ally)
 		local underFire = ally:WasRecentlyDamagedByAnyHero(3)
+		if ally:HasModifier('modifier_warlock_shadow_word') then
+			local enemyWordLikely = false
+			if hp <= 0.5 and underFire then
+				for _, enemy in ipairs(hEnemyHeroList or {}) do
+					if J.IsValidHero(enemy) and enemy:GetUnitName() == 'npc_dota_hero_warlock'
+						and ally:WasRecentlyDamagedByHero(enemy, 2) then
+						enemyWordLikely = true
+						break
+					end
+				end
+			end
+			if not enemyWordLikely then return end
+		end
 		if hp <= 0.65 or (laning and core and underFire and hp <= 0.8) then
 			local score = 1 - hp + (core and 0.15 or 0) + (underFire and 0.1 or 0)
 			if score > bestScore then healTarget, bestScore = ally, score end

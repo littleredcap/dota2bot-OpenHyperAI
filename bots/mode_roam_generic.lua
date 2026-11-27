@@ -22,16 +22,8 @@ local BearAttackLimitDistance = 1100
 local TetherBreakDistance = 1000
 local ConsiderHeroSpecificRoaming = {}
 
-local laneToGank = nil
-local lastGankDecisionTime = 0
-local gankDecisionHoldTime = 30 -- 30s commitment to a gank decision (was 90s — too long, bots wasted laning time)
-local TwinGates = J.Utils.GameStates.twinGates
-local targetGate
-local gateWarp = bot:GetAbilityByName("twin_gate_portal_warp")
-local enableGateUsage = false -- twin_gate_portal_warp to be fixed
-local arriveGankLocTime = 0
-local gankTimeAfterArrival = 15 -- 15s stay at gank location (was 33s — too long doing nothing)
-local gankGapTime = 3 * 60 -- 3 min between ganks (was 6 min — too restrictive)
+local gankPlan, proposedGank, ThinkLaneGank, deaggroTarget
+local nextGankCheck, nextGankAfter = 0, 0
 local lastStaticLinkDebuffStack = 0
 local AnyUnitAffectedByChainFrost = false
 local HasPossibleWallOfReplicaAround = false
@@ -44,9 +36,9 @@ local tangoDesire, tangoTarget, tangoSlot
 local chronoAvoidanceLocation, shrapnelEscapeLocation
 
 local laneAndT1s = {
-	{LANE_TOP, TOWER_TOP_1},
-	{LANE_MID, TOWER_MID_1},
-	{LANE_BOT, TOWER_BOT_1}
+	{LANE_TOP, TOWER_TOP_1, TOWER_TOP_2},
+	{LANE_MID, TOWER_MID_1, TOWER_MID_2},
+	{LANE_BOT, TOWER_BOT_1, TOWER_BOT_2}
 }
 
 function GetDesire()
@@ -59,6 +51,7 @@ function GetDesire()
 end
 function GetDesireHelper()
 	botName = bot:GetUnitName()
+	gankPlan, deaggroTarget = nil, nil
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return BOT_MODE_DESIRE_NONE end
 	chronoAvoidanceLocation = J.GetChronosphereAvoidanceLocation(bot)
 	if chronoAvoidanceLocation ~= nil then return BOT_MODE_DESIRE_ABSOLUTE end
@@ -164,10 +157,14 @@ function Think()
 	if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "roam") then return end
 
 	nInRangeEnemy = bot:GetNearbyHeroes(1200, true, BOT_MODE_NONE)
+	if deaggroTarget ~= nil and J.IsValid(deaggroTarget) then
+		bot:Action_AttackUnit(deaggroTarget, true)
+		return
+	end
+	if gankPlan ~= nil then ThinkLaneGank(); return end
 
 	ThinkIndividualRoaming() -- unit special abilities
 	ThinkGeneralRoaming() -- general items or conditions.
-	ThinkActualGankingInLanes()
 end
 
 function ThinkIndividualRoaming()
@@ -941,86 +938,178 @@ function MoveAwayFromTarget(target, keepDistance)
 	end
 end
 
-function ActualGankDesire()
-	SetupTwinGates()
-
-	if J.IsInLaningPhase()
-	and not bot:WasRecentlyDamagedByAnyHero(2)
-	and (botTarget == nil or #nInRangeEnemy <= 0 or nInRangeEnemy[1] ~= botTarget) then
-		local botLvl = bot:GetLevel()
-		if (J.GetPosition(bot) == 2 and botLvl >= 6 and J.GetHP(bot) > 0.7 and J.GetMP(bot) > 0.5) -- mid player roaming
-		or (J.GetPosition(bot) > 3 and botLvl > 3 and J.GetHP(bot) > 0.6 and J.GetMP(bot) > 0.5) -- supports roaming
-		then
-			return CheckLaneToGank(J.GetPosition(bot))
+local function GetGankControlReach()
+	local reach
+	for slot = 0, 8 do
+		local spell = bot:GetAbilityInSlot(slot)
+		if J.CanCastAbility(spell) and not spell:IsPassive()
+			and (J.IsStunProjectileSpell(spell:GetName()) or spell:GetName() == 'shadow_shaman_voodoo'
+				or spell:GetName() == 'lion_voodoo' or spell:GetName() == 'shadow_shaman_shackles'
+				or spell:GetSpecialValueFloat('stun_duration') > 0
+				or spell:GetSpecialValueFloat('root_duration') > 0) then
+			local range = spell:GetCastRange()
+			if range <= 0 then range = math.max(200, spell:GetAOERadius() or 0) end
+			reach = math.max(reach or 0, range)
 		end
 	end
-	return BOT_MODE_DESIRE_NONE
+	return reach
 end
 
-function SetupTwinGates()
-	if #TwinGates == 0 then
-		for _, unit in pairs(GetUnitList(UNIT_LIST_ALL))
-		do
-			local name = unit:GetUnitName()
-			if name == 'npc_dota_unit_twin_gate'
-			then
-				table.insert(TwinGates, unit)
-				print("Twin gate: " .. name .. ". " .. tostring(unit:GetLocation()))
-			end
-			if #TwinGates >= 2 then
-				break
-			end
+local function GetGankPartner(enemy, lane)
+	local location = enemy:GetLocation()
+	for _, ally in ipairs(J.GetAlliesNearLoc(location, 1150)) do
+		if ally ~= bot and J.IsValidHero(ally) and not ally:IsIllusion() and ally:GetAssignedLane() == lane
+			and J.GetHP(ally) > 0.58 and not J.IsRetreating(ally) and not J.IsDisabled(ally)
+			and not ally:HasModifier('modifier_teleporting') then
+			local damage = ally:GetEstimatedDamageToTarget(true, enemy, 4, DAMAGE_TYPE_ALL)
+			if damage >= enemy:GetHealth() * 0.35 then return ally, damage end
 		end
 	end
 end
 
-function ThinkActualGankingInLanes()
-	if laneToGank ~= nil then
-		-- Abort gank if the target lane no longer has enemies (they left)
-		local nEnemiesInGankLane = J.GetEnemyCountInLane(laneToGank)
-		if nEnemiesInGankLane == 0 then
-			laneToGank = nil
-			return
-		end
+local function CanGankTarget(target, lane)
+	if not J.IsValidHero(target) or target:IsMagicImmune() or J.IsSuspiciousIllusion(target)
+		or not J.CanBeAttacked(target) or #J.GetEnemiesNearLoc(target:GetLocation(), 1100) > 1 then return false end
+	local towers = lane == LANE_TOP and {TOWER_TOP_1, TOWER_TOP_2}
+		or (lane == LANE_MID and {TOWER_MID_1, TOWER_MID_2} or {TOWER_BOT_1, TOWER_BOT_2})
+	for _, towerId in ipairs(towers) do
+		local tower = GetTower(GetOpposingTeam(), towerId)
+		if J.IsValidBuilding(tower) and J.IsInRange(target, tower, 1000) then return false end
+	end
+	return true
+end
 
-		local targetLoc = GetLaneFrontLocation(GetTeam(), laneToGank, -300)
-		local distanceToGankLoc = GetUnitToLocationDistance(bot, targetLoc)
-		if distanceToGankLoc > 5000 then
-			if J.GetPosition(bot) > 3
-			and targetGate ~= nil
-			and enableGateUsage
-			then
-				print('Trying to use gate '..botName)
-				local distanceToGate = GetUnitToUnitDistance(bot, targetGate)
-				if distanceToGate > 350 then
-					bot:Action_MoveToLocation(targetGate:GetLocation())
-					return
-				elseif gateWarp:IsFullyCastable()
-				then
-					bot:Action_UseAbilityOnEntity(gateWarp, targetGate)
-					return
+local function LaneGankClaimed(lane)
+	for slot = 1, #GetTeamPlayers(bot:GetTeam()) do
+		local ally = GetTeamMember(slot)
+		local plan = ally ~= nil and ally ~= bot and ally.ohaLaneGank
+		if plan and plan.lane == lane and plan.expires > DotaTime() and ally:IsAlive() then return true end
+	end
+	return false
+end
+
+local function CanLeaveForGank()
+	local position = J.GetPosition(bot)
+	return (position >= 4 and bot:GetLevel() >= 4 or position == 3 and not J.IsInLaningPhase(bot) and bot:GetLevel() >= 8)
+		and J.GetHP(bot) >= 0.65 and not J.IsRetreating(bot) and not J.IsDefending(bot)
+		and not bot:WasRecentlyDamagedByAnyHero(3) and J.CanLeaveLane(bot)
+		and (bot.ohaOuterTowerHoldUntil or 0) <= DotaTime() and bot.ohaLaneCamp == nil
+end
+
+local function FindLaneGank()
+	local now = DotaTime()
+	if now < nextGankAfter then return nil end
+	if now < nextGankCheck then return proposedGank end
+	nextGankCheck = now + 0.75
+	proposedGank = nil
+	if not CanLeaveForGank() or #nInRangeEnemy > 0 or GetGankControlReach() == nil then return nil end
+	local best, bestScore
+	for _, entry in ipairs(laneAndT1s) do
+		local lane, towerId = entry[1], entry[2]
+		local tower = GetTower(bot:GetTeam(), towerId)
+		if not J.IsValidBuilding(tower) then tower = GetTower(bot:GetTeam(), entry[3]) end
+		if lane ~= bot:GetAssignedLane() and J.IsValidBuilding(tower) and not LaneGankClaimed(lane) then
+			for _, enemy in ipairs(J.GetEnemiesNearLoc(tower:GetLocation(), 2400)) do
+				if CanGankTarget(enemy, lane) then
+					local partner, damage = GetGankPartner(enemy, lane)
+					local location = enemy:GetLocation()
+					local eta = GetUnitToLocationDistance(bot, location) / math.max(1, bot:GetCurrentMovementSpeed())
+					local landing = nil
+					if eta > 8 and J.CanCastAbility(TPScroll) then
+						local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
+						if IsLocationPassable(point) and J.CanCommitToLaneTeleport(bot, point, true) then
+							eta = 4 + J.GetLocationToLocationDistance(point, location) / math.max(1, bot:GetCurrentMovementSpeed())
+							landing = point
+						end
+					end
+					local path = landing or J.GetLocationTowardDistanceLocation(bot, location,
+						GetUnitToLocationDistance(bot, location) * 0.5)
+					if partner ~= nil and eta <= 10 and #J.GetLastSeenEnemiesNearLoc(path, 900) <= 1
+						and damage + bot:GetEstimatedDamageToTarget(true, enemy, 4, DAMAGE_TYPE_ALL) >= enemy:GetHealth() * 0.85 then
+						local score = 3 * (1 - J.GetHP(enemy)) - eta / 8
+						if bestScore == nil or score > bestScore then
+							best = {target = enemy, lane = lane, landing = landing, expires = now + eta + 5}
+							bestScore = score
+						end
+					end
 				end
 			end
 		end
-
-		if distanceToGankLoc > bot:GetAttackRange() + 300 and bot:WasRecentlyDamagedByAnyHero(1.5) then
-			bot:Action_MoveToLocation(targetLoc)
-		end
-		if distanceToGankLoc < 600 and DotaTime() - arriveGankLocTime > gankTimeAfterArrival * 1.1 then
-			arriveGankLocTime = DotaTime()
-		end
-		if DotaTime() - arriveGankLocTime > gankTimeAfterArrival then
-			laneToGank = nil
-		end
 	end
+	proposedGank = best
+	return proposedGank
+end
+
+local function EndLaneGank()
+	local plan = bot.ohaLaneGank
+	bot.ohaLaneGank = nil
+	proposedGank = nil
+	if plan ~= nil then
+		nextGankAfter = DotaTime() + 24
+		if bot:GetTarget() == plan.target then bot:SetTarget(nil) end
+	end
+end
+
+function ActualGankDesire()
+	local plan = bot.ohaLaneGank
+	if plan ~= nil and (plan.expires <= DotaTime() or not CanLeaveForGank()
+		or not CanGankTarget(plan.target, plan.lane) or GetGankPartner(plan.target, plan.lane) == nil) then
+		EndLaneGank()
+		return BOT_MODE_DESIRE_NONE
+	end
+	gankPlan = plan or FindLaneGank()
+	return gankPlan and 0.66 or BOT_MODE_DESIRE_NONE
+end
+
+ThinkLaneGank = function()
+	if bot:IsChanneling() or bot:IsUsingAbility() then return end
+	local plan = gankPlan
+	if not plan or plan.expires <= DotaTime() or not CanLeaveForGank() or not CanGankTarget(plan.target, plan.lane)
+		or LaneGankClaimed(plan.lane) then
+		EndLaneGank()
+		return
+	end
+	local partner = GetGankPartner(plan.target, plan.lane)
+	if partner == nil then EndLaneGank(); return end
+	bot.ohaLaneGank = plan
+	if plan.landing ~= nil then
+		if J.CanCastAbility(TPScroll) and J.CanCommitToLaneTeleport(bot, plan.landing, true) then
+			bot:Action_UseAbilityOnLocation(TPScroll, plan.landing)
+		else
+			EndLaneGank()
+		end
+		plan.landing = nil
+		return
+	end
+	if not J.CanFollowLaneFight(partner, plan.target) then
+		plan.ready = false
+		if bot:GetTarget() == plan.target then bot:SetTarget(nil) end
+		local distance = math.max(GetUnitToUnitDistance(partner, plan.target) + 220, plan.target:GetAttackRange() + 240)
+		local point = J.VectorTowards(plan.target:GetLocation(), partner:GetLocation(), distance)
+		if IsLocationPassable(point) then bot:Action_MoveToLocation(point) else EndLaneGank() end
+		return
+	end
+
+	if J.IsDisabled(plan.target) then plan.controlLanded = true end
+	local reach = plan.controlLanded and bot:GetAttackRange() or GetGankControlReach()
+	if reach == nil then EndLaneGank(); return end
+	plan.ready = J.IsInRange(bot, plan.target, reach)
+	if plan.ready then
+		bot:SetTarget(plan.target)
+		if plan.controlLanded then bot:Action_AttackUnit(plan.target, true) end
+		return
+	end
+	if bot:GetTarget() == plan.target then bot:SetTarget(nil) end
+	local point = J.VectorTowards(plan.target:GetLocation(), partner:GetLocation(), math.max(100, reach - 45))
+	if IsLocationPassable(point) then bot:Action_MoveToLocation(point) else EndLaneGank() end
 end
 
 function OnStart()
 end
 
 function OnEnd()
-	laneToGank = nil
-	targetGate = nil
+	EndLaneGank()
+	gankPlan = nil
 	if shouldGoBackToFountain and IsInHealthyState() then
 		shouldGoBackToFountain = false
 	end
@@ -1029,117 +1118,6 @@ end
 function IsInHealthyState()
 	return botName ~= 'npc_dota_hero_huskar' and J.GetHP(bot) > 0.7 and J.GetMP(bot) > 0.6
 end
-
-function CheckLaneToGank(botPosition)
-
-	-- Don't gank if enemies are already near us (we're in a fight)
-	if #J.GetEnemiesNearLoc(bot:GetLocation(), 800) > 0 then
-		return BOT_MODE_DESIRE_NONE
-	end
-
-	-- If we committed to a gank, REVALIDATE before continuing
-	-- (enemy may have left the lane since we decided)
-	if DotaTime() - lastGankDecisionTime <= gankDecisionHoldTime and laneToGank ~= nil then
-		local nEnemiesStillThere = J.GetEnemyCountInLane(laneToGank)
-		if nEnemiesStillThere == 0 then
-			-- Enemy left — cancel the gank, go back to what we were doing
-			laneToGank = nil
-			lastGankDecisionTime = 0
-			return BOT_MODE_DESIRE_NONE
-		end
-		return BOT_ACTION_DESIRE_VERYHIGH
-	end
-
-	-- Cores should NOT gank during laning — they lose too much farm/XP
-	local nPos = J.GetPosition(bot)
-	if J.IsInLaningPhase() then
-		if nPos == 1 or nPos == 2 then
-			return BOT_MODE_DESIRE_NONE
-		end
-	end
-
-	local botLevel = bot:GetLevel()
-	local botLvlTooLow = (nPos == 1 and botLevel < 10) or
-		(nPos == 2 and botLevel < 8) or
-		(nPos == 3 and botLevel < 6) or
-		(nPos == 4 and botLevel < 4) or
-		(nPos == 5 and botLevel < 3)
-
-	if (DotaTime() - lastGankDecisionTime < gankGapTime and lastGankDecisionTime ~= 0)
-		or botLvlTooLow then
-		return BOT_MODE_DESIRE_NONE
-	end
-
-	if not HasSufficientMana(300) then
-		return BOT_MODE_DESIRE_NONE
-	end
-
-	-- Evaluate each lane for gank viability
-	local bestLane = nil
-	local bestDesire = 0
-
-	for _, lane in pairs(laneAndT1s) do
-		local enemyCountInLane = J.GetEnemyCountInLane(lane[1])
-		if enemyCountInLane > 0 then
-			local tTower = GetTower(GetTeam(), lane[2])
-			if tTower ~= nil then
-				local laneFront = GetLaneFrontLocation(GetTeam(), lane[1], 0)
-				local laneFrontToT1Dist = GetUnitToLocationDistance(tTower, laneFront)
-				local nInRangeAlly = J.GetAlliesNearLoc(laneFront, 1200)
-				local botDistToLane = GetUnitToLocationDistance(bot, laneFront)
-
-				-- Skip distant lanes without a TP scroll, and our own assigned lane.
-				if (botDistToLane <= 4000 or J.HasItem(bot, 'item_tpscroll'))
-				and lane[1] ~= bot:GetAssignedLane()
-				then
-					-- Better gank conditions: enemy is pushed forward (closer to our tower)
-					-- AND we have at least 1 ally there to help
-					local bEnemyOverextended = laneFrontToT1Dist < 2500
-					local bAllyPresent = #nInRangeAlly >= 1
-
-					if bEnemyOverextended and bAllyPresent then
-						local desire = RemapValClamped(botDistToLane, 4000, 600, BOT_ACTION_DESIRE_MODERATE, BOT_ACTION_DESIRE_HIGH)
-						-- Bonus desire if enemy is outnumbered
-						if enemyCountInLane <= #nInRangeAlly then
-							desire = desire + 0.1
-						end
-						if desire > bestDesire then
-							bestDesire = desire
-							bestLane = lane[1]
-						end
-					end
-				end
-			end
-		end
-	end
-
-	if bestLane then
-		laneToGank = bestLane
-		lastGankDecisionTime = DotaTime()
-		return Clamp(bestDesire, 0, BOT_ACTION_DESIRE_VERYHIGH)
-	end
-
-	return BOT_MODE_DESIRE_NONE
-end
-
-function HasSufficientMana(nMana)
-	return bot:GetMana() > nMana and botName ~= 'npc_dota_hero_huskar'
-end
-
-function GetGateNearLane(laneLoc)
-	local minDis = 99999
-	local tGate
-	for _, gate in pairs(TwinGates)
-	do
-		local distanceToGate = GetUnitToLocationDistance(gate, laneLoc)
-		if distanceToGate < minDis then
-			tGate = gate
-			minDis = distanceToGate
-		end
-	end
-	return tGate
-end
-
 
 function TinkerWaitInBaseAndHeal()
 	if botName == 'npc_dota_hero_tinker'
@@ -1581,21 +1559,17 @@ function ConsiderGeneralRoamingInConditions()
 
 	if bot:WasRecentlyDamagedByTower(0.2) then
 		if #nInCloseRangeAlly >= 2 and J.GetHP(nInCloseRangeAlly[2]) > J.GetHP(bot) then
-			bot:Action_AttackUnit(nInCloseRangeAlly[2], true)
+			deaggroTarget = nInCloseRangeAlly[2]
 		else
 			local allyCreeps = bot:GetNearbyCreeps(1000, false)
 			if #allyCreeps >= 1 and J.IsValid(allyCreeps[1]) then
-				bot:Action_AttackUnit(allyCreeps[1], true)
+				deaggroTarget = allyCreeps[1]
 			end
 		end
+		if deaggroTarget ~= nil then return BOT_ACTION_DESIRE_HIGH end
 	end
 
-	-- local actualGankingDesire = ActualGankDesire()
-	-- if actualGankingDesire > 0 then
-	-- 	lastGankDecisionTime = DotaTime()
-	-- 	return actualGankingDesire
-	-- end
-	return BOT_ACTION_DESIRE_NONE
+	return ActualGankDesire()
 end
 
 function GetTargetEnemy(unitName)

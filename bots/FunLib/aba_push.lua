@@ -126,7 +126,7 @@ function updateUnitStateCache()
     }
     return unitStateCache
 end
-local HasHighGroundCover, CanFinishAncient, GetPostFightOuterTower, GetCounterPushTarget
+local HasHighGroundCover, CanFinishAncient, GetOuterTowerOpportunity, GetCounterPushTarget, GetPreferredCounterPushLane, GetPostFightPushPlan
 function ____exports.GetPushDesireHelper(bot, lane)
     local gameState = getGlobalGameState()
     local ourAncient = gameState.ourAncient
@@ -163,15 +163,55 @@ function ____exports.GetPushDesireHelper(bot, lane)
         return BotModeDesire.ExtraLow
     end
     if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then return BotModeDesire.None end
-    if not criticalBaseCreeps and GetCounterPushTarget(bot, lane, gameState.enemyTeam) ~= nil then
+    local tradeLane = not criticalBaseCreeps and GetPreferredCounterPushLane(bot, gameState.enemyTeam)
+    if tradeLane then
+        if tradeLane ~= lane then return BotModeDesire.VeryLow end
+        bot.ohaPostFightPushLane = nil
+        bot.ohaOuterTowerPush = nil
         bot.ohaCounterPushLane = lane
         bot.laneToPush = lane
-        return 0.67
+        return 0.82
     end
-    if hEnemyAncient and not HasHighGroundCover(bot, hEnemyAncient, lane) then return BotModeDesire.VeryLow end
     local nEffAlliesNearAncient = #jmz.GetAlliesNearLoc(teamAncientLoc, 4500) + #jmz.Utils.GetAllyIdsInTpToLocation(teamAncientLoc, 4500)
     local baseDefenseLimited = jmz.GetEnemiesAroundLoc(teamAncientLoc, 4500) > 0 and nEffAlliesNearAncient < 1
     local activeDefense = jmz.IsDefending(bot) and nModeDesire >= 0.8
+    local currentTime = gameState.currentTime
+    local nH = jmz.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam())
+    local outsideCoreLane = not bMyLane and jmz.IsCore(bot) and gameState.isLaningPhase
+    jmz.Utils.GameStates = jmz.Utils.GameStates or ({})
+    jmz.Utils.GameStates.defendPings = jmz.Utils.GameStates.defendPings or ({pingedTime = GameTime()})
+    local recentDefendPing = GameTime() - jmz.Utils.GameStates.defendPings.pingedTime <= 5
+    if not outsideCoreLane and not recentDefendPing and not criticalBaseCreeps and not baseDefenseLimited
+        and not (hEnemyAncient and CanFinishAncient(bot, hEnemyAncient)) then
+        local plan = GetPostFightPushPlan(gameState)
+        if plan and plan.ready[bot:GetPlayerID()] then
+            if plan.lane ~= lane then return BotModeDesire.VeryLow end
+            local waitingForDamage = plan.highGround and hEnemyAncient and not HasHighGroundCover(bot, hEnemyAncient, lane)
+            if waitingForDamage then
+                local point = bot:GetLocation()
+                local direction = team == Team.Radiant and 1 or -1
+                local advanced = (GetAmountAlongLane(lane, point).amount - GetAmountAlongLane(lane, plan.staging).amount) * direction
+                if advanced > 0.025 or GetHeightLevel(plan.staging) > GetHeightLevel(point) then return BotModeDesire.VeryLow end
+            end
+            bot.ohaPostFightPushLane = lane
+            bot.ohaCounterPushLane = nil
+            bot.ohaOuterTowerPush = nil
+            bot.laneToPush = lane
+            if waitingForDamage then return 0.76 end
+            return 0.88
+        end
+    end
+    if (nH == 0 or currentTime > StartToPushTime) and not outsideCoreLane and not recentDefendPing
+        and not criticalBaseCreeps and not baseDefenseLimited and not activeDefense then
+        local opportunity = GetOuterTowerOpportunity(bot, lane, gameState)
+        if opportunity ~= nil then
+            local tower = opportunity.tower
+            bot.ohaOuterTowerPush = {lane = lane, tower = tower}
+            bot.laneToPush = lane
+            return GetUnitToUnitDistance(bot, tower) <= 1600 and 0.8 or 0.76
+        end
+    end
+    if hEnemyAncient and not HasHighGroundCover(bot, hEnemyAncient, lane) then return BotModeDesire.VeryLow end
     local decisivePushWindow = gameState.currentTime >= StartToPushTime and gameState.aliveEnemyCount <= 2 and gameState.aliveAllyCount >= 3 and gameState.aliveAllyCoreCount >= 1 and gameState.aliveAllyCount >= gameState.aliveEnemyCount + 2 and jmz.GetHP(bot) >= 0.6 and #enemiesHere == 0 and not activeDefense and not baseDefenseLimited and not criticalBaseCreeps
     if #alliesHere <= 1 and gameState.aliveEnemyCount >= 3 then
         return BotModeDesire.None
@@ -210,23 +250,12 @@ function ____exports.GetPushDesireHelper(bot, lane)
     elseif botActiveMode == BotMode.PushTowerBot then
         bot.laneToPush = Lane.Bot
     end
-    local currentTime = gameState.currentTime
-    jmz.Utils.GameStates = jmz.Utils.GameStates or ({})
-    jmz.Utils.GameStates.defendPings = jmz.Utils.GameStates.defendPings or ({pingedTime = GameTime()})
-    if GameTime() - jmz.Utils.GameStates.defendPings.pingedTime <= 5 then
+    if recentDefendPing then
         return BotModeDesire.None
     end
-    if not bMyLane and jmz.IsCore(bot) and gameState.isLaningPhase or jmz.IsDoingRoshan(bot) and #jmz.GetAlliesNearLoc(locationState.roshanLocation, 2800) >= 3 or isMidOrEarlyGame and (#jmz.GetAlliesNearLoc(locationState.tormentorLocation, 1600) >= 3 or #jmz.GetAlliesNearLoc(locationState.tormentorWaitingLocation, 2500) >= 3) then
+    if outsideCoreLane
+        or jmz.IsDoingRoshan(bot) or jmz.IsDoingTormentor(bot) then
         return BOT_MODE_DESIRE_EXTRA_LOW
-    end
-    local nH = jmz.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam())
-    if (nH == 0 or currentTime > StartToPushTime) and not criticalBaseCreeps and not baseDefenseLimited and not activeDefense then
-        local tower = GetPostFightOuterTower(bot, lane, gameState)
-        if tower ~= nil then
-            bot.ohaPostFightTower = {lane = lane, tower = tower}
-            bot.laneToPush = lane
-            return GetUnitToUnitDistance(bot, tower) <= 1600 and 0.8 or 0.76
-        end
     end
     do
         local i = 1
@@ -404,12 +433,12 @@ function ____exports.WhichLaneToPush(_bot, _lane)
             local info = GetHeroLastSeenInfo(id)
             if info and info ~= nil then
                 local dInfo = info[1]
-                if dInfo and dInfo ~= nil then
-                    if jmz.GetDistance(vTop, dInfo.location) <= 1600 then
+                if dInfo and dInfo.time_since_seen < 5 then
+                    if jmz.GetLocationToLocationDistance(vTop, dInfo.location) <= 1600 then
                         countTop = countTop + 1
-                    elseif jmz.GetDistance(vMid, dInfo.location) <= 1600 then
+                    elseif jmz.GetLocationToLocationDistance(vMid, dInfo.location) <= 1600 then
                         countMid = countMid + 1
-                    elseif jmz.GetDistance(vBot, dInfo.location) <= 1600 then
+                    elseif jmz.GetLocationToLocationDistance(vBot, dInfo.location) <= 1600 then
                         countBot = countBot + 1
                     end
                 end
@@ -418,12 +447,12 @@ function ____exports.WhichLaneToPush(_bot, _lane)
     end
     local hTeleports = GetIncomingTeleports()
     for ____, tp in ipairs(hTeleports) do
-        if tp and ____exports.IsEnemyTP(tp.playerid) then
-            if jmz.GetDistance(vTop, tp.location) <= 1600 then
+        if tp and tp.location and IsLocationVisible(tp.location) and ____exports.IsEnemyTP(tp.playerid) then
+            if jmz.GetLocationToLocationDistance(vTop, tp.location) <= 1600 then
                 countTop = countTop + 1
-            elseif jmz.GetDistance(vMid, tp.location) <= 1600 then
+            elseif jmz.GetLocationToLocationDistance(vMid, tp.location) <= 1600 then
                 countMid = countMid + 1
-            elseif jmz.GetDistance(vBot, tp.location) <= 1600 then
+            elseif jmz.GetLocationToLocationDistance(vBot, tp.location) <= 1600 then
                 countBot = countBot + 1
             end
         end
@@ -658,57 +687,279 @@ end
 local function UnitIsValidObjective(u)
     return not not u and jmz.IsValidBuilding(u) and jmz.CanBeAttacked(u) and not ____exports.HasBackdoorProtect(u)
 end
-local function GetOuterTowerTarget(bot, lane, enemyTeam, allowSolo, maxDistance)
+local function GetFirstOuterTower(lane, enemyTeam, isAvailable)
     local tierOne = lane == Lane.Top and Tower.Top1 or (lane == Lane.Mid and Tower.Mid1 or Tower.Bot1)
     local tierTwo = lane == Lane.Top and Tower.Top2 or (lane == Lane.Mid and Tower.Mid2 or Tower.Bot2)
     local tower = GetTower(enemyTeam, tierOne)
-    if not jmz.IsValidBuilding(tower) then tower = GetTower(enemyTeam, tierTwo) end
-    if not UnitIsValidObjective(tower) then return nil end
+    if not isAvailable(tower) then tower = GetTower(enemyTeam, tierTwo) end
+    return isAvailable(tower) and tower or nil
+end
+local function GetOuterTowerTarget(bot, lane, enemyTeam, maxDistance)
+    local tower = GetFirstOuterTower(lane, enemyTeam, jmz.IsValidBuilding)
+    if not tower or not jmz.CanBeAttacked(tower) then return nil end
     local distance = GetUnitToUnitDistance(bot, tower)
-    if distance > (maxDistance or 1600) then return nil end
+    if distance > maxDistance then return nil end
 
     local location = tower:GetLocation()
     if not jmz.CanCommitToLaneTeleport(bot, location, true) then return nil end
-    if not allowSolo and jmz.GetAvailableFightAllies(bot, location, 1600) < 1
-        and (distance <= 1600 or jmz.GetAvailableFightAllies(bot, bot:GetLocation(), 1600) < 1) then return nil end
-    local creeps = distance <= 1600 and bot:GetNearbyLaneCreeps(1600, false) or GetUnitList(UnitType.AlliedCreeps)
-    local wave = 0
-    for _, creep in ipairs(creeps) do
-        if jmz.IsValid(creep) and GetUnitToUnitDistance(creep, tower) <= 900 then
-            local name = distance > 1600 and creep:GetUnitName() or ''
-            if distance <= 1600 or string.find(name, 'npc_dota_creep_', 1, true) or string.find(name, '_siege', 1, true) then
-                wave = wave + 1
+    return tower
+end
+
+local function GetLaneStaging(location, lane, offset)
+    local amount = GetAmountAlongLane(lane, location).amount
+    local behind = math.max(0, math.min(1, amount + (GetTeam() == Team.Radiant and -0.05 or 0.05)))
+    local span = GetLocationToLocationDistance(GetLocationAlongLane(lane, amount), GetLocationAlongLane(lane, behind))
+    if span < 1 then return nil end
+    return GetLocationAlongLane(lane, math.max(0, math.min(1, amount + (behind - amount) * offset / span)))
+end
+
+local function GetOuterWaveStaging(tower, lane)
+    local location = tower:GetLocation()
+    return getCachedData('outerWaveStaging:' .. lane .. ':' .. location.x .. ':' .. location.y, 0.3, function()
+        local track = GetAmountAlongLane(lane, location).amount
+        local direction = GetTeam() == Team.Radiant and 1 or -1
+        local wave = {}
+        for _, creep in ipairs(GetUnitList(UnitType.AlliedCreeps)) do
+            if jmz.IsValid(creep) and (jmz.IsKeyWordUnit('npc_dota_creep_', creep) or jmz.IsKeyWordUnit('_siege', creep)) then
+                local point = creep:GetLocation()
+                local path = GetAmountAlongLane(lane, point)
+                local distance = GetUnitToLocationDistance(creep, location)
+                if distance <= 5200 and path.distance <= 440 and (track - path.amount) * direction >= 0 then
+                    wave[#wave + 1] = {point = point, distance = distance}
+                end
+            end
+        end
+        table.sort(wave, function(a, b) return a.distance < b.distance end)
+        for i = 1, #wave - 2 do
+            local front = wave[i]
+            if wave[i + 2].distance - front.distance <= 800 then
+                local staging = GetLaneStaging(front.point, lane, 325)
+                if staging and GetUnitToLocationDistance(tower, staging) < 900 then
+                    staging = GetLaneStaging(location, lane, 950)
+                end
+                if staging and IsLocationPassable(staging) then return {tower = tower, staging = staging, waveFront = front.point, lane = lane} end
+            end
+        end
+    end)
+end
+
+local function CanEscortOuterWave(bot, tower, lane, travel)
+    local point = tower:GetLocation()
+    local distance = GetUnitToUnitDistance(bot, tower)
+    local remoteSupport = distance > 2200 and not jmz.IsCore(bot)
+    if remoteSupport and travel > 8 then return false end
+    local accounted = 0
+    for _, id in ipairs(GetTeamPlayers(GetOpposingTeam())) do
+        if not IsHeroAlive(id) then
+            accounted = accounted + 1
+        else
+            local info = GetHeroLastSeenInfo(id)
+            local seen = info and info[1]
+            if seen and seen.time_since_seen < 5 and jmz.GetLocationToLocationDistance(seen.location, point) > 3200 + travel * 160 then
+                accounted = accounted + 1
             end
         end
     end
-    if wave >= (allowSolo and 3 or 2) then return tower end
+    if accounted < ((distance > 3000 or remoteSupport) and 4 or 2) then return false end
+    if not jmz.CanCommitToLaneTeleport(bot, jmz.VectorTowards(bot:GetLocation(), point, distance / 2), true) then return false end
+    -- Only one hero needs to rotate. Allies already on the wave can still hit the tower.
+    for _, ally in ipairs(jmz.GetAlliesNearLoc(point, distance + 500)) do
+        if ally ~= bot and jmz.IsValidHero(ally) and not ally:IsIllusion() and jmz.GetHP(ally) >= 0.6
+            and not jmz.IsRetreating(ally) and not ally:HasModifier('modifier_teleporting') and not ally:IsChanneling()
+            and not ally:IsDisarmed() and not ally:WasRecentlyDamagedByAnyHero(2) and not ally:WasRecentlyDamagedByTower(2)
+            and not jmz.IsDoingRoshan(ally) and not jmz.IsDoingTormentor(ally) and (ally.ohaOuterTowerHoldUntil or 0) <= DotaTime()
+            and not (jmz.IsInLaningPhase(ally) and jmz.IsCore(ally) and ally:GetAssignedLane() ~= lane) then
+            local gap = GetUnitToUnitDistance(ally, tower)
+            local eta = math.max(0, gap - ally:GetAttackRange()) / math.max(1, ally:GetCurrentMovementSpeed())
+            if (gap <= 2200 or jmz.IsCore(ally) or accounted >= 4 and eta <= 8) and (eta < travel or eta == travel and ally:GetPlayerID() < bot:GetPlayerID())
+                and #jmz.GetEnemiesNearLoc(ally:GetLocation(), 1400) == 0
+                and jmz.CanCommitToLaneTeleport(ally, jmz.VectorTowards(ally:GetLocation(), point, gap / 2), true) then return false end
+        end
+    end
+    return true
 end
-function GetPostFightOuterTower(bot, lane, gameState)
-    if DotaTime() < 8 * 60 or gameState.aliveAllyCount <= gameState.aliveEnemyCount or gameState.aliveAllyCoreCount < 1
-        or jmz.GetHP(bot) < 0.6 or jmz.IsRetreating(bot) or jmz.IsDoingTormentor(bot) or jmz.IsDoingRoshan(bot)
-        or bot:WasRecentlyDamagedByAnyHero(2) or #jmz.GetEnemiesNearLoc(bot:GetLocation(), 1400) > 0 then return nil end
+
+function GetOuterTowerOpportunity(bot, lane, gameState)
+    if jmz.GetHP(bot) < 0.6 or jmz.IsRetreating(bot) or jmz.IsDoingTormentor(bot) or jmz.IsDoingRoshan(bot)
+        or bot:IsDisarmed() or bot:WasRecentlyDamagedByTower(2) or bot:WasRecentlyDamagedByAnyHero(2)
+        or #jmz.GetEnemiesNearLoc(bot:GetLocation(), 1400) > 0 then return nil end
+    local tower = GetOuterTowerTarget(bot, lane, gameState.enemyTeam, 6500)
+    if not tower or tower:GetAttackTarget() == bot or #jmz.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 1700) > 0 then return nil end
+    local wave, eta, thirdETA, siegeETA, attacking = jmz.GetLaneWaveAtBuilding(tower, lane)
+    local tank = tower:GetAttackTarget()
+    local distance = GetUnitToUnitDistance(bot, tower)
+    local travel = math.max(0, distance - bot:GetAttackRange()) / math.max(1, bot:GetCurrentMovementSpeed())
+    if wave < 2 and eta > 7 then
+        if DotaTime() < 12 * 60 then return nil end
+        local preparation = GetOuterWaveStaging(tower, lane)
+        if not preparation or GetUnitToLocationDistance(bot, preparation.staging) > 2200
+            or not jmz.CanCommitToLaneTeleport(bot, preparation.staging, true) then return nil end
+        -- Open the lane from our side while an ally can cover the shoving hero.
+        local friendly = GetFirstOuterTower(lane, bot:GetTeam(), jmz.IsValidBuilding)
+        if friendly and GetUnitToLocationDistance(friendly, preparation.staging) <= 1500
+            and jmz.GetAvailableFightAllies(bot, preparation.staging, 1450) >= 1 then return preparation end
+        if distance <= 4500 and CanEscortOuterWave(bot, tower, lane, travel) then return preparation end
+        return nil
+    end
+    local covered = tank and jmz.IsValid(tank) and tank:IsCreep() and tank:GetTeam() == bot:GetTeam()
+        or tank == nil and attacking >= 2
+    local protected = ____exports.HasBackdoorProtect(tower)
+    if not protected and covered and wave >= 2 and travel <= (wave >= 3 and 3.5 or 1.8) then return {tower = tower} end
+    local postFight = DotaTime() >= 8 * 60 and gameState.aliveAllyCount > gameState.aliveEnemyCount and gameState.aliveAllyCoreCount >= 1
     local canApproach = gameState.aliveAllyCount >= 3 and gameState.aliveEnemyCount <= 2
-    return GetOuterTowerTarget(bot, lane, gameState.enemyTeam, false, canApproach and 3000 or 1600)
+    if postFight and distance <= (canApproach and 3000 or 1600)
+        and (jmz.GetAvailableFightAllies(bot, tower:GetLocation(), 1600) >= 1
+            or distance > 1600 and jmz.GetAvailableFightAllies(bot, bot:GetLocation(), 1600) >= 1)
+        and (jmz.CanFinishOuterTowerInWindow(bot, tower, lane, gameState.reinforcementWindow)
+            or (gameState.reinforcementWindow >= 5 and wave >= 2 and distance <= bot:GetAttackRange() + 150)) then
+        if not protected and wave >= 2 and distance <= 1600 then return {tower = tower} end
+        local staging = GetLaneStaging(tower:GetLocation(), lane, 950)
+        if staging and IsLocationPassable(staging) and jmz.CanCommitToLaneTeleport(bot, staging, true) then return {tower = tower, staging = staging} end
+    end
+    if thirdETA > 7 or travel > thirdETA + ((siegeETA <= 7 or wave >= 5) and 16 or 7)
+        or not CanEscortOuterWave(bot, tower, lane, travel) then return nil end
+    local staging = GetLaneStaging(tower:GetLocation(), lane, 950 + thirdETA * 325)
+    if staging and IsLocationPassable(staging) and jmz.CanCommitToLaneTeleport(bot, staging, true) then return {tower = tower, staging = staging} end
 end
 function GetCounterPushTarget(bot, lane, enemyTeam)
     local trade = bot.ohaOuterTowerTrade
     if trade == nil or trade.lane == lane or trade.expires <= DotaTime()
-        or DotaTime() < 8 * 60 or not jmz.IsCore(bot) or jmz.GetHP(bot) < 0.6
+        or DotaTime() < 8 * 60 or jmz.GetHP(bot) < 0.6
         or jmz.IsRetreating(bot) or bot:WasRecentlyDamagedByAnyHero(2)
-        or #jmz.GetEnemiesNearLoc(trade.location, 1800) < 3 then return nil end
-    local tower = GetOuterTowerTarget(bot, lane, enemyTeam, true)
-    if tower ~= nil and GetUnitToLocationDistance(tower, trade.location) >= 3200
-        and jmz.CanCommitToLaneTeleport(bot, tower:GetLocation(), true) then return tower end
+        or bot:WasRecentlyDamagedByTower(2) or bot:IsDisarmed() or bot:IsChanneling()
+        or jmz.IsDoingRoshan(bot) or jmz.IsDoingTormentor(bot) then return nil end
+    local visiblePushers = #jmz.GetEnemiesNearLoc(trade.location, 2250)
+    local support = not jmz.IsCore(bot)
+    if visiblePushers < (support and 4 or 3) then return nil end
+    local tower = GetOuterTowerTarget(bot, lane, enemyTeam, visiblePushers >= 4 and 6100 or 3600)
+    if not tower or tower:GetAttackTarget() == bot or GetUnitToLocationDistance(tower, trade.location) < 3200 then return nil end
+    local wave, _, thirdETA = jmz.GetLaneWaveAtBuilding(tower, lane)
+    local distance = GetUnitToUnitDistance(bot, tower)
+    if #jmz.GetEnemiesNearLoc(bot:GetLocation(), 1500) > 0 then return nil end
+    local travel = math.max(0, distance - bot:GetAttackRange()) / math.max(1, bot:GetCurrentMovementSpeed())
+    if support and distance > 1600 and not CanEscortOuterWave(bot, tower, lane, travel) then return nil end
+    if wave < 3 and (visiblePushers < 4 or thirdETA > 6) then
+        local preparation = GetOuterWaveStaging(tower, lane)
+        if not preparation or GetUnitToLocationDistance(bot, preparation.staging) > (support and 1700 or 2500)
+            or not jmz.CanCommitToLaneTeleport(bot, preparation.staging, true) then return nil end
+        local halfway = jmz.VectorTowards(bot:GetLocation(), preparation.staging, GetUnitToLocationDistance(bot, preparation.staging) / 2)
+        if not jmz.CanCommitToLaneTeleport(bot, halfway, true) then return nil end
+        return preparation
+    end
+    if distance > 1600 or wave < 3 or ____exports.HasBackdoorProtect(tower) then
+        local staging = GetLaneStaging(tower:GetLocation(), lane, 950 + thirdETA * 325)
+        if not staging or not IsLocationPassable(staging)
+            or not jmz.CanCommitToLaneTeleport(bot, staging, true) then return nil end
+        return {tower = tower, staging = staging}
+    end
+    return {tower = tower}
 end
-function HasHighGroundCover(bot, ancient, lane)
-    local enemyTeam = GetOpposingTeam()
+
+function GetPreferredCounterPushLane(bot, enemyTeam)
+    local trade = bot.ohaOuterTowerTrade
+    if not trade or trade.expires <= DotaTime() then return nil end
+    local best, bestScore = nil, math.huge
+    for _, lane in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
+        local plan = GetCounterPushTarget(bot, lane, enemyTeam)
+        if plan then
+            local toWave = plan.staging and GetUnitToLocationDistance(bot, plan.staging) or 0
+            local score = toWave + GetUnitToUnitDistance(bot, plan.tower) * 0.5
+            if score < bestScore then best, bestScore = lane, score end
+        end
+    end
+    return best
+end
+local function IsStandingBuilding(building)
+    return building ~= nil and building:IsAlive()
+end
+
+local function GetHighGroundObjective(lane, enemyTeam)
     local tower = GetTower(enemyTeam, lane == Lane.Top and Tower.Top3 or (lane == Lane.Mid and Tower.Mid3 or Tower.Bot3))
     local objective = tower and tower:IsAlive() and tower or GetBarracks(enemyTeam,
         lane == Lane.Top and Barracks.TopMelee or (lane == Lane.Mid and Barracks.MidMelee or Barracks.BotMelee))
     if not objective or not objective:IsAlive() then
         objective = GetBarracks(enemyTeam, lane == Lane.Top and Barracks.TopRanged or (lane == Lane.Mid and Barracks.MidRanged or Barracks.BotRanged))
     end
-    if not objective or not objective:IsAlive() then objective = ancient end
+    return objective and objective:IsAlive() and objective or nil
+end
+
+function GetPostFightPushPlan(gameState)
+    if gameState.currentTime < StartToPushTime or gameState.aliveEnemyCount > 3
+        or gameState.aliveAllyCount < gameState.aliveEnemyCount + 2 or gameState.aliveAllyCoreCount == 0 then return nil end
+    return getCachedData("postFightPushPlan", 0.35, function()
+        local ready, count = {}, 0
+        for slot = 1, #GetTeamPlayers(gameState.team) do
+            local ally = GetTeamMember(slot)
+            if jmz.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and jmz.GetHP(ally) >= 0.55
+                and not jmz.IsRetreating(ally) and not ally:IsChanneling() and not ally:HasModifier("modifier_teleporting")
+                and not jmz.IsDoingRoshan(ally) and not jmz.IsDoingTormentor(ally)
+                and (ally.ohaOuterTowerHoldUntil or 0) <= DotaTime()
+                and not (jmz.IsDefending(ally) and ally:GetActiveModeDesire() >= 0.8)
+                and not GetBaseCreepResponse(ally, gameState.ourAncient) then
+                ready[ally:GetPlayerID()], count = ally, count + 1
+            end
+        end
+        if count < 2 then return false end
+
+        local creeps = GetUnitList(UnitType.AlliedCreeps)
+        local direction = gameState.team == Team.Radiant and 1 or -1
+        local availableTime = math.max(0, gameState.reinforcementWindow - 1.5)
+        local best, bestTime = false, math.huge
+        for _, lane in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
+            local tower = GetFirstOuterTower(lane, gameState.enemyTeam, IsStandingBuilding)
+            local highGround = tower == nil
+            if highGround then tower = GetHighGroundObjective(lane, gameState.enemyTeam) end
+            if IsStandingBuilding(tower) then
+                local location = tower:GetLocation()
+                local front = GetLaneFrontLocation(gameState.team, lane, 0)
+                local targetProgress = GetAmountAlongLane(lane, location).amount * direction
+                local wave, waveCount, waveProgress = nil, 0, -math.huge
+                for _, creep in ipairs(creeps) do
+                    if jmz.IsValid(creep) and GetUnitToLocationDistance(creep, front) <= 1600 then
+                        local name, point = creep:GetUnitName(), creep:GetLocation()
+                        local track = GetAmountAlongLane(lane, point)
+                        local progress = track.amount * direction
+                        if track.distance <= 550 and progress <= targetProgress + 0.04
+                            and (string.find(name, "npc_dota_creep_", 1, true) or string.find(name, "_siege", 1, true)) then
+                            waveCount = waveCount + 1
+                            if progress > waveProgress then wave, waveProgress = point, progress end
+                        end
+                    end
+                end
+                if waveCount >= 2 then
+                    local waveDistance = GetLocationToLocationDistance(wave, location)
+                    local staging = waveDistance <= 1200 and GetLaneStaging(location, lane, 900)
+                        or GetLaneStaging(wave, lane, 280)
+                    if staging and IsLocationPassable(staging) then
+                        local first, second, core = math.huge, math.huge, math.huge
+                        local arriving = {}
+                        for _, ally in pairs(ready) do
+                            local eta = GetUnitToLocationDistance(ally, staging) / math.max(250, ally:GetCurrentMovementSpeed())
+                            if eta <= availableTime then arriving[ally:GetPlayerID()] = ally end
+                            if eta < first then first, second = eta, first
+                            elseif eta < second then second = eta end
+                            if jmz.IsCore(ally) then core = math.min(core, eta) end
+                        end
+                        -- The heroes and the wave are approaching at the same time.
+                        local waveETA = math.max(0, waveDistance - 775) / 325
+                        local arrival = math.max(second, core, waveETA)
+                        local time = arrival + (highGround and 6 or 0)
+                            + #jmz.GetLastSeenEnemiesNearLoc(location, 1600) * 6
+                        if arrival <= availableTime and time < bestTime then
+                            bestTime = time
+                            best = {lane = lane, tower = tower, staging = staging, highGround = highGround, ready = arriving}
+                        end
+                    end
+                end
+            end
+        end
+        return best
+    end)
+end
+
+function HasHighGroundCover(bot, ancient, lane)
+    local enemyTeam = GetOpposingTeam()
+    local objective = not CanFinishAncient(bot, ancient) and GetHighGroundObjective(lane, enemyTeam) or ancient
     if GetUnitToUnitDistance(bot, ancient) >= 3000 then
         if GetUnitToUnitDistance(bot, objective) > 1900 then return true end
         local outer = GetTower(enemyTeam, lane == Lane.Top and Tower.Top2 or (lane == Lane.Mid and Tower.Mid2 or Tower.Bot2))
@@ -720,13 +971,10 @@ function HasHighGroundCover(bot, ancient, lane)
         #jmz.GetEnemiesNearLoc(objective:GetLocation(), 1600))
     if allies < 1 or jmz.GetHP(bot) < 0.35 or enemies >= allies + 1
         or (enemies > 0 and not jmz.WeAreStronger(bot, 1800)) then return false end
-    local wave = 0
-    for _, creep in ipairs(bot:GetNearbyLaneCreeps(1200, false)) do
-        if jmz.IsValid(creep) then wave = wave + 1 end
-    end
     if enemies == 0 and allies >= 2 and jmz.GetNumOfAliveHeroes(true) <= 1
         and CanFinishAncient(bot, ancient) and jmz.GetHP(ancient) <= 0.35 then return true end
-    return wave >= 2 and jmz.HasSiegeDamageInRange(bot, objective:GetLocation())
+    local wave = jmz.GetLaneWaveAtBuilding(objective, lane)
+    return wave >= 2 and jmz.HasSiegeDamageInRange(bot, objective:GetLocation(), lane)
 end
 function CanFinishAncient(bot, ancient)
     return GetUnitToUnitDistance(bot, ancient) < 1000 and UnitIsValidObjective(ancient)
@@ -831,10 +1079,50 @@ local function SelectOrStickHGTarget(bot, lane, targetLoc)
 end
 local fNextMovementTime = 0
 function ____exports.CancelPushOrder(bot, lane)
-    if lane ~= nil and bot.ohaPostFightTower and bot.ohaPostFightTower.lane == lane then bot.ohaPostFightTower = nil end
+    if lane ~= nil and bot.ohaOuterTowerPush and bot.ohaOuterTowerPush.lane == lane then bot.ohaOuterTowerPush = nil end
+    if lane ~= nil and bot.ohaPostFightPushLane == lane then bot.ohaPostFightPushLane = nil end
+    if lane ~= nil and bot.ohaCounterPushLane == lane then bot.ohaCounterPushLane = nil end
     if not bot._ohaIssuedPushOrder then return end
     if not jmz.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
     bot._ohaIssuedPushOrder = false
+end
+local function RunOuterTowerPlan(bot, plan)
+    if plan.staging then
+        if plan.waveFront then
+            local range = math.min(1500, math.max(550, bot:GetAttackRange() + 120))
+            for _, creep in ipairs(bot:GetNearbyLaneCreeps(range, true)) do
+                if jmz.IsValid(creep) and jmz.CanBeAttacked(creep) and jmz.IsInRange(bot, creep, range)
+                    and GetUnitToLocationDistance(creep, plan.waveFront) <= 700 and GetUnitToUnitDistance(creep, plan.tower) > 950
+                    and GetAmountAlongLane(plan.lane, creep:GetLocation()).distance <= 460 then
+                    bot._ohaIssuedPushOrder = true
+                    if bot:GetAttackTarget() ~= creep then bot:Action_AttackUnit(creep, false) end
+                    return
+                end
+            end
+        end
+        local blockers = bot:GetNearbyLaneCreeps(math.min(1600, bot:GetAttackRange() + 100), true)
+        for _, creep in ipairs(blockers) do
+            if jmz.IsValid(creep) and jmz.CanBeAttacked(creep) and GetUnitToUnitDistance(creep, plan.tower) > 850
+                and GetUnitToLocationDistance(creep, plan.staging) <= 1100 then
+                for _, ally in ipairs(bot:GetNearbyLaneCreeps(1600, false)) do
+                    if creep:GetAttackTarget() == ally or ally:GetAttackTarget() == creep then
+                        bot._ohaIssuedPushOrder = true
+                        if bot:GetAttackTarget() ~= creep then bot:Action_AttackUnit(creep, false) end
+                        return
+                    end
+                end
+            end
+        end
+        if GetUnitToLocationDistance(bot, plan.staging) <= 120 then
+            ____exports.CancelPushOrder(bot)
+            return
+        end
+        bot._ohaIssuedPushOrder = true
+        bot:Action_MoveToLocation(plan.staging)
+    elseif bot:GetAttackTarget() ~= plan.tower then
+        bot._ohaIssuedPushOrder = true
+        bot:Action_AttackUnit(plan.tower, false)
+    end
 end
 function ____exports.PushThink(bot, lane)
     local now = DotaTime()
@@ -854,39 +1142,64 @@ function ____exports.PushThink(bot, lane)
         return
     end
     if bot.ohaCounterPushLane == lane then
-        local tower = not criticalBaseCreeps and (bot.ohaOuterTowerHoldUntil or 0) <= now
+        local plan = not criticalBaseCreeps and (bot.ohaOuterTowerHoldUntil or 0) <= now
             and GetCounterPushTarget(bot, lane, GetOpposingTeam()) or nil
-        if tower == nil then
+        if plan == nil then
             bot.ohaCounterPushLane = nil
             ____exports.CancelPushOrder(bot)
+            if bot:WasRecentlyDamagedByTower(2) then
+                bot:Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(bot:GetLocation(), 350))
+            end
             return
         end
-        bot._ohaIssuedPushOrder = true
-        bot:Action_AttackUnit(tower, true)
+        RunOuterTowerPlan(bot, plan)
         return
     end
     autoCleanupCache()
     local gameState = getGlobalGameState()
     local locationState = getGlobalLocationState()
-    local plan = bot.ohaPostFightTower
-    if plan and plan.lane == lane then
-        local tower = not criticalBaseCreeps and (bot.ohaOuterTowerHoldUntil or 0) <= now
-            and GetPostFightOuterTower(bot, lane, gameState) or nil
-        if tower == nil or tower ~= plan.tower then
+    if bot.ohaPostFightPushLane == lane and gameState.enemyAncient and CanFinishAncient(bot, gameState.enemyAncient) then
+        bot.ohaPostFightPushLane = nil
+    end
+    if bot.ohaPostFightPushLane == lane then
+        local advance = not criticalBaseCreeps and (bot.ohaOuterTowerHoldUntil or 0) <= now and GetPostFightPushPlan(gameState)
+        if not advance or advance.lane ~= lane or not advance.ready[bot:GetPlayerID()] or jmz.GetHP(bot) < 0.55
+            or not IsStandingBuilding(advance.tower) or not jmz.CanCommitToLaneTeleport(bot, advance.staging) then
             ____exports.CancelPushOrder(bot, lane)
             return
         end
-        if tower:GetAttackTarget() == bot or bot:WasRecentlyDamagedByTower(2) then
-            ____exports.CancelPushOrder(bot)
+        local tower = advance.tower
+        if bot:WasRecentlyDamagedByTower(2) or (jmz.IsValidBuilding(tower) and tower:GetAttackTarget() == bot) then
+            ____exports.CancelPushOrder(bot, lane)
             bot:Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(bot:GetLocation(), 350))
-        else
-            bot._ohaIssuedPushOrder = true
-            if GetUnitToUnitDistance(bot, tower) > 1600 then
-                bot:Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 900))
-            else
-                bot:Action_AttackUnit(tower, true)
-            end
+            return
         end
+        local wave = jmz.GetLaneWaveAtBuilding(tower, lane)
+        local canAttack = wave >= 2 and GetUnitToUnitDistance(bot, tower) <= 1600 and UnitIsValidObjective(tower)
+            and jmz.CanCommitToLaneTeleport(bot, tower:GetLocation())
+            and (not advance.highGround or gameState.enemyAncient and HasHighGroundCover(bot, gameState.enemyAncient, lane))
+        if advance.highGround and not canAttack and GetHeightLevel(advance.staging) > GetHeightLevel(bot:GetLocation()) then
+            ____exports.CancelPushOrder(bot, lane)
+            return
+        end
+        RunOuterTowerPlan(bot, {tower = tower, staging = not canAttack and advance.staging or nil})
+        return
+    end
+    local plan = bot.ohaOuterTowerPush
+    if plan and plan.lane == lane then
+        if jmz.IsValidBuilding(plan.tower)
+            and (plan.tower:GetAttackTarget() == bot or bot:WasRecentlyDamagedByTower(2)) then
+            ____exports.CancelPushOrder(bot, lane)
+            bot:Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(bot:GetLocation(), 350))
+            return
+        end
+        local opportunity = not criticalBaseCreeps and (bot.ohaOuterTowerHoldUntil or 0) <= now
+            and GetOuterTowerOpportunity(bot, lane, gameState) or nil
+        if not opportunity or opportunity.tower ~= plan.tower then
+            ____exports.CancelPushOrder(bot, lane)
+            return
+        end
+        RunOuterTowerPlan(bot, opportunity)
         return
     end
     hEnemyAncient = gameState.enemyAncient

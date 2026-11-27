@@ -9,7 +9,7 @@ end
 
 local src = read("bots/FunLib/jmz_func.lua")
 local a = assert(src:find("local lastObservedRoshanKillTime = 0", 1, true) or src:find("local killTime = 0.0", 1, true))
-local b = assert(src:find("\nfunction J.HasEnoughDPSForRoshan(heroes)", a, true))
+local b = assert(src:find("\nfunction J.HasEnoughDPSForRoshan(", a, true))
 local production = src:sub(a, b - 1)
 
 local makeRoshan = assert(loadstring([[

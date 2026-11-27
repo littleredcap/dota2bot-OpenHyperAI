@@ -22,6 +22,7 @@ interface GlobalGameState {
     aliveEnemyCount: number;
     aliveAllyCoreCount: number;
     aliveEnemyCoreCount: number;
+    reinforcementWindow: number;
     teamNetworth: number;
     enemyNetworth: number;
     averageLevel: number;
@@ -93,6 +94,7 @@ export function getGlobalGameState(): GlobalGameState {
         aliveEnemyCount: jmz.GetNumOfAliveHeroes(true),
         aliveAllyCoreCount: jmz.GetAliveCoreCount(false),
         aliveEnemyCoreCount: jmz.GetAliveCoreCount(true),
+        reinforcementWindow: jmz.GetEnemyReinforcementWindow(),
         teamNetworth: teamNetworth,
         enemyNetworth: enemyNetworth,
         averageLevel: jmz.GetAverageLevel(false),

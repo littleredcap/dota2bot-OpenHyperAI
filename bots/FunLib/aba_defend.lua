@@ -389,6 +389,15 @@ function WeightedEnemiesAroundLocation(vLoc, nRadius)
     _cacheEnemyAroundLoc[key] = {t = now, count = count}
     return count
 end
+local function baseCreepPriority(creep, ancient, left, right)
+    if not jmz.IsValid(creep) then return 0 end
+    local distance = GetUnitToLocationDistance(creep, ancient:GetLocation())
+    if distance > BASE_THREAT_RADIUS then return 0 end
+    local target = creep:GetAttackTarget()
+    if target == ancient or left ~= nil and target == left or right ~= nil and target == right then return 2 end
+    return distance <= 1800 and string.find(creep:GetUnitName(), "upgraded_mega", 1, true)
+        and (distance <= 950 or creep:IsFacingLocation(ancient:GetLocation(), 55)) and 1 or 0
+end
 function GetBaseCreepThreatCount(ancient)
     if not IsValidBuildingTarget(ancient) then
         return 0
@@ -397,15 +406,7 @@ function GetBaseCreepThreatCount(ancient)
     local rightT4 = GetTower(nTeam, Tower.Base2)
     local count = 0
     for ____, creep in ipairs(updateDefendUnitStateCache().enemyCreeps) do
-        if jmz.IsValid(creep) and GetUnitToLocationDistance(
-            creep,
-            ancient:GetLocation()
-        ) <= BASE_THREAT_RADIUS then
-            local target = creep:GetAttackTarget()
-            if target == ancient or leftT4 ~= nil and target == leftT4 or rightT4 ~= nil and target == rightT4 then
-                count = count + 1
-            end
-        end
+        if baseCreepPriority(creep, ancient, leftT4, rightT4) > 0 then count = count + 1 end
     end
     return count
 end
@@ -454,7 +455,7 @@ function ____exports.GetBaseCreepResponse(bot, ancient)
     )
     local critical = attackers >= 4 or ancientHP <= 0.45
     local ancientLoc = ancient:GetLocation()
-    if jmz.Utils.CountEnemyHeroesNear(ancientLoc, 2200) > 0 then
+    if not critical and jmz.Utils.CountEnemyHeroesNear(ancientLoc, 2200) > 0 then
         return false, critical
     end
     local required = 1
@@ -980,11 +981,11 @@ function ConsiderPingedDefend(bot, lane, desire, building, tier, nEffAllies, nEn
         defendPings.lane = lane
     end
 end
-local function GetPrimaryOuterSiege()
+local function GetPrimaryTowerSiege(highGround)
     local selectedLane, selectedThreat = nil, nil
     for _, candidate in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
         local tower, _, tier = unpack(____exports.GetFurthestBuildingOnLane(candidate))
-        if tier <= 2 and IsValidBuildingTarget(tower) then
+        if (tier >= 3) == highGround and IsValidBuildingTarget(tower) then
             local threat = jmz.GetOuterTowerThreat(tower, candidate)
             if threat.score > 0 and (selectedThreat == nil or threat.score > selectedThreat.score
                 or (threat.score == selectedThreat.score and threat.eta < selectedThreat.eta)) then
@@ -1010,9 +1011,15 @@ function ____exports.GetDefendDesireHelper(bot, lane)
     if ds.waveClearLane == lane then
         ds.waveClearLane = nil
         ds.waveClearTower = nil
+        ds.waveClearRearTower = nil
+        if not bot:HasModifier("modifier_teleporting") then ds.waveClearTeleport = nil end
+        ds.waveClearRally = nil
+        ds.waveClearGather = nil
+        ds.waveClearNeedsGlyph = nil
         bot.ohaOuterTowerHoldUntil = nil
     end
-    if bot.ohaOuterTowerTrade and bot.ohaOuterTowerTrade.lane == lane then bot.ohaOuterTowerTrade = nil end
+    local trade = bot.ohaOuterTowerTrade
+    if trade and trade.expires <= DotaTime() then bot.ohaOuterTowerTrade = nil end
     ds.defendLoc = locationState.laneFronts[lane]
     local distanceToDefendLoc = GetUnitToLocationDistance(bot, ds.defendLoc)
     local creepBaseDesire = GetCreepBaseDefenseDesire(bot, lane, ancient)
@@ -1171,27 +1178,68 @@ function ____exports.GetDefendDesireHelper(bot, lane)
         end
     end
 
-    if not panic.active and not isBaseThreatActive and buildingTier <= 2 and pingFloor == 0 then
-        local primaryLane, threat = GetPrimaryOuterSiege()
+    local highGround = buildingTier >= 3
+    if pingFloor == 0 and (highGround or not panic.active and not isBaseThreatActive) then
+        local primaryLane, threat = GetPrimaryTowerSiege(highGround)
+        local nextWave = ds.nextWave
+        if nextWave and nextWave.lane == lane and nextWave.tower == furthestBuilding and DotaTime() < nextWave.expires
+            and primaryLane == nil then
+            ds.waveClearLane = lane
+            ds.waveClearTower = nextWave.tower
+            ds.waveClearReach = nextWave.reach
+            ds.waveClearCover = false
+            ds.waveClearTeleport = nil
+            bot.ohaOuterTowerTrade = nil
+            bot.ohaOuterTowerHoldUntil = nextWave.expires
+            bot.laneToDefend = lane
+            return 0.84
+        end
         if primaryLane == lane then
-            local delay, assignments = jmz.GetOuterTowerResponse(hub, threat)
+            local fallback, rearTower
+            if not highGround then
+                local nextTower = GetTower(team, buildingTier == 1
+                    and (lane == Lane.Top and Tower.Top2 or (lane == Lane.Mid and Tower.Mid2 or Tower.Bot2))
+                    or (lane == Lane.Top and Tower.Top3 or (lane == Lane.Mid and Tower.Mid3 or Tower.Bot3)))
+                if IsValidBuildingTarget(nextTower) then
+                    rearTower = nextTower
+                    fallback = jmz.AdjustLocationWithOffsetTowardsFountain(nextTower:GetLocation(), 350)
+                end
+            end
+            local delay, assignments = jmz.GetOuterTowerResponse(hub, threat, fallback, highGround)
             if delay then
                 local assignment = assignments[bot:GetPlayerID()]
-                if assignment == nil or jmz.GetHP(furthestBuilding) <= 0.15 then
-                    bot.ohaOuterTowerTrade = {lane = lane, location = hub, expires = DotaTime() + 3}
+                if assignment ~= nil and (assignment.rally or highGround or jmz.GetHP(furthestBuilding) > 0.15) then
+                    ds.waveClearLane = lane
+                    ds.waveClearTower = furthestBuilding
+                    ds.waveClearRearTower = assignment.rally and rearTower or nil
+                    ds.waveClearReach = assignment.reach
+                    ds.waveClearCover = assignment.cover
+                    ds.waveClearTeleport = assignment.teleport
+                    ds.waveClearRally = assignment.rally
+                    ds.waveClearGather = assignment.gather
+                    ds.waveClearNeedsGlyph = assignment.needsGlyph
+                    bot.ohaOuterTowerTrade = nil
+                    if rearTower and not assignment.cover and not assignment.gather and (assignment.rally or threat.count >= 3) and threat.waveSize > 0 then
+                        local march = GetUnitToUnitDistance(furthestBuilding, rearTower) / 300
+                        ds.nextWave = {lane = lane, tower = rearTower, reach = assignment.reach, expires = DotaTime() + math.min(22, march + 9)}
+                    end
+                    bot.ohaOuterTowerHoldUntil = DotaTime() + 3
+                    bot.laneToDefend = lane
+                    if highGround then return 0.96 end
+                    if assignment.gather then return 0.89 end
+                    if assignment.rally or assignment.teleport or threat.siege and threat.count <= 1 then return 0.84 end
+                    return BotModeDesire.High
+                elseif not highGround then
+                    bot.ohaOuterTowerTrade = {lane = lane, location = hub, expires = DotaTime() + 6}
                     return BotModeDesire.VeryLow
                 end
-                ds.waveClearLane = lane
-                ds.waveClearTower = furthestBuilding
-                ds.waveClearReach = assignment.reach
-                ds.waveClearCover = assignment.cover
-                ds.waveClearTeleport = assignment.teleport
-                bot.ohaOuterTowerHoldUntil = DotaTime() + 3
-                bot.laneToDefend = lane
-                return BotModeDesire.High
+            elseif trade and trade.lane == lane then
+                bot.ohaOuterTowerTrade = nil
             end
-        elseif primaryLane ~= nil then
-            return BotModeDesire.VeryLow
+        elseif primaryLane ~= nil and not highGround then
+            local localThreat = jmz.GetOuterTowerThreat(furthestBuilding, lane)
+            if bot:GetAssignedLane() ~= lane or GetUnitToUnitDistance(bot, furthestBuilding) > 1600
+                or localThreat.score <= 0 or localThreat.waveSize == 0 then return BotModeDesire.VeryLow end
         end
     end
     if teamIsPushing and not panic.active and not isBaseThreatActive and buildingTier < 3 and pingFloor == 0 then
@@ -1366,29 +1414,13 @@ local function GetBaseCreepAttacker(ancient)
     end
     local leftT4 = GetTower(nTeam, Tower.Base1)
     local rightT4 = GetTower(nTeam, Tower.Base2)
-    for ____, creep in ipairs(updateDefendUnitStateCache().enemyCreeps) do
-        do
-            local __continue40
-            repeat
-                if not jmz.IsValid(creep) or GetUnitToLocationDistance(
-                    creep,
-                    ancient:GetLocation()
-                ) > BASE_THREAT_RADIUS then
-                    __continue40 = true
-                    break
-                end
-                local target = creep:GetAttackTarget()
-                if target == ancient or leftT4 ~= nil and target == leftT4 or rightT4 ~= nil and target == rightT4 then
-                    return creep
-                end
-                __continue40 = true
-            until true
-            if not __continue40 then
-                break
-            end
-        end
+    local approaching
+    for _, creep in ipairs(updateDefendUnitStateCache().enemyCreeps) do
+        local priority = baseCreepPriority(creep, ancient, leftT4, rightT4)
+        if priority == 2 then return creep end
+        if priority == 1 then approaching = creep end
     end
-    return nil
+    return approaching
 end
 function ____exports.GetDefendDesire(bot, lane)
     if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not __TS__StringIncludes(
@@ -1472,11 +1504,15 @@ function ____exports.DefendThink(bot, lane)
         else
             enemiesNear = jmz.Utils[enemiesCacheKey]
         end
+        local baseCreep = GetBaseCreepAttacker(ancient)
+        if baseCreep and (bot._ohaCreepDefenseUntil or -1) > now and GetUnitToUnitDistance(bot, baseCreep) <= BASE_THREAT_RADIUS then
+            bot:Action_AttackUnit(baseCreep, true)
+            return
+        end
         if jmz.IsValidHero(enemiesNear[1]) and jmz.IsInRange(bot, enemiesNear[1], nSearchRange) then
             bot:Action_AttackUnit(enemiesNear[1], true)
             return
         end
-        local baseCreep = GetBaseCreepAttacker(ancient)
         if baseCreep and GetUnitToUnitDistance(bot, baseCreep) <= BASE_THREAT_RADIUS then
             bot:Action_AttackUnit(baseCreep, true)
             return
@@ -1503,36 +1539,39 @@ function ____exports.DefendThink(bot, lane)
     end
 
     if ds.waveClearLane == lane then
-        if bld ~= ds.waveClearTower or GetPrimaryOuterSiege() ~= lane
+        local primaryLane, threat = GetPrimaryTowerSiege(buildingTier >= 3)
+        local nextWave = ds.nextWave
+        local following = primaryLane == nil and nextWave and nextWave.lane == lane and nextWave.tower == bld and now < nextWave.expires
+        if bld ~= ds.waveClearTower or (primaryLane ~= lane and not following)
             or (bot.ohaOuterTowerHoldUntil or 0) <= now then
             ____exports.OnEnd(bot, lane)
             bot.ohaOuterTowerHoldUntil = nil
             ds.waveClearLane = nil
             return
         end
-        if jmz.RunOuterTowerHold(bot, hub, ds.waveClearReach or attackRange, ds.waveClearCover) then
+        local holdTower = ds.waveClearRearTower
+        local holdLocation = holdTower and jmz.IsValidBuilding(holdTower) and holdTower:GetLocation() or hub
+        local issued
+        if ds.waveClearGather and threat then
+            issued = jmz.RunOuterTowerContest(bot, bld, threat, ds)
+        else
+            issued = jmz.RunOuterTowerHold(bot, holdLocation, ds.waveClearReach or attackRange, ds.waveClearCover)
+        end
+        if issued then
             bot.ohaIssuedOuterHold = lane
         end
         return
     end
     if buildingTier >= 3 then
         local edgeInside = GetHighGroundEdgeWaitPoint(nTeam, lane)
-        local enemyAtHG = jmz.Utils.CountEnemyHeroesOnHighGround(nTeam)
-        local nearEdgeEnemies = jmz.GetLastSeenEnemiesNearLoc(edgeInside, 1200)
-        local nearEdgeAllies = jmz.GetAlliesNearLoc(edgeInside, 1400)
-        if enemyAtHG == 0 and #nearEdgeEnemies > 0 and #nearEdgeAllies >= #nearEdgeEnemies + 1 then
-            local attackMoveLoc = add(
-                edgeInside,
-                jmz.RandomForwardVector(120)
-            )
-            bot:Action_AttackMove(attackMoveLoc)
-        else
-            local deeper = jmz.AdjustLocationWithOffsetTowardsFountain(edgeInside, 200)
-            local attackMoveLoc = add(
-                deeper,
-                jmz.RandomForwardVector(120)
-            )
-            bot:Action_AttackMove(attackMoveLoc)
+        jmz.RunOuterTowerHold(bot, edgeInside, attackRange, false)
+        return
+    end
+    local released = bot.ohaOuterTowerTrade
+    if released and released.lane == lane and now < released.expires then
+        ____exports.OnEnd(bot, lane)
+        if GetUnitToLocationDistance(bot, hub) < 1500 and #jmz.GetLastSeenEnemiesNearLoc(hub, 1600) >= 2 then
+            bot:Action_MoveToLocation(jmz.AdjustLocationWithOffsetTowardsFountain(hub, 1650))
         end
         return
     end
@@ -1545,12 +1584,12 @@ function ____exports.DefendThink(bot, lane)
         end
         return
     end
-    if jmz.IsValidHero(enemiesAtHub[1]) and jmz.IsInRange(bot, enemiesAtHub[1], nSearchRange) then
+    if jmz.IsValidHero(enemiesAtHub[1]) and jmz.IsInRange(bot, enemiesAtHub[1], ds.weAreStronger and nSearchRange or attackRange) then
         bot:Action_AttackUnit(enemiesAtHub[1], true)
         return
     end
     local nEnemyHeroes = bot:GetNearbyHeroes(SEARCH_RANGE_DEFAULT, true, BotMode.None)
-    if jmz.IsValidHero(nEnemyHeroes[1]) and jmz.IsInRange(bot, nEnemyHeroes[1], nSearchRange) then
+    if jmz.IsValidHero(nEnemyHeroes[1]) and jmz.IsInRange(bot, nEnemyHeroes[1], ds.weAreStronger and nSearchRange or attackRange) then
         bot:Action_AttackUnit(nEnemyHeroes[1], true)
         return
     end
@@ -1602,6 +1641,8 @@ function ____exports.DefendThink(bot, lane)
     end
 end
 function ____exports.OnEnd(bot, lane)
+    local ds = bot._defend
+    if ds and ds.waveClearLane == lane then ds.waveClearTarget = nil end
     if bot.ohaIssuedOuterHold ~= lane then return end
     bot.ohaIssuedOuterHold = nil
     if not bot:IsUsingAbility() and not bot:IsCastingAbility() and not bot:IsChanneling() then

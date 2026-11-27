@@ -11,7 +11,7 @@ local function fixture()
     local expectedPit = pos(5000)
     local bot = {
         x = 3000, GetUnitName = function() return 'npc_dota_hero_test' end,
-        IsInvulnerable = no, IsHero = yes, IsAlive = yes, IsIllusion = no, GetTeam = function() return 2 end,
+        IsInvulnerable = no, IsHero = yes, IsAlive = yes, IsIllusion = no, HasModifier = no, GetTeam = function() return 2 end,
         GetLocation = function(self) return pos(self.x) end,
         GetNearbyNeutralCreeps = function() return state.visibleRoshan and {state.visibleRoshan} or {} end,
     }
@@ -28,6 +28,7 @@ local function fixture()
         GetEnemiesNearLoc = function(point, radius) return enemiesAt(point, radius, state.enemy) end,
         GetNumOfAliveHeroes = function(enemy) return enemy and state.aliveEnemy or state.aliveAlly end,
         IsCore = no,
+        IsValidHero = yes, IsMeepoClone = no, IsRetreating = no,
         IsRoshan = function(unit) return unit ~= nil and unit.visible end,
         IsRoshanAlive = function() return state.alive end,
         HasEnoughDPSForRoshan = function(allies) return #allies > 0 and state.enoughDps end,
@@ -73,6 +74,11 @@ do
     assert(desire() == 0.65, 'a distant hero should not get an urgent finish desire')
     bot.x = 3600
     assert(desire() > 0.5 and desire() < 0.8, 'scale urgency using the fractional health of visible Roshan')
+    state.enoughDps = false
+    assert(desire() == 0, 'a wounded Roshan still requires current healthy damage')
+    state.changingSides, state.target = true, first
+    assert(desire() == 0, 'the last chance before Roshan moves does not bypass damage readiness')
+    state.enoughDps, state.changingSides, state.target = true, false, nil
     state.enemy = pos(5100)
     assert(desire() == 0, 'a threat at the pit cancels the low-health shortcut even outside local radius')
     state.enemy, state.lastSeen = nil, pos(5100)
@@ -90,3 +96,17 @@ do
 end
 
 print('PASS: Roshan approach, current team readiness, contested finishes and replacement pit')
+
+do
+    local file = assert(io.open('bots/FunLib/jmz_func.lua', 'rb'))
+    local source = file:read('*a')
+    file:close()
+    local first = assert(source:find('function J.HasEnoughDPSForRoshan(', 1, true))
+    local last = assert(source:find('function J.IsNotSelf(', first, true))
+    local j = {GetArmorReducers = function() return 0 end}
+    local env = setmetatable({J=j, DotaTime=function() return 1200 end}, {__index=_G})
+    setfenv(assert(loadstring(source:sub(first, last - 1))), env)()
+    local attacker = {GetAttackDamage = function() return 315 end, GetSecondsPerAttack = function() return 1 end}
+    assert(not j.HasEnoughDPSForRoshan({attacker}))
+    assert(j.HasEnoughDPSForRoshan({attacker, attacker}), 'compare combined DPS to the group kill threshold')
+end

@@ -23,17 +23,18 @@ local function fixture(plan, opts)
     local costs = {item_manta = 4600, item_black_king_bar = 4000, item_ultimate_orb = 2800,
         item_yasha = 2000, item_recipe_manta = 900, item_ogre_axe = 1000, item_blade_of_alacrity = 1000,
         item_magic_wand = 450, item_tpscroll = 100, item_dust = 80, item_flask = 110, item_tango = 90,
-        item_clarity = 50, item_boots = 500}
+        item_clarity = 50, item_boots = 500, item_ward_sentry = 50, item_gem = 900,
+        item_mithril_hammer = 1600, item_recipe_black_king_bar = 1400}
     local secret = {item_ultimate_orb = true}
     local bot, courier = {}, {}
     local function buy(from, name)
         orders[#orders + 1] = {from, name}
         if opts.failure then return opts.failure end
         local inventory = from == 'courier' and courierSlots or slots
-        if opts.lane then opts.gold = opts.gold - costs[name] end
-        for i = opts.lane and from == 'hero' and 9 or 0, 14 do
+        if opts.lane or opts.detection then opts.gold = opts.gold - costs[name] end
+        for i = (opts.lane or opts.stashPurchases) and from == 'hero' and 9 or 0, 14 do
             if inventory[i] == nil then
-                inventory[i] = item(name, opts.lane and (name == 'item_tango' and 3 or 1) or nil)
+                inventory[i] = item(name, (opts.lane or opts.detection) and (name == 'item_tango' and 3 or 1) or nil)
                 break
             end
         end
@@ -42,13 +43,16 @@ local function fixture(plan, opts)
 
     bot.GetUnitName = function() return 'npc_dota_hero_test' end
     bot.IsInvulnerable, bot.IsHero, bot.IsAlive, bot.IsIllusion, bot.HasModifier = no, yes, yes, no, no
-    bot.WasRecentlyDamagedByAnyHero = no
+    bot.WasRecentlyDamagedByAnyHero = function() return opts.controlHit end
+    bot.IsSilenced = function() return opts.silenced end
     bot.GetLevel = function() return 10 end
     bot.GetGold = function() return opts.gold or 3000 end
-    bot.GetNetWorth = function() return 10000 end
+    bot.GetNetWorth = function() return opts.worth or 10000 end
     bot.GetActiveMode, bot.GetStashValue = function() return 0 end, function() return 0 end
     bot.GetCourierValue = function() return next(courierSlots) and 500 or 0 end
-    bot.DistanceFromFountain = function() return 1000 end
+    bot.GetLocation = function() return opts.distance or 1000 end
+    bot.DistanceFromFountain = bot.GetLocation
+    bot.GetAttackTarget, bot.GetTarget = function() return nil end, function() return nil end
     bot.DistanceFromSecretShop = function() return opts.heroAtSecret and 0 or 1000 end
     bot.SetNextItemPurchaseValue = function(_, value) bot.nextCost = value end
     bot.GetItemInSlot = function(_, slot) return slots[slot] end
@@ -57,7 +61,7 @@ local function fixture(plan, opts)
         return -1
     end
     bot.ActionImmediate_PurchaseItem = function(_, name) return buy('hero', name) end
-    courier.IsNull = no
+    courier.IsNull, courier.IsAlive = no, function() return not opts.dead end
     courier.DistanceFromSecretShop = function() return opts.courierAtSecret and 0 or 1000 end
     courier.GetItemInSlot = function(_, slot) return courierSlots[slot] end
     courier.ActionImmediate_PurchaseItem = function(_, name) return buy('courier', name) end
@@ -65,12 +69,15 @@ local function fixture(plan, opts)
 
     local role = {supportExist = true, IsPvNMode = no, IsAllShadow = no}
     local j = {IsStaleARDMHero = function() return false, bot, bot:GetUnitName() end,
-        GetUserHeroConfig = function() return opts.custom end, IsMeepoClone = no, IsInLaningPhase = no,
+        GetUserHeroConfig = function() return opts.custom end, IsMeepoClone = no, IsInLaningPhase = no, IsModeTurbo = no,
         GetPosition = function() return 1 end, GetHP = function() return 1 end, GetMP = function() return 1 end,
-        GetNearbyHeroes = empty,
-        IsCore = yes}
+        GetNearbyHeroes = empty, GetEnemiesNearLoc = empty, IsGoingOnSomeone = no, IsDefending = no, IsRetreating = no,
+        IsCore = yes, IsDisabled = no, HasInvisCounterBuff = no, IsUnitWillGoInvisible = no, HasInvisibilityOrItem = no}
     local enemy = {IsNull = no, CanBeSeen = function() return opts.visible end,
-        IsAlive = yes, IsHero = yes, IsIllusion = no, GetUnitName = function() return 'TestNuker' end}
+        IsAlive = yes, IsHero = yes, IsInvisible = no, GetUnitName = function() return 'TestNuker' end}
+    j.IsValidHero = function(unit) return unit ~= nil and unit:CanBeSeen() end
+    j.IsSuspiciousIllusion = no
+    j.GetEnemiesNearLoc = function() return opts.controlHit and opts.visible and {enemy} or {} end
     local modules = {
         ['bots/FunLib/aba_role'] = role, ['bots/FunLib/jmz_func'] = j, ['bots/FunLib/aba_global_overrides'] = {},
         ['bots/FunLib/utils'] = {GetLoneDruid = empty, IsBear = no, CountBackpackEmptySpace = function() return 3 end},
@@ -78,6 +85,10 @@ local function fixture(plan, opts)
         ['bots/ts_libs/dota/index'] = {UnitType = {EnemyHeroes = 1}},
         ['bots/ts_libs/dota/heroes'] = {HeroName = setmetatable({}, {__index = function(_, name) return name end})},
         ['bots/FunLib/aba_hero_roles_map'] = {HeroRolesMap = {TestNuker = {nuker = 3}}, IsRanged = no},
+        ['bots/Customize/general'] = {},
+        ['bots/FunLib/aba_ward_utility'] = {GetPossibleSentryWardSpots = empty,
+            GetAvailabeObserverWardSpots = empty, GetClosestObserverWardSpot = function() end, IsOtherWardClose = no,
+            GetClosestSentryWardSpot = function() return opts.deward and {location = bot:GetLocation() + 250} or nil end},
     }
     local env = setmetatable({
         GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
@@ -96,6 +107,7 @@ local function fixture(plan, opts)
     modules['bots/FunLib/aba_item'] = setfenv(assert(loadfile('bots/FunLib/aba_item.lua')), env)()
     j.Item = modules['bots/FunLib/aba_item']
     modules['bots/FunLib/lane_supply'] = setfenv(assert(loadfile('bots/FunLib/lane_supply.lua')), env)()
+    modules['bots/FunLib/detection_purchase'] = setfenv(assert(loadfile('bots/FunLib/detection_purchase.lua')), env)()
     modules['bots/FunLib/advanced_item_strategy'] = setfenv(assert(loadfile('bots/FunLib/advanced_item_strategy.lua')), env)()
     setfenv(assert(loadfile('bots/item_purchase_generic.lua')), env)()
     local function tick()
@@ -155,11 +167,47 @@ do
 end
 
 do
+    local tick, orders, _, _, _, env = fixture({'item_blink', 'item_black_king_bar'}, {visible = true})
+    local baseCost = env.GetItemCost
+    env.GetItemCost = function(name) return name == 'item_blink' and 2250 or baseCost(name) end
+    tick()
+    assert(orders[1][2] == 'item_blink', 'ordinary counter pressure should preserve the planned initiation item')
+end
+
+do
+    local tick, orders, _, _, _, _, _, advance = fixture({'item_double_gauntlets'})
+    tick()
+    advance(1.1)
+    tick()
+    assert(#orders == 2 and orders[1][2] == 'item_gauntlets' and orders[2][2] == 'item_gauntlets',
+        'the starting bundle buys the two planned Gauntlets')
+end
+
+do
     local opts = {visible = true, custom = {PurchaseList = {'item_manta', 'item_black_king_bar'}}}
     local tick, orders, _, _, bot = fixture({}, opts)
     bot.needPurchaseRebuild = true
     tick()
     assert(orders[1][2] == 'item_blade_of_alacrity', 'custom order survives visible threats and a position rebuild')
+end
+
+do
+    local tick, orders = fixture({'item_manta', 'item_magic_wand', 'item_black_king_bar'}, {visible = true})
+    tick()
+    assert(orders[1][2] == 'item_ogre_axe', 'promote a planned counter across more than one queue position')
+end
+
+do
+    local opts = {visible = true, silenced = true, controlHit = true, gold = 400}
+    local tick, orders, slots, _, bot, _, _, advance = fixture({'item_manta'}, opts)
+    slots[0] = item('item_boots')
+    tick()
+    assert(#orders == 0 and bot.currBuyingItemInPurchaseList == 'item_manta')
+    advance(13)
+    opts.gold = 3000
+    tick()
+    assert(orders[1][2] == 'item_ogre_axe' and bot.currBuyingItemInPurchaseList == 'item_black_king_bar',
+        'repeated visible disables can add BKB while the unfinished target has no components')
 end
 
 do
@@ -185,6 +233,8 @@ local sharedSafety = sourceSection(strategy, 'local function SafeLaneTower(', 'f
 local courierBehavior = sourceSection(behavior, 'local nCourierLastActionTime =', 'function X.GetNumStashItem(')
     .. sourceSection(behavior, 'function CourierUsageThink()', 'function AbilityLevelUpThink()')
 local salveBehavior = sourceSection(behavior, 'X.ConsiderItemDesire["item_flask"] =', '-- Healing Lotus helper')
+local tangoBehavior = sourceSection(behavior, 'X.ConsiderItemDesire["item_tango"] =', 'X.ConsiderItemDesire["item_tome_of_knowledge"]')
+local detectionCoverage = sourceSection(strategy, 'local function HasTeamDetectionArea(', 'function J.IsClosestToDustLocation(')
 local stickBehavior = sourceSection(behavior, 'local function ShouldSpendLaneStick(', 'X.ConsiderItemDesire["item_manta"] =')
 
 local function laneFixture(o, plan)
@@ -234,6 +284,7 @@ local function laneFixture(o, plan)
     bot.GetLocation = function() return o.distance or 6000 end
     bot.DistanceFromFountain = bot.GetLocation
     bot.GetCurrentMovementSpeed = function() return 300 end
+    bot.GetAttackRange = function() return 550 end
     bot.GetHealth = function() return (o.hp or 0.42) * 800 end
     bot.GetMaxHealth, bot.GetHealthRegen = function() return 800 end, function() return o.hpRegen or 1 end
     bot.OriginalGetMaxHealth, bot.OriginalGetHealth = bot.GetMaxHealth, bot.GetHealth
@@ -356,6 +407,10 @@ expectPurchase({hp = 0.28}, nil, 'a critically injured hero cannot wait')
 expectPurchase({hp = 0.42, hpRegen = 12}, nil, 'natural healing will cover the deficit before arrival')
 expectPurchase({hp = 0.60}, nil, 'a quiet lane and moderate damage are insufficient')
 expectPurchase({hp = 0.60, hitAgo = 5}, 'item_tango', 'recover from a recent lane trade')
+expectPurchase({hp = 0.60, hitAgo = 1, modifier = 'modifier_warlock_shadow_word'}, 'item_tango',
+    'the shared Shadow Word modifier does not establish that the hero is already being healed')
+expectPurchase({hp = 0.42, hitAgo = 1, modifier = 'modifier_warlock_shadow_word'}, nil,
+    'an unsafe wounded hero still should not wait for a delivery')
 expectPurchase({hp = 0.60, hitAgo = 5, noTrees = true}, nil, 'do not buy unusable tangos')
 expectPurchase({soldOut = 'item_flask'}, 'item_tango', 'use available stock')
 expectPurchase({hp = 0.80, mana = 40}, nil, 'low mana alone does not justify buying clarity')
@@ -367,6 +422,29 @@ expectPurchase({hp = 0.80, mana = 40, spell = true, inactive = true}, nil, 'an i
 expectPurchase({hp = 0.80, mana = 40, spell = true, hitAgo = 2}, nil, 'recent enemy damage would interrupt clarity')
 expectPurchase({hp = 0.80, mana = 40, spell = true, mpRegen = 4}, nil, 'natural mana regeneration funds the next cast')
 expectPurchase({mana = 25, spell = true}, nil, 'buying a salve alone would still require a reset')
+
+do
+    local s = laneFixture({hp = 0.78, hitAgo = 1})
+    local env, j = s.env, s.j
+    env.aetherRange, env.nMode, env.BOT_MODE_LANING = 0, 1, 1
+    env.GetTreeLocation = function() return 6100 end
+    env.IsLocationVisible, env.IsLocationPassable = yes, yes
+    j.IsWithoutTarget, j.HasPendingLaningLastHit, j.IsFinishingLaningAttack = no, no, no
+    j.IsValidBuilding = function(unit) return unit ~= nil end
+    j.GetNearbyHeroes = empty
+    setfenv(assert(loadstring(tangoBehavior)), env)()
+    local tango = s.env.X.ConsiderItemDesire.item_tango_single
+    local charges = item('item_tango', 3)
+    local desire, tree = tango(charges)
+    assert(desire > 0 and tree == 1, 'begin healing from a reachable tree while the lane target is still set')
+    j.HasPendingLaningLastHit = yes
+    assert(tango(charges) == 0, 'do not interrupt a last hit to eat the tree')
+    j.HasPendingLaningLastHit = no
+    local threat = {GetLocation = function() return 6360 end, GetAttackRange = function() return 490 end}
+    j.IsValidHero = function(unit) return unit == threat end
+    j.GetNearbyHeroes = function() return {threat} end
+    assert(tango(charges) == 0, 'do not move closer to a visible threat for a tree')
+end
 
 do
     local o = {hp = 0.60, hitAgo = 5}
@@ -440,3 +518,249 @@ do
     assert(#s.orders == 2 and s.bot.ohaLaneSupply.item == 'item_flask', 'retry a real purchase failure')
 end
 print('PASS: safe lane supply purchases, delivery, use, and fountain decisions')
+
+local function detectionFixture(options, plan)
+    local o = options
+    o.detection, o.gold, o.time = true, o.gold or 700, o.time or 150
+    local tick, orders, slots, cargo, bot, env, j, advance = fixture(plan or {}, o)
+    local allyItems = {}
+    local ally = {
+        IsIllusion = no, IsBot = yes, IsAlive = yes, GetTeam = function() return 2 end,
+        GetLocation = function() return bot:GetLocation() + 40 end,
+        GetItemInSlot = function(_, slot) return allyItems[slot] end,
+        GetGold = function() return o.allyGold or 0 end, GetNetWorth = function() return 2400 end,
+        purchaseListInReverseOrder = {}, DistanceFromFountain = function() return 400 end,
+    }
+    local enemy = {
+        CanBeSeen = function() return not o.hidden end, IsInvisible = function() return o.concealed end,
+        GetLocation = function() return bot:GetLocation() + 430 end, GetAttackRange = function() return 450 end,
+        GetAttackTarget = function()
+            if o.threatensAlly then return ally end
+            if o.attacking then return bot end
+        end,
+    }
+    env.GetUnitToLocationDistance = function(unit, location) return math.abs(unit:GetLocation() - location) end
+    env.GetItemStockCount = function(name) return name == 'item_ward_sentry' and (o.stock or 2) or 0 end
+    j.GetDistance = function(a, b) return math.abs(a - b) end
+    j.IsInRange = function(a, b, radius) return j.GetDistance(a:GetLocation(), b:GetLocation()) <= radius end
+    j.IsValidHero = function(unit) return unit ~= nil end
+    j.GetPosition = function(unit) return unit == ally and (o.allyPosition or 1) or (o.position or 4) end
+    j.IsCore = function(unit) return j.GetPosition(unit) <= 3 end
+    j.GetHP = function(unit) return unit == bot and (o.hp or 1) or 1 end
+    j.IsDefending = function() return o.holding end
+    j.IsGoingOnSomeone = function() return o.pursuing end
+    j.GetEnemiesNearLoc = function() return o.threat and {enemy} or {} end
+    j.GetAlliesNearLoc = function() return o.withAlly and {bot, ally} or {bot} end
+    j.GetHeroesTargetingUnit = function() return o.teamFocus and {ally} or {} end
+    j.HasInvisibilityOrItem = function() return o.threat end
+    j.IsUnitWillGoInvisible = function() return o.fading end
+    j.HasInvisCounterBuff = function() return o.marked end
+    j.Site = {IsLocationHaveTrueSight = function() return o.warded end, SentryTrueSightRange = 1050}
+    ally.FindItemSlot = function(_, name)
+        for slot, handle in pairs(allyItems) do
+            if handle:GetName() == name then return slot end
+        end
+        return -1
+    end
+    bot.GetTeam = ally.GetTeam
+    bot.GetAttackTarget = function() return o.focusing and enemy or nil end
+    bot.WasRecentlyDamagedByHero = function() return o.recentlyHit end
+    bot.WasRecentlyDamagedByAnyHero = bot.WasRecentlyDamagedByHero
+    bot.ActionImmediate_SwapItems = function(_, a, b) slots[a], slots[b] = slots[b], slots[a] end
+    env.J, env.GetTeam = j, bot.GetTeam
+    env.GetTeamPlayers = function(team) return team == 2 and {1, 2} or {} end
+    env.GetTeamMember = function(slot) return slot == 1 and bot or ally end
+    setfenv(assert(loadstring(detectionCoverage)), env)()
+    return {tick = tick, orders = orders, slots = slots, cargo = cargo, bot = bot, advance = advance,
+        ally = ally, allyItems = allyItems, enemy = enemy, env = env, j = j}
+end
+
+local function expectDetection(options, expected, reason, plan)
+    local s = detectionFixture(options, plan)
+    s.tick()
+    local first = s.orders[1]
+    assert((first and first[2]) == expected, reason)
+    return s
+end
+
+expectDetection({time = 800}, nil, 'an idle support does not buy detection by the clock')
+expectDetection({threat = true, hidden = true, fading = true, attacking = true}, nil,
+    'hidden inventory or buffs cannot trigger spending')
+expectDetection({threat = true, pursuing = true, focusing = true, fading = true}, 'item_dust',
+    'an early Glimmer fade on the team’s target justifies one counter')
+expectDetection({threat = true, holding = true}, 'item_ward_sentry', 'protect the threatened fixed position')
+expectDetection({threat = true, holding = true, warded = true}, nil, 'existing true sight covers the threatened point')
+expectDetection({threat = true, holding = true, stock = 0}, nil, 'an unavailable sentry does not waste purchase attempts')
+expectDetection({threat = true, holding = true, hp = 0.05, recentlyHit = true}, nil, 'a dying support does not spend on detection')
+expectDetection({threat = true, concealed = true, attacking = true, dead = true}, nil,
+    'do not buy optional dust away from base when delivery is unavailable')
+expectDetection({threat = true, concealed = true, attacking = true, gold = 480}, nil,
+    'save when boots are within 60 gold', {'item_boots'})
+expectDetection({threat = true, concealed = true, attacking = true, gold = 510}, 'item_boots',
+    'finish affordable boots before purchasing even high-priority dust', {'item_boots'})
+expectDetection({threat = true, concealed = true, attacking = true, gold = 4040}, 'item_ogre_axe',
+    'protect the cost of all remaining BKB components', {'item_black_king_bar'})
+expectDetection({threat = true, concealed = true, attacking = true, gold = 4100}, 'item_dust',
+    'true surplus gold can fund both dust and all remaining BKB components', {'item_black_king_bar'})
+expectDetection({threat = true, concealed = true, attacking = true, gold = 950}, 'item_gem',
+    'respect an explicitly configured gem and leave its gold available', {'item_gem'})
+expectDetection({position = 1, threat = true, pursuing = true}, nil, 'a core does not buy for possession alone')
+expectDetection({position = 1, threat = true, concealed = true, withAlly = true, threatensAlly = true}, 'item_dust',
+    'a core may cover a nearby teammate from a confirmed threat')
+expectDetection({position = 1, threat = true, recentlyHit = true}, 'item_dust',
+    'a visible attacker can remain a priority after the ambush removes invisibility')
+expectDetection({position = 1, threat = true, fading = true, teamFocus = true}, 'item_dust',
+    'an ally’s focus target can be more important than the bot’s own target')
+expectDetection({position = 1, threat = true, concealed = true, attacking = true, withAlly = true,
+    allyPosition = 5, allyGold = 100}, nil, 'an eligible nearby support buys instead of the core')
+expectDetection({position = 1, threat = true, concealed = true, attacking = true, withAlly = true,
+    allyPosition = 5, allyGold = 60}, 'item_dust', 'a nearby support without the budget does not prevent the fallback')
+
+do
+    local o = {position = 4, threat = true, pursuing = true, worth = 5000}
+    local s = expectDetection(o, 'item_dust', 'a known local threat can justify one initial dust')
+    s.slots[0] = nil
+    s.advance(15)
+    o.concealed, o.attacking = true, true
+    s.tick()
+    assert(#s.orders == 1, 'even a critical target has a minimum restock interval')
+    o.concealed, o.attacking = false, false
+    s.advance(27)
+    s.tick()
+    assert(#s.orders == 1, 'inventory evidence alone does not justify replenishment after forty seconds')
+    o.concealed, o.attacking = true, true
+    s.advance(2)
+    s.tick()
+    assert(#s.orders == 2 and s.orders[2][2] == 'item_dust', 'a confirmed attack and concealment get the shorter interval')
+    s.slots[0] = nil
+    s.advance(100)
+    s.tick()
+    assert(#s.orders == 2, 'even recurring priority threats respect the spending ceiling')
+end
+
+do
+    local o = {worth = 1100, threat = true, concealed = true, attacking = true}
+    local s = expectDetection(o, 'item_dust', 'a poor support with spare gold can still buy one useful counter')
+    s.slots[0] = nil
+    o.holding, o.concealed, o.attacking = true, false, false
+    s.advance(100)
+    s.tick()
+    assert(#s.orders == 1, 'the same budget covers both sentries and dust, including when changing type')
+    s.advance(82)
+    s.tick()
+    assert(#s.orders == 2 and s.orders[2][2] == 'item_ward_sentry', 'previous spending expires after three minutes')
+end
+
+do
+    local s = detectionFixture({threat = true, fading = true, attacking = true, withAlly = true})
+    s.allyItems[0] = item('item_dust', 1)
+    s.tick()
+    assert(#s.orders == 0, 'a nearby ally with usable dust covers the engagement')
+    s.allyItems[0], s.allyItems[10] = nil, item('item_dust', 1)
+    s.ally.theCourier = {IsNull = no, IsAlive = yes}
+    s.advance(3)
+    s.tick()
+    assert(#s.orders == 0, 'inbound detection already funded by a nearby ally is enough')
+    s.allyItems[10], s.ally.theCourier = nil, nil
+    local gem = item('item_gem')
+    gem.GetSpecialValueInt = function(_, key) assert(key == 'radius'); return 900 end
+    s.allyItems[0] = gem
+    s.advance(3)
+    s.tick()
+    assert(#s.orders == 0, 'a gem carrier provides local true sight without purchasing a consumable')
+    s.allyItems[0] = nil
+    s.cargo[0] = item('item_dust', 1)
+    s.advance(3)
+    s.tick()
+    assert(#s.orders == 0, 'avoid duplicating a personal courier’s dust')
+    s.cargo[0] = gem
+    s.advance(3)
+    s.tick()
+    assert(#s.orders == 0, 'avoid buying another counter while a gem is being delivered')
+end
+
+do
+    local s = detectionFixture({deward = true, position = 5})
+    local combined = item('item_ward_dispenser', 1)
+    combined.GetSecondaryCharges = function() return 1 end
+    s.slots[6] = combined
+    s.tick()
+    assert(#s.orders == 0 and s.slots[0] == combined, 'use an already owned sentry in the combined ward')
+    combined.GetSecondaryCharges = function() return 0 end
+    s.advance(3)
+    s.tick()
+    assert(#s.orders == 1 and s.orders[1][2] == 'item_ward_sentry', 'a useful deward still justifies a sentry')
+end
+
+do
+    local o = {threat = true, holding = true, stashPurchases = true}
+    local s = expectDetection(o, 'item_ward_sentry', 'buy the defensive sentry into the stash')
+    s.advance(90)
+    s.tick()
+    assert(#s.orders == 1 and s.slots[9] ~= nil, 'do not replace a sentry that has yet to be delivered')
+
+    local sentryUse = sourceSection(behavior, 'local function ConsiderCombatSentry(', '--GG树')
+    s.env.bot, s.env.J, s.env.X, s.env.aetherRange = s.bot, s.j, {ConsiderItemDesire = {}}, 0
+    s.env.BOT_ACTION_DESIRE_NONE, s.env.BOT_ACTION_DESIRE_HIGH = 0, 0.8
+    s.j.GetUnitTowardDistanceLocation = function(_, target) return target:GetLocation() end
+    setfenv(assert(loadstring(sentryUse)), s.env)()
+    local combined = item('item_ward_dispenser', 1)
+    combined.GetSecondaryCharges = function() return 1 end
+    combined.GetToggleState = function() return not o.sentrySelected end
+    local consider = s.env.X.ConsiderItemDesire.item_ward_dispenser
+    local desire, target, kind = consider(combined)
+    assert(desire == 0.8 and target == s.bot and kind == 'unit', 'select the sentry charge on defense')
+    o.sentrySelected = true
+    desire, target, kind = consider(combined)
+    assert(desire == 0.8 and target == s.enemy:GetLocation() and kind == 'ground', 'place that sentry on defense')
+    o.warded = true
+    assert(consider(combined) == 0, 'avoid duplicating an existing ward at the fight')
+end
+
+do
+    local s = detectionFixture({deward = true, position = 5})
+    local env, j, orders = s.env, s.j, {}
+    local ward = item('item_ward_dispenser', 1)
+    local observer = true
+    ward.GetSecondaryCharges = function() return 1 end
+    ward.GetToggleState = function() return observer end
+    s.slots[0] = ward
+    j.Utils = {IsTeamPushingSecondTierOrHighGround = no, CountEnemyHeroesNear = function() return 0 end,
+        IsBotThinkingMeaningfulAction = no}
+    j.CanNotUseAction = no
+    j.CanCastAbility = function(ability) return ability and ability:IsFullyCastable() end
+    env.GetTeam = s.bot.GetTeam
+    env.GetOpposingTeam = function() return 3 end
+    env.GetAncient = function() return {GetLocation = function() return 0 end} end
+    env.RandomVector = function() return 0 end
+    env.RemapValClamped = function(_, _, _, _, result) return result end
+    env.BOT_MODE_NONE, env.BOT_MODE_DESIRE_NONE, env.BOT_MODE_DESIRE_VERYHIGH = 0, 0, 0.8
+    env.BOT_MODE_RUNE, env.BOT_MODE_DEFEND_ALLY = 1, 2
+    s.bot.GetActiveModeDesire = function() return 0 end
+    s.bot.GetNearbyHeroes = empty
+    s.bot.Action_UseAbilityOnEntity = function(_, _, target)
+        assert(target == s.bot)
+        observer = false
+        orders[#orders + 1] = 'switch'
+    end
+    s.bot.Action_UseAbilityOnLocation = function(_, _, loc)
+        assert(not observer and loc == s.bot:GetLocation() + 250)
+        orders[#orders + 1] = 'sentry'
+    end
+    setfenv(assert(loadfile('bots/mode_ward_generic.lua')), env)()
+    assert(env.GetDesire() == 0.8)
+    env.Think()
+    assert(orders[1] == 'switch', 'a deward assignment switches the combined item to sentry')
+    assert(env.GetDesire() == 0.8)
+    s.j.RecordSentryOrder(s.ally, s.bot:GetLocation() + 250)
+    env.Think()
+    assert(#orders == 1, 'another bot placed a sentry after the warding desire was computed')
+    s.advance(0.7)
+    -- Even a fresh dust zone does not reveal wards for dewarding.
+    s.ally.ohaDustCoverage = {location = s.bot:GetLocation() + 250, radius = 1050, untilTime = env.DotaTime() + 12}
+    assert(env.GetDesire() == 0.8, 'retry after an unconfirmed placement expires')
+    env.Think()
+    assert(orders[2] == 'sentry', 'the normal ward callback spends the correct charge')
+    assert(env.GetDesire() == 0, 'the accepted ward placement prevents an immediate repeat')
+end
+print('PASS: detection purchases account for real threats, local coverage, equipment, and the spending budget')

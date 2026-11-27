@@ -218,6 +218,7 @@ function ____exports.getGlobalGameState()
         aliveEnemyCount = jmz.GetNumOfAliveHeroes(true),
         aliveAllyCoreCount = jmz.GetAliveCoreCount(false),
         aliveEnemyCoreCount = jmz.GetAliveCoreCount(true),
+        reinforcementWindow = jmz.GetEnemyReinforcementWindow(),
         teamNetworth = teamNetworth,
         enemyNetworth = enemyNetworth,
         averageLevel = jmz.GetAverageLevel(false),

@@ -10,12 +10,12 @@ local first = assert(source:find('function J.GetHeroesTargetingUnit(', 1, true))
 local last = assert(source:find('function J.GetSameUnitType(', first, true))
 local laneSafety = assert(loadstring(source:sub(first, last - 1)))
 
-local function fixture(core, overridden)
-    local state = {time = 180, creepHP = 30, orders = {}, hp = 0.9}
+local function fixture(core, overridden, startMid)
+    local state = {time = 180, creepHP = 30, orders = {}, hp = 0.9, mid = startMid}
     local heroName = 'npc_dota_hero_test'
     local creep = {x = 200, GetHealth = function() return state.creepHP end,
         GetTeam = function() return 3 end, GetUnitName = function() return 'npc_dota_creep_badguys_melee' end,
-        GetLocation = function() return 200 end, GetHealthRegen = function() return 0 end,
+        GetLocation = function() return 200 end, GetHealthRegen = function() return 0 end, GetIncomingTrackingProjectiles = empty,
         GetActualIncomingDamage = function(_, damage) return damage end, IsCreep = yes}
     local partner = {x = 260, IsAlive = function() return not state.partnerDead end,
         DistanceFromFountain = function() return state.partnerAtBase and 0 or 6000 end,
@@ -23,23 +23,26 @@ local function fixture(core, overridden)
         WasRecentlyDamagedByAnyHero = function() return state.partnerHit end,
         GetPlayerID = function() return 2 end,
         IsDisarmed = function() return state.partnerDisarmed end,
-        GetAttackRange = function() return 150 end, GetAttackTarget = function() end}
+        GetAttackRange = function() return 150 end, GetAttackTarget = function() end,
+        GetAttackDamage = function() return state.partnerDamage or 50 end, GetAttackCombatProficiency = function() return 1 end,
+        GetItemSlotType = function() return 0 end, FindItemSlot = function() return -1 end,
+        GetUnitName = function() return 'npc_dota_hero_partner' end, GetSecondsPerAttack = function() return 1.5 end}
     local bot = {x = 0}
-    local enemy = {x = 260, GetAttackRange = function() return 500 end,
+    local enemy = {x = 260, IsCreep = no, GetAttackRange = function() return 500 end,
         GetLocation = function(self) return self.x end,
         GetAttackTarget = function()
             return state.pressure and not state.betweenAttacks and bot or state.enemyCreep
         end,
         GetAttackCombatProficiency = function() return 1 end,
         GetAttackDamage = function() return state.enemyDamage or 50 end,
-        GetLastAttackTime = function() return state.time - 1 end}
+        GetLastAttackTime = function() return state.enemyLastAttackTime or state.time - 1 end}
     local tower = {x = 700, GetAttackTarget = function() return state.tower and bot or nil end}
     local openingTower = {x = 1600, IsAlive = yes, GetLocation = function(self) return self.x end}
     bot.GetPlayerID = function() return state.playerID or 1 end
     bot.GetUnitName = function() return heroName end
     bot.GetLevel = function() return 5 end
     bot.GetTeam = function() return 2 end
-    bot.GetAssignedLane = function() return 3 end
+    bot.GetAssignedLane = function() return state.mid and 2 or 3 end
     bot.GetLocation = function() return bot.x end
     bot.GetAttackRange = function() return 450 end
     bot.GetAttackDamage = function() return 50 end
@@ -81,13 +84,14 @@ local function fixture(core, overridden)
         GetEnemiesAroundAncient = function() return 0 end,
         IsValid = function(unit) return unit ~= nil end,
         IsValidHero = function(unit) return unit == enemy or unit == partner or unit == state.secondEnemy end,
-        IsValidBuilding = function(unit) return unit == tower or unit == openingTower end,
+        IsValidBuilding = function(unit) return unit ~= nil and (unit == tower or unit == openingTower or unit == state.fallbackTower) end,
         IsSuspiciousIllusion = no, IsChasingTarget = no, IsThereNonSelfCoreNearby = no,
         GetHP = function(unit) return unit == bot and state.hp or (unit == partner and state.partnerHP)
             or (unit.IsCreep and state.deniable and 0.4 or 0.75) end,
         CanNotUseAction = no, CanBeAttacked = yes,
         IsAttacking = function(unit) return unit == bot and state.attacking or unit == enemy and state.enemyWindup end,
-        GetAttackProDelayTime = function(unit) return unit == enemy and state.enemyEta or 0.3 end,
+        GetAttackProDelayTime = function(unit) return unit == enemy and state.enemyEta or 0.3,
+            unit == enemy and state.enemyRelease or 0.18, unit == bot and state.attackWait or 0 end,
         GetTotalAttackWillRealDamage = function(unit, eta)
             if state.finishingDamageAt ~= nil and eta >= state.finishingDamageAt then return state.creepHP end
             if state.incomingDamageAt ~= nil then return eta >= state.incomingDamageAt and state.incomingDamage or 0 end
@@ -98,7 +102,9 @@ local function fixture(core, overridden)
         GetAlliesNearLoc = function() return state.partner and {bot, partner} or {bot} end,
         IsDisabled = no, IsRetreating = function(unit) return unit == partner and state.partnerRetreat end,
         AdjustLocationWithOffsetTowardsFountain = function(point, offset) return point - offset end,
-        GetLastSeenEnemiesNearLoc = function() return state.towerDive and {6, 7} or {} end,
+        GetLastSeenEnemiesNearLoc = function(location)
+            return state.towerDive and (state.threatSpot == nil or state.threatSpot == location) and {6, 7} or {}
+        end,
         GetEnemiesNearLoc = empty,
         GetLanePartner = function() return state.partner and partner or nil end,
         IsInRange = function(a, b, range) return math.abs(a.x - b.x) <= range end,
@@ -107,6 +113,10 @@ local function fixture(core, overridden)
     }
     local modules = {['bots/FunLib/utils'] = utils, ['bots/FunLib/jmz_func'] = j,
         ['bots/FunLib/version'] = {}, ['bots/FunLib/localization'] = {Get = empty},
+        ['bots/FunLib/lane_camp'] = {
+            Plan = function() return state.campPlan end, Cancel = function() end,
+            Think = function(_, plan) state.orders[#state.orders + 1] = {'camp', plan}; return true end,
+        },
         ['game/botsinit'] = {CreateGeneric = empty}}
     local env = setmetatable({
         J = j, GetScriptDirectory = function() return 'bots' end, GetBot = function() return bot end,
@@ -114,8 +124,9 @@ local function fixture(core, overridden)
         GetTeam = function() return 2 end, GetOpposingTeam = function() return 3 end,
         GetTeamPlayers = empty, GetGameMode = function() return 0 end,
         GetGameState = function() return 0 end, GAME_STATE_PRE_GAME = 1,
-        GetTower = function() return openingTower end,
+        GetTower = function(_, id) if id == 13 or id == 15 then return state.fallbackTower end; return openingTower end,
         TOWER_TOP_1 = 10, TOWER_MID_1 = 11, TOWER_BOT_1 = 12,
+        TOWER_TOP_2 = 13, TOWER_BOT_2 = 15,
         GetLaneFrontLocation = function(_, _, offset) return offset end,
         GetLaneFrontAmount = function() return 0.5 end,
         GetUnitToUnitDistance = function(a, b) return math.abs(a.x - b.x) end,
@@ -142,6 +153,145 @@ local function expect(state, mode, kind, target)
     if kind == nil then assert(#state.orders == 0); return end
     assert(#state.orders == 1, 'there must be one lane order per tick')
     assert(state.orders[1][1] == kind and state.orders[1][2] == target, 'unexpected lane order')
+    -- The next decision scenario starts after any pending order's windup.
+    state.time = math.max(state.time, mode.GetBot().ohaLaningAttackUntil or state.time)
+end
+
+do
+    local state, mode, _, _, bot = fixture(true, false, true)
+    assert(mode.Think == nil and bot.ohaEngineMid, 'supported ranged mids let the engine issue creep attacks')
+    assert(mode.GetDesire() == 0.74 and #state.orders == 0, 'evaluating a contested mid wave issues no orders')
+    local _, override = fixture(true, true, true)
+    assert(type(override.Think) == 'function', 'heroes without engine lane control keep their scripted attacks')
+end
+
+do
+    local state, env, _, _, bot = fixture(false, false)
+    local firstIdle = assert(source:find('function J.CheckBotIdleState()', 1, true))
+    local lastIdle = assert(source:find('function J.AreTreesBetween', firstIdle, true))
+    setfenv(assert(loadstring(source:sub(firstIdle, lastIdle - 1))), env)()
+    env.BOT_ACTION_TYPE_MOVE_TO, env.BOT_ACTION_TYPE_IDLE, env.BOT_ACTION_TYPE_PICK_UP_RUNE = 1, 2, 3
+    bot.GetCurrentActionType = function() return 1 end
+    bot.GetActiveMode, bot.DistanceFromFountain = function() return 8 end, function() return 4000 end
+    bot.IsRooted = no
+    env.J.IsTryingtoUseAbility, env.J.IsDefending, env.J.IsDoingRoshan, env.J.IsDoingTormentor = no, no, no, no
+    for t = 0, 11 do
+        state.time, bot.x = 1260 + t, t % 2 == 0 and 0 or 105
+        env.J.CheckBotIdleState()
+    end
+    assert(bot.ohaIdleRecoveryUntil > state.time and #state.orders == 0, 'wandering on passable ground recovers without issuing orders from desire')
+    bot.ohaIdleRecoveryUntil = nil
+    for t = 0, 12 do state.time, bot.x = 1300 + t, t * 100; env.J.CheckBotIdleState() end
+    assert(not bot.ohaIdleRecoveryUntil, 'continued travel refreshes the distance sample')
+    env.J.IsTryingtoUseAbility = yes
+    for t = 0, 12 do state.time = 1320 + t; env.J.CheckBotIdleState() end
+    assert(not bot.ohaIdleRecoveryUntil, 'channeling and casting do not trigger recovery')
+end
+
+do
+    local state, mode, creep, enemy, bot = fixture(true, false)
+    state.mid = true
+    assert(mode.GetDesire() == 0.9)
+    mode.Think()
+    assert(#state.orders == 1 and state.orders[1][2] == creep)
+    state.time = state.time + 0.1
+    state.creepHP = 150
+    assert(mode.GetDesire() == 0.9, 'retain the lane until the ordered shot has time to start')
+    expect(state, mode, nil)
+    state.enemy, state.hp = true, 0.26
+    enemy.x = 710
+    assert(mode.J.IsLaningUnderPressure(bot, {enemy}), 'do not reenter melee control range at critical health')
+    mode.GetDesire()
+    expect(state, mode, 'move', -1200)
+end
+
+do
+    local state, mode = fixture(false, false)
+    state.time = 60
+    assert(mode.GetDesire() == 0.72, 'an off-lane support still needs to reach its assigned first tower')
+    expect(state, mode, 'move', mode.GetTower():GetLocation())
+end
+
+do
+    local state, mode, creep, _, bot = fixture(true, false)
+    state.mid, state.enemy, state.pressure, state.hp = true, true, true, 0.61
+    mode.GetTower().x = -450
+    assert(mode.J.GetLaningHoldTower(bot) == mode.GetTower(), 'a ranged mid can stay under a safe tower after a trade')
+    assert(mode.GetDesire() == 0.82)
+    expect(state, mode, 'attack', creep)
+    state.towerDive = true
+    assert(not mode.J.GetLaningHoldTower(bot), 'lose the assignment when enemies can dive the hold position')
+end
+
+do
+    local state, mode, creep, enemy = fixture(true, false)
+    state.enemy, state.enemyCreep, state.enemyWindup, state.enemyEta, state.enemyRelease = true, creep, true, 0.16, 0
+    state.creepHP, state.enemyDamage, state.incomingDamage = 70, 40, 30
+    mode.GetDesire()
+    expect(state, mode, 'attack', creep)
+end
+
+do
+    local state, env, creep, enemy, bot = fixture(true, false)
+    state.partner, state.partnerHP, state.hp, state.enemy, state.pressure = true, 0.92, 0.54, true, true
+    bot.GetAttackRange = function() return 150 end
+    bot.x, enemy.x, env.GetTower().x = 100, 350, -450
+    assert(env.GetDesire() == 0.82, 'can hold a safe tower wave after a bad trade even with a healthy partner online')
+    expect(state, env, 'attack', creep)
+    local j = env.J
+    local validHero = j.IsValidHero
+    j.IsValidHero = function(unit) return unit == bot or validHero(unit) end
+    j.CanCastOnNonMagicImmune, j.CanCastOnTargetAdvanced = yes, yes
+    enemy.IsDisarmed, enemy.GetSecondsPerAttack = no, function() return 1.4 end
+    assert(j.GetLaningPeelTarget(bot, bot, {enemy}, 300) == enemy, 'peel a current attacker without moving into cast range')
+    assert(j.GetLaningPeelTarget(bot, bot, {enemy}, 225) == nil, 'do not chase the attacker for a peel')
+    j.IsDisabled = yes
+    assert(j.GetLaningPeelTarget(bot, bot, {enemy}, 300) == nil, 'preserve the existing disable')
+    state.towerDive = true
+    assert(j.GetLaningHoldTower(bot) == nil, 'cede the tower anchor if the enemy can reach it')
+end
+
+do
+    local state, mode, creep = fixture(true, false)
+    local deny = setmetatable({x = 170, GetHealth = function() return 25 end, GetTeam = function() return 2 end}, {__index = creep})
+    state.mid, state.allies, state.deniable, state.attackTarget = true, {deny}, true, creep
+    state.creepHP, state.incomingDamage, state.incomingDamageAt = 70, 28, 0.45
+    mode.GetDesire()
+    expect(state, mode, 'hold', true)
+end
+
+do
+    local state, mode, creep = fixture(false, false)
+    local deny = setmetatable({x = 170, GetHealth = function() return 25 end, GetTeam = function() return 2 end}, {__index = creep})
+    state.partner, state.noCreeps, state.allies, state.deniable = true, true, {deny}, true
+    assert(mode.GetDesire() == 0.7, 'a side-lane support stays for an available deny')
+    expect(state, mode, 'attack', deny)
+end
+
+do
+    local state, mode, _, _, bot = fixture(false, false)
+    mode.GetTower().x = 300
+    state.partner, state.partnerDead, state.towerDive, state.threatSpot = true, true, true, 0
+    state.fallbackTower = {x = -1300, GetLocation = function(self) return self.x end}
+    assert(mode.J.GetSideLaneHoldTower(bot) == state.fallbackTower, 'fall back to T2 while the lane partner respawns')
+end
+
+do
+    local state, mode, creep, _, support = fixture(false, false)
+    state.partner, state.creepHP, state.partnerDamage = true, 60, 25
+    state.finishingDamageAt = 0.55
+    assert(mode.J.CanSupportTakeLaneLastHit(support, creep), 'secure the creep if core damage cannot beat the deny')
+    state.partnerDamage = 70
+    assert(not mode.J.CanSupportTakeLaneLastHit(support, creep), 'leave the kill to a core that can finish it')
+    creep.GetUnitName = function() return 'npc_dota_badguys_siege_upgraded' end
+    assert(not mode.J.CanSupportTakeLaneLastHit(support, creep), 'apply the same rule to upgraded siege creeps')
+end
+
+do
+    local state, mode = fixture(false, true)
+    state.partner, state.campPlan = true, {}
+    assert(mode.GetDesire() == 0.63)
+    expect(state, mode, 'camp', state.campPlan)
 end
 
 for _, overridden in ipairs({false, true}) do
@@ -276,7 +426,7 @@ for _, overridden in ipairs({false, true}) do
     state.tower, state.attacking, state.incomingDamage = false, false, 40
     expect(state, mode, 'move', -450)
     state.incomingDamage, state.creeps = 0, {distant}
-    expect(state, mode, 'approach', distant)
+    expect(state, mode, 'move', distant.x - (bot:GetAttackRange() - 105))
     tower.x, state.towerIdle = 825, true
     expect(state, mode, 'move', -450)
     state.towerIdle, state.creeps = false, {creep}
@@ -286,6 +436,26 @@ for _, overridden in ipairs({false, true}) do
     expect(state, mode, 'move', -1200)
 end
 print('PASS: both lane modes prefer reachable ranged creeps, preserve attack windups and respect tower pressure')
+
+for _, overridden in ipairs({false, true}) do
+    local state, mode, creep, enemy, bot = fixture(true, overridden)
+    state.enemy, state.attacking, state.attackTarget = true, true, enemy
+    mode.GetDesire()
+    expect(state, mode, 'attack', creep)
+    state.attacking, state.attackTarget, state.attackWait = false, creep, 0.36
+    mode.GetDesire()
+    expect(state, mode, 'hold', true)
+    state.attackWait, state.attackTarget = nil, nil
+    mode.Think()
+    state.time = state.time + 0.15
+    assert(not mode.J.HasPendingLaningLastHit(bot), 'a superseded order may immediately be reconsidered')
+
+    state.enemy, state.allyWave, state.creepHP = false, true, 100
+    bot.GetAttackRange = function() return 150 end
+    creep.x = 310
+    mode.GetDesire()
+    expect(state, mode, 'move', 195)
+end
 
 do
     local state, mode, creep, _, bot = fixture(true, false)
@@ -327,6 +497,8 @@ for _, overridden in ipairs({false, true}) do
     expect(state, mode, nil)
     state.finishingDamageAt = 0.82
     expect(state, mode, nil)
+    state.finishingDamageAt, state.incomingDamageAt = nil, 0.95
+    expect(state, mode, 'attack', enemy)
     state.incomingDamageAt = nil
     state.incomingDamage = 0
     expect(state, mode, 'attack', enemy)
@@ -420,6 +592,7 @@ do
     runeFile:close()
     local runeMode = setfenv(assert(loadstring(runeSource .. '\nreturn X')), env)()
     runeMode.UpdateWisdom = function() end
+    local getBestRune = runeMode.GetBestRune
     runeMode.GetBestRune = function() return runeId, runeDistance end
     runeMode.GetScaledDesire = function(desire) return desire end
     for _, id in ipairs({env.RUNE_POWERUP_1, env.RUNE_POWERUP_2}) do
@@ -435,11 +608,34 @@ do
     runeId = -1
     assert(env.GetDesire() == 0)
     env.Think()
+
+    state.time, runeDistance, runeStatus = 366, 480, env.RUNE_STATUS_AVAILABLE
+    env.GetTeamMember = function() return bot end
+    env.GetRuneType = function() return 5 end
+    env.GetRuneStatus = function(id)
+        return id == env.RUNE_POWERUP_1 and runeStatus or env.RUNE_STATUS_MISSING
+    end
+    env.GetRuneSpawnLocation = function(id) return id == env.RUNE_POWERUP_1 and runeDistance or 3000 end
+    runeMode.GetBestRune = getBestRune
+    runeMode.GetBountyAssignment = function() return env.RUNE_BOUNTY_1, 300 end
+    local distractions = {GetActualIncomingDamage = function(_, damage) return damage end, GetHealth = function() return 30 end}
+    bot.GetNearbyCreeps = function() return {distractions} end
+    assert(env.GetDesire() == 0.88, 'an available nearby power rune takes precedence over a closer bounty')
+    env.Think()
+    local order = state.orders[#state.orders]
+    assert(order[1] == 'move' and order[2] == runeDistance, 'move to the rune without detouring to hit a creep')
+    runeStatus = env.RUNE_STATUS_MISSING
+    env.Think()
+    assert(state.orders[#state.orders][1] == 'hold', 'cancel the move when the rune is taken before arrival')
+    runeDistance, runeStatus = 50, env.RUNE_STATUS_AVAILABLE
+    assert(env.GetDesire() == 0.88)
+    env.Think()
+    assert(state.picked == env.RUNE_POWERUP_1, 'claim the rune as soon as it is in reach')
 end
-print('PASS: collect either nearby water rune and stay for a reachable last hit')
+print('PASS: stay for a reachable last hit, collect water and power runes, and cancel a lost rune move')
 
 do
-    local state, env, _, _, bot = fixture(false, false)
+    local state, env, creep, _, bot = fixture(false, false)
     local j = env.J
     local file = assert(io.open('bots/ability_item_usage_generic.lua', 'rb'))
     local source = file:read('*a')
@@ -447,7 +643,7 @@ do
     local tpStart = assert(source:find('X.ConsiderItemDesire["item_tpscroll"] = function', 1, true))
     local tpEnd = assert(source:find('X.ConsiderItemDesire["item_urn_of_shadows"]', tpStart, true))
     local laneStart = assert(source:find('function X.GetLaningTPLocation(', 1, true))
-    local laneEnd = assert(source:find('function X.GetDefendTPLocation(', laneStart, true))
+    local laneEnd = assert(source:find('function X.GetPushTPLocation(', laneStart, true))
     env.X = {ConsiderItemDesire={}, GetNumHeroWithinRange=function() return 0 end,
         IsInvFull=function() return state.buy end, GetNumStashItem=function() return 1 end,
         IsThereRecipeInStash=yes, IsFarmingAlways=no, CanJuke=yes}
@@ -458,6 +654,7 @@ do
     j.IsDefending, j.IsPushing, j.IsGoingOnSomeone, j.IsInTeamFight, j.IsDoingRoshan, j.IsStuck = no, no, no, no, no, no
     j.GetAllyCount, j.GetAttackProjectileDamageByRange = function() return 1 end, function() return 0 end
     j.GetTeamFountain, j.GetMP = function() return -7000 end, function() return 0.5 end
+    j.ShouldKeepLaningWave = function() return state.sourceWave end
     j.GetNearbyHeroes, j.Role, j.GetModifierTime = empty, {ShouldTpToDefend=no}, function() return 4 end
     bot.GetHealth = function() return state.hp * 1000 end
     bot.IsRooted = no
@@ -484,7 +681,57 @@ do
     desire, destination = teleport()
     assert(desire > 0 and state.destinationLane == env.LANE_TOP and destination == 100,
         'return to the actual side lane behind the T1 even when the default role lane differs')
+    bot.ohaCarryLaneRecoveryUntil = state.time + 20
+    j.GetLastSeenEnemiesNearLoc = function() return {6, 7} end
+    assert(teleport() == 0, 'the same contested lane is unsafe immediately after a forced reset')
+    j.GetLastSeenEnemiesNearLoc = empty
+    assert(teleport() > 0, 'return on a clear lane even during the recovery window')
     state.unsafe = true
     assert(teleport() == 0, 'do not teleport back into a dangerous landing')
+
+    state.atBase, state.unsafe, state.buy, state.sourceWave = false, false, true, true
+    env.GetAmountAlongLane = function() return {amount=0.5, distance=0} end
+    assert(teleport() == 0, 'keep a safe wave even if a recipe is still in the stash')
+    state.sourceWave = false
+    desire, destination = teleport()
+    assert(desire > 0 and destination == j.GetTeamFountain(), 'can complete the item after the safe wave is gone')
+
+    local front = env.GetTower(nil, env.TOWER_TOP_1)
+    state.fallbackTower = {GetLocation = function() return 1700 end}
+    front.x, state.unsafe = 6000, false
+    local defend = env.X.GetDefendTPLocation
+    assert(defend(env.LANE_TOP) == 5700, 'defensive teleports choose a landing beside a living tower')
+    j.CanCommitToLaneTeleport = function(_, point) return point ~= 5700 end
+    assert(defend(env.LANE_TOP) == 1400, 'use the rear tower if the forward landing is dangerous')
+
+    env.IsLocationVisible = yes
+    local second = setmetatable({}, {__index = creep})
+    env.GetUnitList = function() return state.wave or {} end
+    assert(not env.X.CanTeleportToFarm(200, 150), 'no teleport for an empty visible lane')
+    state.wave = {creep, second}
+    assert(env.X.CanTeleportToFarm(200, 150), 'a safe landing and a real wave can justify the farm teleport')
+    j.CanCommitToLaneTeleport = function(_, point) return point ~= 200 end
+    assert(not env.X.CanTeleportToFarm(200, 150), 'a safe landing alone does not justify walking into a dangerous wave')
 end
-print('PASS: stagger fountain teleports, allow emergencies, and rejoin the assigned side lane')
+print('PASS: stagger fountain resets and choose safe teleport destinations for lanes, towers, and visible waves')
+
+do
+    local s, env, creep, enemy, bot = fixture(true)
+    bot.GetAttackRange = function() return 150 end
+    creep.x = 950
+    creep.GetLocation = function() return creep.x end
+    s.allies = {{x=850}, {x=910}}
+    local function position()
+        return env.J.GetLaningCreepPosition(bot, env.LANE_BOT, {creep}, nil, {})
+    end
+    assert(position() == 835, 'the melee core rejoins a visible wave with two allied creeps covering its approach')
+    s.allies = {{x=850}}
+    assert(position() == nil, 'a single covering creep cannot justify the longer approach')
+    s.allies, s.towerDive = {{x=850}, {x=910}}, true
+    assert(position() == nil, 'do not walk into recently seen opponents to catch a wave')
+    creep.x, enemy.x, s.towerDive = 250, 275, false
+    local rival = setmetatable({x=350}, {__index=enemy})
+    s.secondEnemy = rival
+    local safe = env.J.GetLaningCreepPosition(bot, env.LANE_BOT, {creep}, nil, {enemy,rival})
+    assert(safe and safe < bot.x, 'a zoned melee hero waits behind the wave instead of walking back into both opponents')
+end

@@ -8,6 +8,7 @@ local Item = require( GetScriptDirectory()..'/FunLib/aba_item' )
 local Role = require( GetScriptDirectory()..'/FunLib/aba_role' )
 local J = require( GetScriptDirectory()..'/FunLib/jmz_func')
 local LaneSupply = require(GetScriptDirectory() .. '/FunLib/lane_supply')
+local Detection = require(GetScriptDirectory() .. '/FunLib/detection_purchase')
 local Utils = require( GetScriptDirectory()..'/FunLib/utils')
 local AdvancedItemStrategy = require(GetScriptDirectory()..'/FunLib/advanced_item_strategy').AdvancedItemStrategy
 
@@ -62,8 +63,6 @@ local t3Check = -90
 bot.lastInvCheck = -90
 bot.fullInvCheck = -90
 bot.switchTime = 0
-local lastBootsCheck = -90
-local buyBootsStatus = false
 local buyRD = false
 
 local buyWardTime = -999
@@ -385,11 +384,20 @@ local function ShouldRecoverOwnedDrop(drop, hero)
 end
 
 local adaptiveCounters = {item_black_king_bar = true, item_monkey_king_bar = true, item_pipe = true}
+local recentControl, previousControl = -math.huge, -math.huge
+local nextCounterReview = 0
+
+local function ObserveCounterPressure()
+	if currentTime - recentControl >= 12 and bot:WasRecentlyDamagedByAnyHero(1.5)
+		and (bot:IsSilenced() or J.IsDisabled(bot)) and #J.GetEnemiesNearLoc(bot:GetLocation(), 1150) > 0 then
+		previousControl, recentControl = recentControl, currentTime
+	end
+end
 
 local function PreferVisibleCounter(queue)
 	local index = #queue
-	local current, candidate = queue[index], queue[index - 1]
-	if not adaptiveCounters[candidate] or adaptiveCounters[current] or currentTime < 12 * 60
+	local current = queue[index]
+	if current == nil or adaptiveCounters[current] or currentTime < (J.IsModeTurbo() and 360 or 480)
 	or GetGameMode() == GAMEMODE_ARDM or Role.IsPvNMode() or Role.IsAllShadow()
 	or GetItemCost(current) < 2000 then return end
 	local custom = J.GetUserHeroConfig(bot)
@@ -397,12 +405,28 @@ local function PreferVisibleCounter(queue)
 
 	local _, hasComponents = Item.GetMissingPurchaseComponents(bot, current)
 	if hasComponents then return end
-	local _, _, isOwned = Item.GetMissingPurchaseComponents(bot, candidate)
-	if isOwned then return end
-	for _, counter in ipairs(AdvancedItemStrategy:GetVisibleCounterItems()) do
-		if counter == candidate then
-			queue[index], queue[index - 1] = candidate, current
-			return
+
+	local mustKeepAttacking = J.GetPosition(bot) <= 3 and currentTime - previousControl <= 95
+		and currentTime - recentControl <= 48 and Item.HasBuyBoots(bot)
+	if current == 'item_blink' and not mustKeepAttacking then return end
+	local suggested = AdvancedItemStrategy:GetVisibleCounterItems()
+	if mustKeepAttacking then table.insert(suggested, 1, 'item_black_king_bar') end
+	for _, counter in ipairs(suggested) do
+		if adaptiveCounters[counter] then
+			local _, _, owned = Item.GetMissingPurchaseComponents(bot, counter)
+			if not owned then
+				for candidate = index - 1, 1, -1 do
+					if queue[candidate] == counter then
+						table.remove(queue, candidate)
+						queue[#queue + 1] = counter
+						return true
+					end
+				end
+				if counter == 'item_black_king_bar' and mustKeepAttacking then
+					queue[index + 1] = counter
+					return true
+				end
+			end
 		end
 	end
 end
@@ -410,6 +434,13 @@ end
 local function ProcessPurchaseQueue()
 	local queue = bot.purchaseListInReverseOrder
 	local newTarget = bot.currBuyingItemInPurchaseList == nil
+	if currentTime >= nextCounterReview then
+		nextCounterReview = currentTime + 3
+		if not newTarget and not buyingBundle and not skippedTarget and PreferVisibleCounter(queue) then
+			_resetCurrentTarget()
+			newTarget = true
+		end
+	end
 	if newTarget then
 		if queue[#queue] == 'item_boots' and (Item.HasBuyBoots(bot)
 			or Item.HasItem(bot, 'item_guardian_greaves') or Item.HasItem(bot, 'item_travel_boots')
@@ -475,6 +506,7 @@ function ItemPurchaseThink()
 		if not freshBot:IsAlive() then return end
 		print("[ARDM] Item purchase: hero changed from "..botName.." to "..freshName)
 		bot = freshBot
+		recentControl, previousControl = -math.huge, -math.huge
 		botName = freshName
 
 		-- Load new hero's item build
@@ -586,6 +618,7 @@ function ItemPurchaseThink()
 		-- Reset purchase state machine
 		_resetCurrentTarget()
 	end
+	if bot:IsAlive() then ObserveCounterPressure() end
 
 	-- Detect position swap from !pos command: rebuild purchase list for new role
 	if bot.needPurchaseRebuild then
@@ -760,17 +793,6 @@ function ItemPurchaseThink()
 	--更新队伍里是否有辅助的定位
 	if Role['supportExist'] == nil then Role.UpdateSupportStatus( bot ) end
 
-	--更新敌方是否有隐身英雄或道具的状态
-	if Role['invisEnemyExist'] == false then Role.UpdateInvisEnemyStatus( bot ) end
-
-	--更新是否出鞋的状态
-	if buyBootsStatus == false
-		and currentTime > lastBootsCheck + 2.0
-	then
-		buyBootsStatus = Item.HasBuyBoots( bot )
-		lastBootsCheck = currentTime
-	end
-
 	-- During laning, value the wave and delivery before spending on optional regeneration.
 	if bot.ohaLaneSupply or J.IsInLaningPhase(bot) then
 		if LaneSupply.Update(bot) then return end
@@ -780,27 +802,9 @@ function ItemPurchaseThink()
 		bot:ActionImmediate_PurchaseItem('item_clarity')
 	end
 
-	if J.GetPosition(bot) >= 4 and botLevel >= 5 and Role['invisEnemyExist'] == true
-		and buyBootsStatus and botGold >= GetItemCost('item_dust') and Item.GetEmptyInventoryAmount(bot) >= 2
-		and Item.GetItemCharges(bot, 'item_dust') <= 0 and botCourierValue == 0 and not J.HasItem(bot, 'item_ward_sentry') then
-		bot:ActionImmediate_PurchaseItem('item_dust')
-	end
+	if Detection.Update(bot) then return end
 
-	-- Observer and Sentry Wards
-	if J.GetPosition(bot) == 4 and DotaTime() > 300 and botWorth < 25000
-	then
-		local wardType = 'item_ward_sentry'
-
-		if GetItemStockCount(wardType) > 1
-		and botGold >= GetItemCost(wardType)
-		and Item.GetEmptyInventoryAmount(bot) >= 2
-		and Item.GetItemCharges(bot, wardType) < 1
-		and botCourierValue == 0
-		then
-			bot:ActionImmediate_PurchaseItem(wardType)
-		end
-	end
-
+	-- Observer Wards
 	if J.GetPosition(bot) == 5 and botWorth < 25000
 	then
 		local wardType = 'item_ward_observer'
@@ -912,20 +916,6 @@ function ItemPurchaseThink()
 		end
 	end
 
-	-- --辅助死前如果会损失金钱则购买粉
-	if botGold >= GetItemCost( "item_dust" )
-		and bot:IsAlive()
-		and botLevel > 6
-		and J.GetPosition(bot) >= 4
-		and botGold < ( GetItemCost( "item_dust" )  + botWorth / 40 )
-		and botHP < 0.06
-		and bot:WasRecentlyDamagedByAnyHero( 3.1 )
-		and Item.GetItemCharges( bot, 'item_dust' ) <= 1
-		and Utils.CountBackpackEmptySpace(bot) >= 2
-	then
-		bot:ActionImmediate_PurchaseItem( "item_dust" )
-	end
-
 	--交换魂泪的位置避免过早被破坏
 	if currentTime > 180
 		and currentTime < 1800
@@ -946,8 +936,7 @@ function ItemPurchaseThink()
 	end
 
 	-- Ward slot management for supports (pos 4/5):
-	-- Move wards to backpack when not actively warding to free up a main slot.
-	-- Move them back to main inventory when entering ward mode.
+	-- Free a main slot for observer-only wards and keep combat sentries accessible.
 	if J.GetPosition(bot) >= 4 and currentTime > (bot._lastWardSwapTime or 0) + 3 then
 		local bIsWarding = botMode == BOT_MODE_WARD
 		local tWardNames = { 'item_ward_observer', 'item_ward_sentry', 'item_ward_dispenser' }
@@ -955,8 +944,8 @@ function ItemPurchaseThink()
 		for _, wardName in ipairs(tWardNames) do
 			local wardSlot = bot:FindItemSlot(wardName)
 			if wardSlot >= 0 then
-				if bIsWarding then
-					-- Move ward from backpack (6-8) to main inventory if there's a free slot
+				local carryingSentry = Item.GetSentryCharges(bot:GetItemInSlot(wardSlot)) > 0
+				if bIsWarding or carryingSentry then
 					if wardSlot >= 6 and wardSlot <= 8 then
 						for mainSlot = 0, 5 do
 							local mainItem = bot:GetItemInSlot(mainSlot)

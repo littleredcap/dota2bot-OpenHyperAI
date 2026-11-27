@@ -154,6 +154,7 @@ local ____heroes = require(GetScriptDirectory().."/ts_libs/dota/heroes")
 local HeroName = ____heroes.HeroName
 local ____dota = require(GetScriptDirectory().."/ts_libs/dota/index")
 local UnitType = ____dota.UnitType
+local jmz = require(GetScriptDirectory().."/FunLib/jmz_func")
 local ____aba_hero_roles_map = require(GetScriptDirectory().."/FunLib/aba_hero_roles_map")
 local HeroRolesMap = ____aba_hero_roles_map.HeroRolesMap
 local IsRanged = ____aba_hero_roles_map.IsRanged
@@ -330,7 +331,7 @@ local function getEnemyHeroes()
     local enemies = {}
     local seen = {}
     for ____, enemy in ipairs(GetUnitList(UnitType.EnemyHeroes)) do
-        if enemy and not enemy:IsNull() and enemy:CanBeSeen() and enemy:IsAlive() and enemy:IsHero() and not enemy:IsIllusion() then
+        if jmz.IsValidHero(enemy) and not jmz.IsSuspiciousIllusion(enemy) then
             local name = enemy:GetUnitName()
             if not seen[name] then
                 seen[name] = true

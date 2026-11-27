@@ -83,7 +83,8 @@ function X.Think()
 
 
 	local attackTarget = bot:GetAttackTarget()
-	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
+	if J.HasPendingLaningLastHit(bot)
+		or (J.IsValid(attackTarget) and attackTarget:IsCreep() and J.IsFinishingLaningAttack(bot, attackTarget)) then return end
 
 	-- Drop tower aggro (reference pattern)
 	if bot:WasRecentlyDamagedByTower(1.0) and #nEnemyCreeps > 0 then
@@ -108,10 +109,21 @@ function X.Think()
 		end
 	end
 
-	local hitCreep, moveToCreep, reserve = J.GetLaningLastHitTarget(bot, nEnemyCreeps, tEnemyTowers[1],
+	local hitCreep, moveToCreep, reserve, urgentApproach = J.GetLaningLastHitTarget(bot, nEnemyCreeps, tEnemyTowers[1],
 		J.GetLaningAttackDamage(bot), tEnemyHeroes)
 	if hitCreep ~= nil and not moveToCreep then
 		J.IssueLaningAttack(bot, hitCreep)
+		return
+	end
+	if reserve then
+		J.HoldLaningAttack(bot, attackTarget)
+		return
+	end
+
+	local firingPosition = moveToCreep
+		and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, tEnemyTowers[1], tEnemyHeroes, true) or nil
+	if urgentApproach and firingPosition ~= nil then
+		bot:Action_MoveToLocation(firingPosition)
 		return
 	end
 
@@ -122,23 +134,17 @@ function X.Think()
 		return
 	end
 
-	if reserve or reserveDeny then
+	if reserveDeny then
 		J.HoldLaningAttack(bot, attackTarget)
 		return
 	end
 
-	if moveToCreep then
-		if botAssignedLane ~= LANE_MID or bot:GetAttackRange() < 400 then
-			bot:Action_MoveToUnit(hitCreep)
-			return
-		end
-		local firingPosition = J.GetRangedMidLanePosition(bot, botAssignedLane, {hitCreep}, tEnemyTowers[1], tEnemyHeroes)
-		if firingPosition ~= nil then
-			bot:Action_MoveToLocation(firingPosition)
-			return
-		end
+	if firingPosition then
+		bot:Action_MoveToLocation(firingPosition)
+		return
 	end
 
+	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
 	local harassTarget = J.GetLaningHarassTarget(bot, tEnemyHeroes, tEnemyTowers[1], #bot:GetNearbyLaneCreeps(600, true))
 	if harassTarget ~= nil then
 		bot:Action_AttackUnit(harassTarget, true)
@@ -154,10 +160,11 @@ function X.Think()
 	if J.IsCore(bot) and #nAllyCreeps > 0 then
 		nFurthestEnemyAttackRange = math.max(botAttackRange, 280)
 	end
-	local target_loc = J.GetRangedMidLanePosition(bot, botAssignedLane, nEnemyCreeps, tEnemyTowers[1], tEnemyHeroes)
+	local setup = J.GetLaningCreepPosition(bot, botAssignedLane, nEnemyCreeps, tEnemyTowers[1], tEnemyHeroes)
+	local target_loc = setup
 		or GetLaneFrontLocation(GetTeam(), botAssignedLane, -nFurthestEnemyAttackRange)
 
-	if GetUnitToLocationDistance(bot, target_loc) > 100 then
+	if GetUnitToLocationDistance(bot, target_loc) > (setup and 30 or 100) then
 		bot:Action_MoveToLocation(target_loc)
 	else
 		J.HoldLaningAttack(bot, attackTarget)

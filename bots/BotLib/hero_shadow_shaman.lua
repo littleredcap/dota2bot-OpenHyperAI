@@ -164,6 +164,10 @@ local nKeepMana, nMP, nHP, nLV, hEnemyList, hAllyList, botTarget, sMotive
 local aetherRange = 0
 local talent7Damage = 0
 
+local function HasAttackFollowUp(target)
+	return not J.IsInLaningPhase(bot) or J.HasLaneFightFollowUp(bot, target)
+end
+
 
 
 function X.SkillsComplement()
@@ -176,7 +180,8 @@ function X.SkillsComplement()
 	nLV = bot:GetLevel()
 	nMP = bot:GetMana()/bot:GetMaxMana()
 	nHP = bot:GetHealth()/bot:GetMaxHealth()
-	botTarget = J.GetProperTarget( bot )
+	local gank = bot.ohaLaneGank
+	botTarget = gank and gank.ready and gank.target or J.GetProperTarget(bot)
 	hEnemyList = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE )
 	hAllyList = J.GetAlliesNearLoc( bot:GetLocation(), 1600 )
 
@@ -184,7 +189,7 @@ function X.SkillsComplement()
 	local aether = J.IsItemAvailable( "item_aether_lens" )
 	if aether then aetherRange = aether:GetSpecialValueInt('cast_range_bonus') end
 --	if talent3:IsTrained() then aetherRange = aetherRange + talent3:GetSpecialValueInt( "value" ) end
-	if talent7:IsTrained() then talent7Damage = talent7:GetSpecialValueInt( "value" ) end
+	if talent7 ~= nil and talent7:IsTrained() then talent7Damage = talent7:GetSpecialValueInt( "value" ) end
 
 
 	castWDesire, castWTarget, sMotive = X.ConsiderW()
@@ -214,19 +219,19 @@ function X.SkillsComplement()
 	end
 
 
-	castQDesire, castQTarget, sMotive = X.ConsiderQ()
-	if ( castQDesire > 0 )
-	then
-		J.SetReportMotive( bDebugMode, sMotive )
-
-		J.SetQueuePtToINT( bot, true )
-
-		bot:ActionQueue_UseAbilityOnEntity( abilityQ, castQTarget )
-		return
+	castETarget = X.GetLaneShacklesTarget()
+	if castETarget ~= nil then
+		castEDesire, sMotive = BOT_ACTION_DESIRE_HIGH, 'E-LaneCover'
+	else
+		castQDesire, castQTarget, sMotive = X.ConsiderQ()
+		if castQDesire > 0 then
+			J.SetReportMotive(bDebugMode, sMotive)
+			J.SetQueuePtToINT(bot, true)
+			bot:ActionQueue_UseAbilityOnEntity(abilityQ, castQTarget)
+			return
+		end
+		castEDesire, castETarget, sMotive = X.ConsiderE()
 	end
-
-
-	castEDesire, castETarget, sMotive = X.ConsiderE()
 	if ( castEDesire > 0 )
 	then
 		J.SetReportMotive( bDebugMode, sMotive )
@@ -240,6 +245,18 @@ function X.SkillsComplement()
 
 end
 
+function X.GetLaneShacklesTarget()
+	if not J.IsInLaningPhase(bot) or not abilityE or not J.CanCastAbility(abilityE) or nHP < 0.55
+		or bot:WasRecentlyDamagedByAnyHero(1.5) then return nil end
+	local partner = J.GetLanePartner(bot)
+	local enemy = J.GetLaningPeelTarget(bot, partner, hEnemyList, abilityE:GetCastRange() + aetherRange)
+	if enemy == nil then return nil end
+	for _, other in ipairs(hEnemyList) do
+		if other ~= enemy and J.IsValidHero(other) and not J.IsSuspiciousIllusion(other) and not J.IsDisabled(other)
+			and J.IsInRange(bot, other, math.max(550, other:GetAttackRange() + 200)) then return nil end
+	end
+	return enemy
+end
 
 function X.ConsiderQ()
 
@@ -268,6 +285,18 @@ function X.ConsiderQ()
 	end
 
 
+	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
+	if holdTower ~= nil then
+		local radius = abilityQ:GetSpecialValueInt('start_radius')
+		for _, creep in ipairs(bot:GetNearbyLaneCreeps(math.min(1600, nCastRange + aetherRange), true)) do
+			if J.IsValid(creep) and not creep:HasModifier('modifier_fountain_glyph')
+				and GetUnitToUnitDistance(holdTower, creep) <= 1050
+				and J.GetInLocLaneCreepCount(bot, 1600, radius, creep:GetLocation()) >= 2 then
+				return BOT_ACTION_DESIRE_HIGH, creep, 'Q-DefendWave'
+			end
+		end
+	end
+
 	if J.IsInTeamFight( bot, 1200 ) and nLV >= 5
 	then
 		local nWeakestEnemy = nil
@@ -295,7 +324,7 @@ function X.ConsiderQ()
 	end
 
 
-	if J.IsGoingOnSomeone( bot )
+	if J.IsGoingOnSomeone(bot) and HasAttackFollowUp(botTarget)
 	then
 		if J.IsValidHero( botTarget )
 			and J.IsInRange( bot, botTarget, nCastRange )
@@ -332,6 +361,8 @@ function X.ConsiderQ()
 	then
 		if nMP > 0.5
 		then
+			local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange + aetherRange)
+			if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'Q-LaneCover' end
 			for _, npcEnemy in pairs( nInRangeEnemyList )
 			do
 				if J.IsValid( npcEnemy )
@@ -495,6 +526,10 @@ function X.ConsiderW()
 		end
 	end
 
+	if J.IsInLaningPhase(bot) then
+		local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange)
+		if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'W-LaneCover' end
+	end
 
 
 	if J.IsInTeamFight( bot, 1200 )
@@ -531,7 +566,7 @@ function X.ConsiderW()
 
 
 
-	if J.IsGoingOnSomeone( bot )
+	if J.IsGoingOnSomeone(bot) and HasAttackFollowUp(botTarget)
 	then
 		if J.IsValidHero( botTarget )
 			and J.CanCastOnNonMagicImmune( botTarget )
@@ -677,7 +712,7 @@ function X.ConsiderE()
 	end
 
 
-	if J.IsGoingOnSomeone( bot )
+	if J.IsGoingOnSomeone(bot) and HasAttackFollowUp(botTarget)
 	then
 		if J.IsValidHero( botTarget )
 			and J.IsInRange( bot, botTarget, nCastRange + 30 )
@@ -752,7 +787,7 @@ function X.ConsiderR()
 		return BOT_ACTION_DESIRE_HIGH, location, 'R-Pushing', building
 	end
 
-	if J.IsGoingOnSomeone( bot )
+	if J.IsGoingOnSomeone(bot) and HasAttackFollowUp(botTarget)
 	then
 		local nAoeLoc = J.GetAoeEnemyHeroLocation( bot, nCastRange + 100, nRadius, 2 )
 		if nAoeLoc ~= nil
@@ -765,6 +800,8 @@ function X.ConsiderR()
 			and J.IsInRange( bot, botTarget, nCastRange )
 			and J.CanCastOnMagicImmune( botTarget )
 			and botTarget:GetHealth() > bot:GetAttackDamage() * 3
+			and J.GetAvailableFightAllies(bot, botTarget:GetLocation(), 900) >= 1
+			and (J.IsDisabled(botTarget) or botTarget:IsRooted())
 		then
 			targetLocation = botTarget:GetExtrapolatedLocation( nCastPoint )
 			return BOT_ACTION_DESIRE_HIGH, targetLocation, "R-Attack:"..J.Chat.GetNormName( botTarget )
@@ -772,16 +809,23 @@ function X.ConsiderR()
 	end
 
 
-	if J.IsRetreating( bot )
+	if J.IsRetreating( bot ) and nHP < 0.4
 	then
 		for _, npcEnemy in pairs( nInRangeEnemyList )
 		do
 			if J.IsValidHero( npcEnemy )
 				and J.CanCastOnMagicImmune( npcEnemy )
-				and bot:WasRecentlyDamagedByHero( npcEnemy, 3.0 )
+				and not J.IsDisabled(npcEnemy)
+				and bot:WasRecentlyDamagedByHero(npcEnemy, 1.5)
+				and J.IsChasingTarget(npcEnemy, bot)
+				and J.IsInRange(bot, npcEnemy, 425)
+				and not (J.CanCastAbility(abilityW) and J.CanCastOnNonMagicImmune(npcEnemy)
+					and J.CanCastOnTargetAdvanced(npcEnemy))
 			then
 				targetLocation = npcEnemy:GetExtrapolatedLocation( nCastPoint )
-				return BOT_ACTION_DESIRE_HIGH, targetLocation, "R-Retreat:"..J.Chat.GetNormName( npcEnemy )
+				if IsLocationPassable(targetLocation) then
+					return BOT_ACTION_DESIRE_HIGH, targetLocation, "R-Retreat:"..J.Chat.GetNormName( npcEnemy )
+				end
 			end
 		end
 	end
@@ -794,23 +838,28 @@ end
 function X.GetSiegeWardTarget(castRange)
 	if J.IsRetreating(bot) or bot:WasRecentlyDamagedByAnyHero(2) then return end
 	local attackTarget = bot:GetAttackTarget()
-	if not J.IsPushing(bot) and not J.IsValidBuilding(attackTarget) then return end
-	local buildings = {attackTarget, bot:GetNearbyTowers(1300, true)[1],
-		bot:GetNearbyBarracks(1300, true)[1], GetAncient(GetOpposingTeam())}
+	local enemyTeam = GetOpposingTeam()
+	local attackingBuilding = J.IsValidBuilding(attackTarget) and attackTarget:GetTeam() == enemyTeam
+	local committed = J.IsPushing(bot) or attackingBuilding
+	local buildings = bot:GetNearbyTowers(1300, true)
+	if attackingBuilding then table.insert(buildings, 1, attackTarget) end
+	for _, barracks in ipairs(bot:GetNearbyBarracks(1300, true)) do buildings[#buildings + 1] = barracks end
+	buildings[#buildings + 1] = GetAncient(enemyTeam)
 	local wave = bot:GetNearbyLaneCreeps(1300, false)
-	for _, building in pairs(buildings) do
-		if J.IsValidBuilding(building) and building:GetTeam() == GetOpposingTeam() and J.CanBeAttacked(building)
+	for _, building in ipairs(buildings) do
+		if J.IsValidBuilding(building) and building:GetTeam() == enemyTeam and J.CanBeAttacked(building)
 			and not building:HasModifier('modifier_fountain_glyph')
-			and not building:HasModifier('modifier_backdoor_protection')
-			and not building:HasModifier('modifier_backdoor_protection_active')
-			and not building:HasModifier('modifier_backdoor_protection_in_base') then
+			and not building:HasModifier('modifier_backdoor_protection_active') then
 			local location = J.GetUnitTowardDistanceLocation(building, bot, 240)
 			if GetUnitToLocationDistance(bot, location) <= castRange and IsLocationPassable(location) then
 				local defenders = #J.GetEnemiesNearLoc(building:GetLocation(), 1100)
-				if defenders == 0 or J.GetAvailableFightAllies(bot, location, 1200) > defenders then
+				local allies = J.GetAvailableFightAllies(bot, location, 1200)
+				if (committed and (defenders == 0 or allies > defenders)) or (defenders == 0 and allies > 0) then
+					local creeps = 0
 					for _, creep in ipairs(wave) do
 						if J.IsValid(creep) and J.IsInRange(creep, building, 800) then
-							return building, location
+							creeps = creeps + 1
+							if creeps >= (committed and 1 or 2) then return building, location end
 						end
 					end
 				end

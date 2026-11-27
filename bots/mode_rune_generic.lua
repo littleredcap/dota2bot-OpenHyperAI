@@ -53,20 +53,32 @@ local wisdomRuneSpots = { [TEAM_RADIANT] = radiantWRLocation, [TEAM_DIRE] = dire
 local nShrineOfWisdomTime = 0
 local nShrineOfWisdomTeam = TEAM_RADIANT
 local pursueWisdom, issuedBountySpot = false, nil
+local issuedRiverMove = false
 
 local function IsBountySpot(rune)
 	return rune == RUNE_BOUNTY_1 or rune == RUNE_BOUNTY_2
 end
 
+local function IsMidPowerRuneWindow()
+	return DotaTime() >= 6 * 60 - 6 and botPos == 2 and botAssignedLane == LANE_MID and J.IsInLaningPhase(bot)
+end
+
 local function MustStayForObjective()
 	local ancient = GetAncient(GetTeam())
-	return J.Utils.IsTeamPushingSecondTierOrHighGround(bot)
+	return (bot.ohaIdleRecoveryUntil or 0) > math.max(0, DotaTime())
+		or (bot.ohaOuterTowerHoldUntil or 0) > math.max(0, DotaTime())
+		or J.Utils.IsTeamPushingSecondTierOrHighGround(bot)
 		or (ancient ~= nil and J.Utils.CountEnemyHeroesNear(ancient:GetLocation(), 3200) > 0)
 end
 
 local function CancelBountyMove()
 	if issuedBountySpot ~= nil and not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
 	issuedBountySpot = nil
+end
+
+local function CancelRiverMove()
+	if issuedRiverMove and not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
+	issuedRiverMove = false
 end
 
 --------------------------------------------------------------------
@@ -148,6 +160,7 @@ function GetDesire()
 	end
 
 	local midRuneWindow = botPos == 2 and botAssignedLane == LANE_MID and DotaTime() >= 113 and DotaTime() < 6 * 60
+	local midPowerRuneWindow = IsMidPowerRuneWindow()
 
 	-- Core rune logic using bot.rune state (reference pattern)
 	if bot.rune and bot.rune.normal then
@@ -163,7 +176,7 @@ function GetDesire()
 
 		if rune.location ~= -1 then
 			if DotaTime() > -10 and bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE
-				and not midRuneWindow and not IsBountySpot(rune.location) then return BOT_MODE_DESIRE_NONE end
+				and not midRuneWindow and not midPowerRuneWindow and not IsBountySpot(rune.location) then return BOT_MODE_DESIRE_NONE end
 			rune.type = GetRuneType(rune.location)
 			rune.status = GetRuneStatus(rune.location)
 
@@ -183,7 +196,8 @@ function GetDesire()
 				return X.GetScaledDesire(priority, rune.distance, 3000)
 			else
 				-- Power rune / water rune
-				if midRuneWindow and rune.distance > 150 and (rune.type == RUNE_WATER or rune.status ~= RUNE_STATUS_AVAILABLE) then
+				if (midRuneWindow or midPowerRuneWindow) and rune.distance > 150
+					and (rune.type == RUNE_WATER or rune.status ~= RUNE_STATUS_AVAILABLE or rune.distance > 650) then
 					local creeps = bot:GetNearbyLaneCreeps(math.min(1600, bot:GetAttackRange() + 300), true)
 					local hit, approach, reserve = J.GetLaningLastHitTarget(bot, creeps,
 						bot:GetNearbyTowers(1200, true)[1], J.GetLaningAttackDamage(bot), nEnemyHeroes)
@@ -194,6 +208,9 @@ function GetDesire()
 				end
 				if rune.status == RUNE_STATUS_AVAILABLE then
 					if X.IsEnemyPickRune(rune.location) then return BOT_MODE_DESIRE_NONE end
+					if midPowerRuneWindow and rune.type ~= RUNE_WATER then
+						return X.GetScaledDesire(0.88, rune.distance, 1800)
+					end
 
 					local nRuneType = rune.type
 					-- Water rune support (local addition)
@@ -240,6 +257,7 @@ end
 function OnEnd()
 	Bottle = nil
 	CancelBountyMove()
+	CancelRiverMove()
 	bot.ohaWisdomMoveUntil = nil
 end
 
@@ -254,10 +272,17 @@ function Think()
 	end
 
 	if J.CanNotUseAction(bot) then return end
-	if DotaTime() >= 0 and MustStayForObjective() then CancelBountyMove(); return end
+	if DotaTime() >= 0 and MustStayForObjective() then
+		CancelBountyMove()
+		CancelRiverMove()
+		return
+	end
 	local picking = bot:GetCurrentActionType() == BOT_ACTION_TYPE_PICK_UP_RUNE
 	if pursueWisdom or not (bot.rune and bot.rune.normal and IsBountySpot(bot.rune.normal.location)) then
 		if issuedBountySpot ~= nil then CancelBountyMove(); picking = false end
+	end
+	if pursueWisdom or (bot.rune and bot.rune.normal and IsBountySpot(bot.rune.normal.location)) then
+		CancelRiverMove()
 	end
 	if picking and issuedBountySpot == nil then return end
 
@@ -276,7 +301,7 @@ function Think()
 					and ((not enemyHero:IsBot())
 						or (GetUnitToLocationDistance(enemyHero, vLocation) + 400 < GetUnitToLocationDistance(bot, vLocation)))
 					then
-						wisdom.spot[nShrineOfWisdomTeam].status = true
+						return
 					end
 				end
 
@@ -289,7 +314,7 @@ function Think()
 
 				bot.rune.location = vLocation
 				bot.ohaWisdomMoveUntil = DotaTime() + 2
-				bot:Action_MoveDirectly(vLocation)
+				bot:Action_MoveToLocation(vLocation)
 				return
 			else
 				nInRangeEnemy = J.GetEnemiesNearLoc(vLocation, 300)
@@ -357,9 +382,6 @@ function Think()
 
 	-- Post-horn rune pickup (reference pattern using bot.rune state)
 	if bot.rune and bot.rune.normal then
-		local botAttackRange = math.min(bot:GetAttackRange() + 150, 1200)
-		local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), botAttackRange)
-		local nEnemyCreeps = bot:GetNearbyCreeps(botAttackRange, true)
 		local rune = bot.rune.normal
 		if IsBountySpot(rune.location) then
 			local assigned, distance = X.GetBountyAssignment()
@@ -379,72 +401,32 @@ function Think()
 			issuedBountySpot = assigned
 			return
 		end
-		if rune.location == -1 then return end
+		if rune.location == -1 then CancelRiverMove(); return end
 
 		local vRuneLocation = GetRuneSpawnLocation(rune.location)
-
-		if rune.status == RUNE_STATUS_AVAILABLE then
-			if rune.type == RUNE_WATER and GetUnitToLocationDistance(bot, vRuneLocation) <= 80 then
-				bot:Action_PickUpRune(rune.location)
-				return
-			end
-			if Bottle and J.CanCastAbility(Bottle) and rune.distance < 1200 then
-				local nCharges = Bottle:GetCurrentCharges()
-				if nCharges > 0 and (botHP ~= 1 or botMP ~= 1) then
-					bot:Action_UseAbility(Bottle)
-					return
-				end
-			end
-
-			if rune.distance > 50 then
-				for _, enemyHero in pairs(nInRangeEnemy) do
-					if J.IsValidHero(enemyHero)
-					and (1.5 * bot:GetEstimatedDamageToTarget(false, bot, 5.0, DAMAGE_TYPE_ALL) > enemyHero:GetEstimatedDamageToTarget(true, bot, 5.0, DAMAGE_TYPE_ALL))
-					and botHP > 0.3
-					then
-						bot:Action_AttackUnit(enemyHero, true)
-						return
-					end
-				end
-
-				if J.IsValid(nEnemyCreeps[1])
-				and J.CanBeAttacked(nEnemyCreeps[1])
-				and J.CanKillTarget(nEnemyCreeps[1], bot:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
-				then
-					bot:Action_AttackUnit(nEnemyCreeps[1], true)
-					return
-				end
-
-				bot.rune.location = vRuneLocation
-				bot:Action_MoveToLocation(vRuneLocation)
-				return
-			else
-				bot:Action_PickUpRune(rune.location)
-				return
-			end
-		else
-			for _, enemyHero in pairs(nInRangeEnemy) do
-				if J.IsValidHero(enemyHero)
-				and (1.6 * bot:GetEstimatedDamageToTarget(false, bot, 5.0, DAMAGE_TYPE_ALL) > enemyHero:GetEstimatedDamageToTarget(true, bot, 5.0, DAMAGE_TYPE_ALL))
-				and botHP > 0.3
-				then
-					bot:Action_AttackUnit(enemyHero, true)
-					return
-				end
-			end
-
-			if J.IsValid(nEnemyCreeps[1])
-			and J.CanBeAttacked(nEnemyCreeps[1])
-			and J.CanKillTarget(nEnemyCreeps[1], bot:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
-			then
-				bot:Action_AttackUnit(nEnemyCreeps[1], true)
-				return
-			end
-
-			bot.rune.location = vRuneLocation
-			bot:Action_MoveToLocation(vRuneLocation)
+		local distance = GetUnitToLocationDistance(bot, vRuneLocation)
+		local status = GetRuneStatus(rune.location)
+		if X.IsEnemyPickRune(rune.location) or (status == RUNE_STATUS_MISSING and X.IsMissing(rune.location)) then
+			CancelRiverMove()
 			return
 		end
+		if status == RUNE_STATUS_AVAILABLE and distance <= 100 then
+			bot:Action_PickUpRune(rune.location)
+			issuedRiverMove = false
+			return
+		end
+		if status == RUNE_STATUS_AVAILABLE and distance < 1200 and Bottle and J.CanCastAbility(Bottle)
+			and Bottle:GetCurrentCharges() > 0 and (botHP < 0.9 or botMP < 0.9)
+			and #J.GetEnemiesNearLoc(vRuneLocation, 1400) == 0 then
+			bot:Action_UseAbility(Bottle)
+			issuedRiverMove = false
+			return
+		end
+		if distance > 100 then
+			bot:Action_MoveToLocation(vRuneLocation)
+			issuedRiverMove = true
+		end
+		bot.rune.location = vRuneLocation
 	end
 end
 
@@ -561,7 +543,13 @@ function X.GetBountyAssignment()
 						choices[spot] = {false}
 						break
 					end
-					if distance <= (available and 2400 or 900) then
+					local scoutRange = 900
+					if not available and DotaTime() >= 14 * 60 and not J.IsCore(member)
+						and (not member.ohaWaveClaim or member.ohaWaveClaim.expires <= DotaTime())
+						and #member:GetNearbyLaneCreeps(850, true) == 0 then
+						scoutRange = math.min(1700, member:GetCurrentMovementSpeed() * 5)
+					end
+					if distance <= (available and 2400 or scoutRange) then
 						local cost = BountyTravelCost(member, location, distance)
 						if cost then candidates[#candidates + 1] = {member = member, spot = spot, distance = distance,
 							cost = cost, available = available} end
@@ -594,6 +582,19 @@ end
 function X.GetBestRune()
 	minute = math.floor(DotaTime() / 60)
 	second = DotaTime() % 60
+	if IsMidPowerRuneWindow() then
+		local confirmed, nearest = -1, 1800
+		for _, rune in ipairs({RUNE_POWERUP_1, RUNE_POWERUP_2}) do
+			local location = GetRuneSpawnLocation(rune)
+			local distance = GetUnitToLocationDistance(bot, location)
+			if distance < nearest and GetRuneStatus(rune) == RUNE_STATUS_AVAILABLE
+				and X.IsTheClosestAlly(bot, location) and not IsHumanClaimingRune(rune)
+				and not X.IsEnemyPickRune(rune) then
+				confirmed, nearest = rune, distance
+			end
+		end
+		if confirmed ~= -1 then return confirmed, nearest end
+	end
 	if DotaTime() >= 0 then
 		local bounty, distance = X.GetBountyAssignment()
 		if bounty then return bounty, distance end
@@ -723,9 +724,9 @@ end
 function X.IsEnemyPickRune(nRune)
 	local vRuneLocation = GetRuneSpawnLocation(nRune)
 
-	if GetUnitToLocationDistance(bot, vRuneLocation) < 600 then return false end
+	if GetUnitToLocationDistance(bot, vRuneLocation) <= 100 then return false end
 
-	for _, enemy in pairs(nEnemyHeroes) do
+	for _, enemy in ipairs(J.GetEnemiesNearLoc(vRuneLocation, 1400)) do
 		if J.IsValidHero(enemy)
 		and not J.IsSuspiciousIllusion(enemy)
 		and (enemy:IsFacingLocation(vRuneLocation, 30) or GetUnitToLocationDistance(enemy, vRuneLocation) < 600)
@@ -886,7 +887,8 @@ function X.GetWisdomAlly(vLocation)
 	local targetDistance = math.huge
 	for i = 1, 5 do
 		local member = GetTeamMember(i)
-		if J.IsValidHero(member) and not J.IsDoingTormentor(member) then
+		if J.IsValidHero(member) and not J.IsDoingTormentor(member) and not J.IsRetreating(member) and J.GetHP(member) >= 0.55
+			and (not member:IsBot() or J.CanLeaveLane(member)) then
 			local memberDistance = GetUnitToLocationDistance(member, vLocation)
 			if memberDistance < targetDistance then
 				target = member
@@ -899,7 +901,7 @@ end
 
 function X.GetWisdomDesire(vLocation)
 	if (J.IsDefending(bot) and botActiveModeDesire > 0.7)
-	or J.IsInTeamFight(bot, 1600) then
+	or J.IsInTeamFight(bot, 1600) or #J.GetEnemiesNearLoc(vLocation, 850) > 0 then
 		return 0
 	end
 

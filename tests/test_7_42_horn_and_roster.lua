@@ -54,7 +54,7 @@ print('PASS: Dire roster lookup uses team slots and handles an empty roster')
 
 local function enemy(name, visible, illusion)
     return {CanBeSeen = function() return visible end, IsNull = no, IsAlive = yes, IsHero = yes,
-        IsIllusion = function() return illusion end, GetUnitName = function()
+        suspected = illusion, IsIllusion = function() error('IsIllusion is restricted to allies') end, GetUnitName = function()
             assert(visible, 'read a hidden hero')
             return name
         end}
@@ -62,6 +62,13 @@ end
 local enemyCode = section('bots/FunLib/advanced_item_strategy.lua', 'local function getEnemyHeroes()',
     'local function applyHeroSpecificModifications')
 env.UnitType = {EnemyHeroes = 700}
+env.jmz = {
+    IsValidHero = function(unit) return unit:CanBeSeen() end,
+    IsSuspiciousIllusion = function(unit)
+        assert(unit:CanBeSeen(), 'enemy must be visible before checking for illusions')
+        return unit.suspected
+    end,
+}
 env.GetUnitList = function(kind)
     assert(kind == 700)
     return {enemy('seen', true, false), enemy('seen', true, false), enemy('hidden', false, false),
@@ -71,6 +78,25 @@ local getEnemies = setfenv(assert(loadstring(enemyCode .. '\nreturn getEnemyHero
 local enemies = getEnemies()
 assert(#enemies == 1 and enemies[1] == 'seen', 'enemy item strategy counted duplicates or hidden units')
 print('PASS: adaptive item planning only uses unique visible enemy heroes')
+
+local jmzPath = 'bots/FunLib/jmz_func.lua'
+local targetCode = section(jmzPath, 'function J.GetProperTarget(', 'function J.IsAllyCanKill(')
+    .. section(jmzPath, 'function J.IsChasingTarget(', 'function J.IsRealInvisible(')
+local target = {visible = false, IsNull = no, GetTeam = function() return 3 end}
+target.CanBeSeen = function() return target.visible end
+local pursuer = {visible = true, IsNull = no, CanBeSeen = yes, GetTeam = function() return 2 end,
+    GetTarget = function() return target end, GetLocation = function() return 0 end, IsFacingLocation = yes}
+target.GetLocation, target.IsFacingLocation = function() return 10 end, no
+local j = {
+    IsValid = function(unit) return unit ~= nil and unit:CanBeSeen() end,
+    IsRunning = function(unit) assert(unit:CanBeSeen()); return true end,
+}
+local targetEnv = setmetatable({J = j, GetBot = function() return pursuer end}, {__index = _G})
+setfenv(assert(loadstring(targetCode)), targetEnv)()
+assert(j.GetProperTarget(pursuer) == nil and not j.IsChasingTarget(pursuer, target))
+target.visible = true
+assert(j.GetProperTarget(pursuer) == target and j.IsChasingTarget(pursuer, target))
+print('PASS: cached targets in fog cannot supply live combat state')
 
 local usagePath = 'bots/ability_item_usage_generic.lua'
 local usageCode = section(usagePath, 'local battleHorn =', 'function X.IsWithoutSpellShield')

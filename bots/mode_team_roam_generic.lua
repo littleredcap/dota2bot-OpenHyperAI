@@ -26,7 +26,7 @@ local nTpSolt = 15
 
 local beInitDone, IsSupport, IsHeroCore, bePvNMode = false, false, false, false
 local ShouldAttackSpecialUnit = false
-local lastIdleStateCheck, isInIdleState = -1, false
+local lastIdleStateCheck = -1
 local rescueAlly, rescueEnemy, issuedRescueTarget
 local nearbyAllies, nearbyEnemies
 local focusEnemy, issuedFocusTarget
@@ -47,6 +47,10 @@ local lastCheckBotToDropTime = 0
 local IsAvoidingAbilityZone = false
 
 local hTargetCreep = nil
+
+local function CanSupportCommitToTarget(target)
+    return not J.IsInLaningPhase(bot) or not J.IsValidHero(target) or J.HasLaneFightFollowUp(bot, target)
+end
 
 local function CancelRescueOrder()
     if issuedRescueTarget == nil then return end
@@ -69,7 +73,7 @@ function GetDesire()
     -- if DotaTime() > 30 and cachedVar ~= nil then return cachedVar end
 
     local res = GetDesireHelper()
-    res = CapForLanePush(res)
+    if rescueEnemy == nil then res = CapForLanePush(res) end
 
     -- J.Utils.SetCachedVars(cacheKey, res)
     return res
@@ -83,17 +87,21 @@ function GetDesireHelper()
     end
 
     if J.ShouldRetreatFromEnemyReinforcements(bot) then return BOT_MODE_DESIRE_NONE end
+    if (bot.ohaOuterTowerHoldUntil or 0) > math.max(0, DotaTime()) then
+        IsAvoidingAbilityZone = HasModifierThatNeedToAvoidEffects() or bot:HasModifier('modifier_warlock_upheaval')
+        return IsAvoidingAbilityZone and BOT_ACTION_DESIRE_VERYHIGH + 0.1 or BOT_MODE_DESIRE_NONE
+    end
 
     Utils.SetFrameProcessTime(bot)
     EnemyRoles.UpdateEnemyHeroPositions()
 
     IsAvoidingAbilityZone = false
 
-    bot.laneToPush   = J.GetMostPushLaneDesire()
+    bot.laneToPush   = bot.ohaPostFightPushLane or J.GetMostPushLaneDesire()
     bot.laneToDefend = J.GetMostDefendLaneDesire()
 
-    if DotaTime() - lastIdleStateCheck >= 1 or isInIdleState then
-        isInIdleState = J.CheckBotIdleState()
+    if DotaTime() - lastIdleStateCheck >= 1 then
+        J.CheckBotIdleState()
         lastIdleStateCheck = DotaTime()
     end
 
@@ -155,6 +163,7 @@ function GetDesireHelper()
     if isBattleHorn then return itemDesire end
 
     focusEnemy = J.GetSupportedFightTarget(bot, nearbyEnemies, nearbyAllies)
+    if IsSupport and not CanSupportCommitToTarget(focusEnemy) then focusEnemy = nil end
     if focusEnemy ~= nil then return 0.86 end
 
     if not J.IsFarming(bot) and not J.IsPushing(bot) and not J.IsDefending(bot)
@@ -178,7 +187,7 @@ function GetDesireHelper()
         end
         if IsSupport then
             local botTarget, targetDesire = X.SupportFindTarget()
-            if botTarget ~= nil then
+            if botTarget ~= nil and CanSupportCommitToTarget(botTarget) then
                 targetUnit = botTarget
                 bot:SetTarget(botTarget)
                 return RemapValClamped(J.GetHP(bot), 0, 0.4, BOT_MODE_DESIRE_NONE, targetDesire)
@@ -325,7 +334,8 @@ function Think()
 
     if focusEnemy ~= nil then
         local location = bot:GetLocation()
-        if J.GetSupportedFightTarget(bot, J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)) == focusEnemy then
+        if (not IsSupport or CanSupportCommitToTarget(focusEnemy))
+            and J.GetSupportedFightTarget(bot, J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)) == focusEnemy then
             bot:SetTarget(focusEnemy)
             bot:Action_AttackUnit(focusEnemy, true)
             issuedFocusTarget = focusEnemy
@@ -355,6 +365,11 @@ function Think()
 	end
 
 	-- Leash & validity guard to prevent pacing back and forth
+	if IsSupport and J.IsValidHero(targetUnit) and not CanSupportCommitToTarget(targetUnit) then
+		if bot:GetAttackTarget() == targetUnit then bot:Action_ClearActions(true) end
+		if bot:GetTarget() == targetUnit then bot:SetTarget(nil) end
+		targetUnit = nil
+	end
 	if targetUnit ~= nil then
 		if (not J.Utils.IsValidUnit(targetUnit))
 		or (not X.CanBeAttacked(targetUnit))
@@ -378,10 +393,6 @@ function Think()
     if towerCreepMode then
         bot:Action_AttackUnit(towerCreep, false)
         return
-    end
-
-    if isInIdleState then
-        isInIdleState = J.CheckBotIdleState()
     end
 
     if not ShouldAttackSpecialUnit and ItemOpsThink() then return end

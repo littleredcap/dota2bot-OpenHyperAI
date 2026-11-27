@@ -38,58 +38,124 @@ assert(result[2][1] == radiantSafe and result[2][2] == left and radiantSafe.stat
 assert(result[3][1] == direSafe and result[3][2] == right and direSafe.stats.role == 1)
 
 local function roam(opts)
-    local scored = {}
-    local pos = opts.pos or 4
+    local time, orders, target = 600, {}, nil
+    local function distance(a, b) return math.abs(a.x - b.x) end
+    local enemy = {x = opts.enemyX or 1700, hp = 0.65, IsMagicImmune = no,
+        GetLocation = function(self) return self end, GetHealth = function() return 450 end,
+        GetAttackRange = function() return 600 end}
+    local partner = {x = enemy.x - 200, IsIllusion = no, IsAlive = yes, HasModifier = no,
+        GetLocation = function(self) return self end, GetAssignedLane = function() return 2 end,
+        GetEstimatedDamageToTarget = function() return 260 end}
     local bot = {
-        GetUnitName = function() return 'npc_dota_hero_axe' end,
-        IsAlive = yes, IsHero = yes, IsInvulnerable = no, IsIllusion = no,
-        GetLocation = function() return 'bot' end, GetAbilityByName = nilValue,
-        GetMana = function() return 600 end,
+        x = 0, GetUnitName = function() return 'npc_dota_hero_test' end,
+        IsAlive = yes, IsHero = yes, IsInvulnerable = no, IsIllusion = no, GetTeam = function() return 2 end,
+        IsUsingAbility = no, IsChanneling = no, HasModifier = no,
+        WasRecentlyDamagedByTower = no, WasRecentlyDamagedByAnyHero = no,
+        GetActiveMode = function() return 0 end, GetNearbyHeroes = empty, GetNearbyTowers = empty,
+        GetLocation = function(self) return self end, GetAbilityByName = nilValue,
+        GetAbilityInSlot = function(_, slot)
+            return opts.ready ~= false and slot == 1 and {IsPassive = no,
+                GetName = function() return 'shadow_shaman_voodoo' end, GetCastRange = function() return 500 end} or nil
+        end,
+        GetCurrentMovementSpeed = function() return 300 end, GetAttackRange = function() return 500 end,
+        GetEstimatedDamageToTarget = function() return 200 end,
         GetLevel = function() return opts.level or 4 end,
         GetAssignedLane = function() return opts.own or 1 end,
+        GetTarget = function() return target end, SetTarget = function(_, unit) target = unit end,
+        Action_MoveToLocation = function(_, point) orders[#orders+1] = {point = point} end,
+        Action_AttackUnit = function(_, unit) orders[#orders+1] = {target = unit} end,
+        Action_UseAbilityOnLocation = function(_, _, point) orders[#orders+1] = {tp = point} end,
     }
-    local J = {
-        Utils = {GameStates = {twinGates = {}}},
-        GetEnemiesNearLoc = empty,
-        GetEnemyCountInLane = function(lane) return (opts.lanes or {})[lane] and 1 or 0 end,
-        GetPosition = function() return pos end,
-        IsInLaningPhase = function() return opts.laning or false end,
-        GetAlliesNearLoc = function() return {{}} end,
-        HasItem = function(_, name) assert(name == 'item_tpscroll'); return opts.tp or false end,
-    }
-    local env = loadProduction('bots/mode_roam_generic.lua', {
-        require = function(name) if name:find('jmz_func', 1, true) then return J end; return {} end,
-        GetScriptDirectory = function() return 'bots' end,
-        GetBot = function() return bot end, GetTeam = function() return 2 end,
-        LANE_TOP = 1, LANE_MID = 2, LANE_BOT = 3,
-        TOWER_TOP_1 = 11, TOWER_MID_1 = 12, TOWER_BOT_1 = 13,
-        GetTower = function(_, tower) return tower end,
-        GetLaneFrontLocation = function(_, lane) return lane end,
-        GetUnitToLocationDistance = function(unit, lane)
-            if unit == bot then return opts.lanes[lane] end
-            return 500
+    local scroll = {}
+    local j = {
+        Utils = {GameStates = {}, IsBotThinkingMeaningfulAction = no, ShouldBotsSpreadOut = no,
+            GetItemFromFullInventory = function() return opts.tp and scroll end},
+        GetChronosphereAvoidanceLocation = nilValue, GetShrapnelEscapeLocation = nilValue,
+        CanNotUseAction = no, GetProperTarget = nilValue,
+        GetPosition = function() return opts.position or 4 end, IsAttacking = no,
+        IsInLaningPhase = yes, IsRetreating = no, IsDefending = no, HasHealingItem = no,
+        IsDisabled = function(unit) return unit == enemy and opts.controlLanded end,
+        CanFollowLaneFight = function() return not opts.noFollowUp end,
+        WeAreStronger = yes, CanBeAttacked = yes, IsSuspiciousIllusion = no,
+        GetHP = function(unit) return unit.hp or 1 end,
+        IsInRange = function(unit, point, range) return distance(unit, point) <= range end,
+        GetModifierTime = function() return 0 end, GetModifierCount = function() return 0 end,
+        GetAlliesNearLoc = function() return opts.noPartner and {} or {partner} end,
+        GetEnemiesNearLoc = function(point, range)
+            return not opts.enemyGone and distance(point, enemy) <= range and {enemy} or {}
         end,
-        DotaTime = function() return 600 end,
-        RemapValClamped = function(distance) scored[#scored + 1] = distance; return 0.5 end,
-        Clamp = function(value) return value end,
-        BOT_MODE_DESIRE_NONE = 0, BOT_ACTION_DESIRE_VERYHIGH = 0.9,
-        BOT_ACTION_DESIRE_MODERATE = 0.4, BOT_ACTION_DESIRE_HIGH = 0.7,
+        IsValidHero = function(unit) return unit == partner or unit == enemy and not opts.enemyGone end,
+        IsValidBuilding = function(unit) return unit ~= nil and unit.tower end,
+        CanLeaveLane = function() return not opts.unsafeLane end,
+        CanCastAbility = function(spell) return not not spell end, IsStunProjectileSpell = no,
+        CanCommitToLaneTeleport = function() return not opts.unsafeLanding end,
+        GetLocationToLocationDistance = distance, GetLastSeenEnemiesNearLoc = empty,
+        GetLocationTowardDistanceLocation = function(_, _, delta) return {x = delta} end,
+        AdjustLocationWithOffsetTowardsFountain = function(loc, offset) return {x = loc.x - offset} end,
+        VectorTowards = function(loc, _, shift) return {x = loc.x - shift} end,
+    }
+    local tower = {x = enemy.x - 670, tower = true, GetLocation = function(self) return self end}
+    local env = loadProduction('bots/mode_roam_generic.lua', {
+        require = function(name) if name:find('jmz_func', 1, true) then return j end; return {} end,
+        GetScriptDirectory = function() return 'bots' end,
+        GetBot = function() return bot end, GetTeam = function() return 2 end, GetOpposingTeam = function() return 3 end,
+        GetTeamPlayers = function() return {1, 2} end, GetTeamMember = function(i) return i == 1 and bot or partner end,
+        LANE_TOP = 1, LANE_MID = 2, LANE_BOT = 3,
+        TOWER_TOP_1 = 11, TOWER_MID_1 = 12, TOWER_BOT_1 = 13, TOWER_TOP_2 = 21, TOWER_MID_2 = 22, TOWER_BOT_2 = 23,
+        GetTower = function(team, id) if team == 2 and id == 12 then return tower end end,
+        GetUnitToLocationDistance = distance, GetUnitToUnitDistance = distance, IsLocationPassable = yes,
+        DotaTime = function() return time end, Clamp = function(value) return value end,
+        BOT_MODE_DESIRE_NONE = 0, BOT_ACTION_DESIRE_NONE = 0,
     })
-    assert(env.botLevel == nil, 'test must not rely on a shared level global')
-    return env.CheckLaneToGank(pos), scored
+    env.ConsiderHeroMoveOutsideFountain, env.CanBeAffectedByChainFrost = no, no
+    env.ConsiderUseTango = function() return 0 end
+    return env, bot, enemy, partner, orders, function(seconds) time = time + seconds end
 end
 
-local desire, scored = roam({lanes = {[1] = 500, [2] = 5000, [3] = 1400}})
-assert(desire == 0.6 and #scored == 1 and scored[1] == 1400, 'skip own/distant lane but continue to third')
-desire, scored = roam({lanes = {[1] = 400, [2] = 5000}, tp = true})
-assert(desire == 0.6 and #scored == 1 and scored[1] == 5000, 'TP allows distant other lane')
-desire, scored = roam({lanes = {[2] = 4000}})
-assert(desire == 0.6 and #scored == 1 and scored[1] == 4000, '4000 units does not require TP')
-desire, scored = roam({lanes = {[1] = 500, [2] = 5000}})
-assert(desire == 0 and #scored == 0, 'no qualifying lane')
-desire, scored = roam({level = 3, lanes = {[2] = 1000}})
-assert(desire == 0 and #scored == 0, 'level 3 cannot initiate pos 4 gank even with eligible lane')
-desire, scored = roam({pos = 2, level = 12, laning = true, lanes = {[2] = 1000}})
-assert(desire == 0 and #scored == 0, 'mid core remains barred in laning phase')
+do
+    local opts = {}
+    local mode, bot, enemy, _, orders = roam(opts)
+    assert(mode.GetDesire() == 0.66 and mode.GetDesire() == 0.66 and #orders == 0, 'score a gank without issuing orders')
+    mode.Think()
+    assert(bot.ohaLaneGank.target == enemy and orders[1].point.x == 1245, 'enter only to the range needed to cast control')
+    opts.unsafeLane = true
+    assert(mode.GetDesire() == 0 and bot.ohaLaneGank == nil, 'cancel when leaving the original lane becomes unsafe')
+end
 
-print('PASS: 3 role-assignment cases and 6 gank-lane cases')
+do
+    local opts = {noFollowUp=true}
+    local mode, bot, enemy, _, orders = roam(opts)
+    bot.x = enemy.x - 450
+    assert(mode.GetDesire() == 0.66)
+    mode.Think()
+    assert(orders[1].point.x == 860 and bot:GetTarget() == nil, 'wait on the safe side when the partner cannot hit')
+    opts.noFollowUp = false
+    mode.GetDesire()
+    mode.Think()
+    assert(bot.ohaLaneGank.ready and #orders == 1 and bot:GetTarget() == enemy, 'let the spell open before attacking')
+    opts.controlLanded = true
+    mode.GetDesire()
+    mode.Think()
+    assert(orders[2].target == enemy, 'follow the disable when the partner can also follow')
+end
+
+for _, opts in ipairs({{unsafeLane=true}, {noPartner=true}, {enemyGone=true}, {own=2}, {position=2}, {level=3}, {ready=false},
+    {enemyX=4400}, {enemyX=4400,tp=true,unsafeLanding=true}}) do
+    local mode, _, _, _, orders = roam(opts)
+    assert(mode.GetDesire() == 0 and #orders == 0, 'an invalid opening cannot win roam mode')
+end
+
+do
+    local mode, bot, _, partner, orders, advanceTime = roam({enemyX=4400,tp=true})
+    assert(mode.GetDesire() == 0.66)
+    partner.ohaLaneGank = {lane=2,expires=609}
+    mode.Think()
+    assert(#orders == 0 and bot.ohaLaneGank == nil, 'only one roamer may claim a destination')
+    partner.ohaLaneGank = nil
+    advanceTime(1)
+    assert(mode.GetDesire() == 0.66)
+    mode.Think()
+    assert(orders[1].tp.x == 3430 and bot.ohaLaneGank.landing == nil, 'use a safe arrival once')
+end
+
+print('PASS: role assignment and live gank planning, departure safety, claim, cancel, and TP')

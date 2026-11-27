@@ -28,7 +28,7 @@ local tAllAbilityBuildList = {
 							{2,1,2,3,2,6,2,1,3,3,6,3,1,1,6},--pos1,3
 }
 if sRole == 'pos_1' then
-	tAllAbilityBuildList = {{2,3,1,3,3,6,3,2,2,2,1,6,1,1,6}}
+	tAllAbilityBuildList = {{1,3,2,3,3,6,3,2,2,2,1,6,1,1,6}}
 end
 
 local nAbilityBuildList = J.Skill.GetRandomBuild( tAllAbilityBuildList )
@@ -40,8 +40,7 @@ local sRoleItemsBuyList = {}
 sRoleItemsBuyList['pos_1'] = {
 	"item_tango",
 	"item_double_branches",
-	"item_gauntlets",
-	"item_gauntlets",
+	"item_double_gauntlets",
 	"item_quelling_blade",
 
 	"item_magic_wand",
@@ -286,10 +285,15 @@ function X.ConsiderQ()
 		end
 	end
 
-	--对线期间对敌方英雄使用
+	-- Preserve the right click and keep enough mana for the next defensive stun.
 	if bot:GetActiveMode() == BOT_MODE_LANING or nLV <= 5
 	then
-		if not J.IsRetreating(bot) and (nMP >= 0.55 or #nEnemysHerosInView > 0) then
+		local laneShot = bot.ohaLaningAttackTarget ~= nil and J.HasPendingLaningLastHit(bot)
+		local peel = J.GetLaningPeelTarget(bot, bot, nEnemysHerosInRange, abilityQ:GetCastRange())
+		if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel end
+		local canSpareStun = bot:GetMana() >= nManaCost * 2
+			or (#nEnemysHerosInView == 0 and nMP >= 0.65)
+		if not laneShot and not J.IsRetreating(bot) and canSpareStun then
 			for _, creep in ipairs(bot:GetNearbyLaneCreeps(abilityQ:GetCastRange(), true)) do
 				if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsKeyWordUnit('ranged', creep)
 					and J.IsInRange(bot, creep, abilityQ:GetCastRange())
@@ -300,6 +304,7 @@ function X.ConsiderQ()
 				end
 			end
 		end
+		if laneShot and not J.IsRetreating(bot) then return BOT_ACTION_DESIRE_NONE end
 		for _, npcEnemy in pairs( nEnemysHerosInBonus )
 		do
 			if J.IsValid( npcEnemy )

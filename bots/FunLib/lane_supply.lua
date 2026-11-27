@@ -64,7 +64,7 @@ end
 local function needsHealth(bot)
     return J.GetHP(bot) < 0.68 and bot:OriginalGetMaxHealth() - bot:OriginalGetHealth() >= 160
         and not (bot:HasModifier('modifier_tango_heal') or bot:HasModifier('modifier_flask_healing')
-        or bot:HasModifier('modifier_bottle_regeneration') or bot:HasModifier('modifier_warlock_shadow_word')
+        or bot:HasModifier('modifier_bottle_regeneration')
         or bot:HasModifier('modifier_juggernaut_healing_ward_heal') or bot:HasModifier('modifier_fountain_aura_buff')
         or bot:HasModifier('modifier_filler_heal') or bot:HasModifier('modifier_elixer_healing'))
 end
@@ -96,27 +96,6 @@ local function laneIncome(bot, tower, reset, walking, scrollValue, waiting)
         return waveGold * math.min(1.5, math.max(0, seconds - waiting) / 30)
     end
     return math.min(lostIncome(reset) + scrollValue, lostIncome(walking))
-end
-
-local function nextComponent(bot)
-    local components = bot.currBuyingBasicItemList
-    if components and #components > 0 then return components[#components] end
-    local queue = bot.purchaseListInReverseOrder
-    local target = bot.currBuyingItemInPurchaseList or (queue and queue[#queue])
-    if target then
-        local missing = Item.GetMissingPurchaseComponents(bot, target)
-        return missing[1]
-    end
-end
-
-local function canSpend(bot, name, income, nextItem)
-    local cost, gold = GetItemCost(name), bot:GetGold()
-    if cost <= 0 or income < cost or gold < cost or GetItemStockCount(name) == 0 then return false end
-    if nextItem then
-        local price = GetItemCost(nextItem)
-        if nextItem == name or (price > 0 and gold - cost < price and gold + 60 >= price) then return false end
-    end
-    return true
 end
 
 local function lanePartnerCanShare(bot, health)
@@ -202,7 +181,7 @@ function Supply.Update(bot)
         bot.ohaLaneShareSince = nil
     end
     local waiting = eta * (J.GetHP(bot) < 0.45 and 0.65 or 0.35) + 4
-    local income, nextItem = laneIncome(bot, tower, reset, walking, scrollValue, waiting), nextComponent(bot)
+    local income, nextItem = laneIncome(bot, tower, reset, walking, scrollValue, waiting), Item.GetPendingPurchase(bot)
     if nextItem and ((health and healthItems or manaItems)[nextItem] or both[nextItem])
         and GetItemStockCount(nextItem) ~= 0 and bot:GetGold() + 60 >= GetItemCost(nextItem) then return end
     local candidates
@@ -213,7 +192,8 @@ function Supply.Update(bot)
         candidates = {'item_clarity'}
     end
     for _, name in ipairs(candidates) do
-        if (name ~= 'item_tango' or #bot:GetNearbyTrees(800) > 0) and canSpend(bot, name, income, nextItem) then
+        if (name ~= 'item_tango' or #bot:GetNearbyTrees(800) > 0) and income >= GetItemCost(name)
+            and GetItemStockCount(name) ~= 0 and Item.CanBuyOptionalConsumable(bot, name, nextItem) then
             bot.ohaNextLaneSupplyBuy = now + 4
             if bot:ActionImmediate_PurchaseItem(name) == PURCHASE_ITEM_SUCCESS then
                 bot.ohaLaneSupply = {item=name, deadline=now + eta + 10, waitUntil=0}

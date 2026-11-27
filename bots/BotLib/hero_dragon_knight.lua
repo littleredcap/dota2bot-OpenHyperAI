@@ -749,29 +749,37 @@ function X.ConsiderElderDragonForm()
 		end
 	end
 
-	local nEnemyLaneCreeps = bot:GetNearbyLaneCreeps(800, true)
-
-	if J.IsPushing(bot) then
+	local pushing = J.IsPushing(bot)
+	local defending = J.IsDefending(bot)
+	if pushing or (botHP >= 0.6 and #nEnemyHeroes == 0 and not defending and not J.IsRetreating(bot)) then
 		local building = bot:GetAttackTarget()
 		if not J.IsValidBuilding(building) then building = bot:GetNearbyTowers(1000, true)[1] end
 		if J.IsValidBuilding(building) and building:GetTeam() == GetOpposingTeam() and J.CanBeAttacked(building) and J.GetHP(building) > 0.2
 			and J.IsInRange(bot, building, 850) and not building:HasModifier('modifier_fountain_glyph')
-			and not building:HasModifier('modifier_backdoor_protection')
 			and not building:HasModifier('modifier_backdoor_protection_active')
-			and not building:HasModifier('modifier_backdoor_protection_in_base')
 			and (#nEnemyHeroes == 0 or J.GetAvailableFightAllies(bot, building:GetLocation(), 1200) >= #nEnemyHeroes)
 		then
 			local wave = 0
 			for _, creep in ipairs(bot:GetNearbyLaneCreeps(1200, false)) do
 				if J.IsValid(creep) and J.IsInRange(creep, building, 850) then wave = wave + 1 end
 			end
-			if wave >= 2 then return BOT_ACTION_DESIRE_HIGH end
+			if (pushing and wave >= 2) or (wave >= 3 and J.GetAvailableFightAllies(bot, building:GetLocation(), 1200) > 0) then
+				return BOT_ACTION_DESIRE_HIGH
+			end
 		end
 	end
 
-	if J.IsDefending(bot) then
+	if defending then
+		local waveSize = #bot:GetNearbyLaneCreeps(800, true)
+		local defenseTower = J.GetAssignedOuterTower(bot)
+		if defenseTower and waveSize < 4 then
+			waveSize = 0
+			for _, creep in ipairs(bot:GetNearbyLaneCreeps(1400, true)) do
+				if J.IsValid(creep) and J.IsInRange(creep, defenseTower, 950) then waveSize = waveSize + 1 end
+			end
+		end
 		local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), 1200)
-		if #nEnemyLaneCreeps >= 4 and (#nInRangeEnemy == 0
+		if waveSize >= 4 and (#nInRangeEnemy == 0
 			or (not J.ShouldRetreatFromEnemyReinforcements(bot)
 				and J.GetAvailableFightAllies(bot, bot:GetLocation(), 1200) >= #nInRangeEnemy - 1)) then
 			return BOT_ACTION_DESIRE_HIGH

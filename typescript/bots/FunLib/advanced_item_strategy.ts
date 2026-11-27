@@ -7,6 +7,7 @@
 import { HeroName } from "bots/ts_libs/dota/heroes";
 import { UnitType } from "bots/ts_libs/dota";
 import { HeroRolesMap, IsRanged } from "./aba_hero_roles_map";
+import * as jmz from "./jmz_func";
 
 // Type definitions for Dota 2 API
 declare const DotaTime: () => number;
@@ -264,7 +265,7 @@ function getEnemyHeroes(): HeroName[] {
     const enemies: HeroName[] = [];
     const seen: Partial<Record<HeroName, boolean>> = {};
     for (const enemy of GetUnitList(UnitType.EnemyHeroes)) {
-        if (enemy && !enemy.IsNull() && enemy.CanBeSeen() && enemy.IsAlive() && enemy.IsHero() && !enemy.IsIllusion()) {
+        if (jmz.IsValidHero(enemy) && !jmz.IsSuspiciousIllusion(enemy)) {
             const name = enemy.GetUnitName() as HeroName;
             if (!seen[name]) {
                 seen[name] = true;

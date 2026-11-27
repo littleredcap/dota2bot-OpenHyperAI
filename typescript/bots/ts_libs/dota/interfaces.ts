@@ -66,6 +66,8 @@ export interface Unit {
 
     IsAlive(): boolean;
 
+    IsChanneling(): boolean;
+
     IsBuilding(): boolean;
 
     IsHero(): boolean;

@@ -17,9 +17,12 @@ local ObserverWard = nil
 local SentryWard = nil
 
 local hTargetSpot = nil
+local plantingSentry = false
 local fLastWardPlantTime = -math.huge
 
 function GetDesire()
+	if (bot.ohaIdleRecoveryUntil or 0) > math.max(0, DotaTime())
+		or (bot.ohaOuterTowerHoldUntil or 0) > math.max(0, DotaTime()) then return BOT_MODE_DESIRE_NONE end
 	if J.GetPosition(bot) <= 3 then return false end
 	-- local cacheKey = 'GetWardDesire'..tostring(bot:GetPlayerID())
 	-- local cachedVar = J.Utils.GetCachedVars(cacheKey, 0.6 * (1 + Customize.ThinkLess))
@@ -29,6 +32,7 @@ function GetDesire()
 	return RemapValClamped(J.GetHP(bot) * res, 0, 1, BOT_MODE_DESIRE_NONE, res)
 end
 function GetDesireHelper()
+    hTargetSpot, plantingSentry = nil, false
     if not X.IsSuitableToWard() then
         return BOT_MODE_DESIRE_NONE
     end
@@ -42,6 +46,9 @@ function GetDesireHelper()
         return BOT_MODE_DESIRE_NONE
     end
 
+    local now = DotaTime()
+    local stayInLane = now >= -5 and J.IsInLaningPhase(bot) and (now <= 90 or not J.CanLeaveLane(bot))
+    ObserverWard = nil
     for i = 0, 5 do
         local hItem = bot:GetItemInSlot(i)
         if hItem then
@@ -57,7 +64,8 @@ function GetDesireHelper()
     if J.CanCastAbility(ObserverWard) then
         local hAvailabeObserverWardSpots = W.GetAvailabeObserverWardSpots(bot)
         hTargetSpot = W.GetClosestObserverWardSpot(bot, hAvailabeObserverWardSpots)
-		if hTargetSpot and (not X.IsEnemyCloserToWardLocation(hTargetSpot.location) or J.IsRealInvisible(bot)) then
+		if hTargetSpot and (not stayInLane or GetUnitToLocationDistance(bot, hTargetSpot.location) <= nObserverWardCastRange)
+			and (not X.IsEnemyCloserToWardLocation(hTargetSpot.location) or J.IsRealInvisible(bot)) then
 			if DotaTime() < 0 and DotaTime() > (J.IsModeTurbo() and -45 or -60) then
 				return BOT_MODE_DESIRE_ABSOLUTE
 			end
@@ -70,11 +78,13 @@ function GetDesireHelper()
 		end
     end
 
+	SentryWard = nil
 	for i = 0, 5 do
         local hItem = bot:GetItemInSlot(i)
         if hItem then
             local sItemName = hItem:GetName()
-            if sItemName == 'item_ward_sentry' or sItemName == 'item_ward_dispenser' then
+            if (sItemName == 'item_ward_sentry' or sItemName == 'item_ward_dispenser')
+                and J.Item.GetSentryCharges(hItem) > 0 then
                 SentryWard = hItem
 				break
             end
@@ -85,15 +95,19 @@ function GetDesireHelper()
     if J.CanCastAbility(SentryWard) then
         local hPossibleSentryWardSpots = W.GetPossibleSentryWardSpots(bot)
         hTargetSpot = W.GetClosestSentryWardSpot(bot, hPossibleSentryWardSpots)
-		if hTargetSpot and (not X.IsEnemyCloserToWardLocation(hTargetSpot.location) or J.IsRealInvisible(bot)) then
+		if hTargetSpot and (not stayInLane or GetUnitToLocationDistance(bot, hTargetSpot.location) <= nSentryWardCastRange)
+			and not J.HasSentryCoverage(hTargetSpot.location)
+			and (not X.IsEnemyCloserToWardLocation(hTargetSpot.location) or J.IsRealInvisible(bot)) then
 			if DotaTime() > fLastWardPlantTime + 1.0 then
 				if GetUnitToLocationDistance(bot, hTargetSpot.location) <= 3200 then
+					plantingSentry = true
 					return BOT_MODE_DESIRE_VERYHIGH
 				end
 			end
 		end
     end
 
+	hTargetSpot = nil
 	return BOT_MODE_DESIRE_NONE
 end
 
@@ -101,7 +115,7 @@ function Think()
 	if J.CanNotUseAction(bot) then return end
 	if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "ward") then return end
 	if hTargetSpot then
-		if ObserverWard and J.CanCastAbility(ObserverWard) then
+		if not plantingSentry and ObserverWard and J.CanCastAbility(ObserverWard) then
 			if GetUnitToLocationDistance(bot, hTargetSpot.location) <= nObserverWardCastRange then
 				if ObserverWard:GetName() == 'item_ward_observer' then
 					bot:Action_UseAbilityOnLocation(ObserverWard, hTargetSpot.location)
@@ -122,24 +136,25 @@ function Think()
 			end
 		end
 
-		if SentryWard and J.CanCastAbility(SentryWard) then
+		if plantingSentry and SentryWard and J.CanCastAbility(SentryWard) then
+			if J.HasSentryCoverage(hTargetSpot.location) then
+				hTargetSpot = nil
+				return
+			end
 			if GetUnitToLocationDistance(bot, hTargetSpot.location) <= nSentryWardCastRange then
 				local fLength = 0
 				if W.IsOtherWardClose(hTargetSpot.location, 'npc_dota_observer_wards', 300, true, false) then
 					fLength = 30
 				end
 
-				if SentryWard:GetName() == 'item_ward_sentry' then
-					bot:Action_UseAbilityOnLocation(SentryWard, hTargetSpot.location + RandomVector(fLength))
-				else
-					if SentryWard:GetToggleState() == true then
-						bot:Action_UseAbilityOnEntity(SentryWard, bot)
-						return
-					else
-						bot:Action_UseAbilityOnLocation(SentryWard, hTargetSpot.location + RandomVector(fLength))
-					end
+				if SentryWard:GetName() == 'item_ward_dispenser' and SentryWard:GetToggleState() then
+					bot:Action_UseAbilityOnEntity(SentryWard, bot)
+					return
 				end
 
+				local location = hTargetSpot.location + RandomVector(fLength)
+				bot:Action_UseAbilityOnLocation(SentryWard, location)
+				J.RecordSentryOrder(bot, location)
 				hTargetSpot.plant_time_sentry = DotaTime()
 				return
 			else

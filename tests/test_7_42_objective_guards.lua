@@ -11,6 +11,7 @@ local function tormentorFixture(time, turbo, lastKill)
         local pos = i
         members[i] = {
             IsAlive = function() return state.dead ~= pos end, IsBot = yes, CanBeSeen = yes, GetLocation = empty,
+            IsDisarmed = no, IsHexed = no, HasModifier = no,
             GetAttackDamage = function() return 500 end, GetAttackSpeed = function() return 1 end,
             GetLevel = function() return 18 end, GetPlayerID = function() return pos end,
             GetNearbyNeutralCreeps = function() return state.bossVisible and {objective} or {} end,
@@ -59,15 +60,16 @@ local function tormentorFixture(time, turbo, lastKill)
         GetProperTarget = function(unit) return unit:GetAttackTarget() end,
         IsTormentor = function(unit) return unit == objective end,
         IsAttacking = function(unit) return unit:GetAttackTarget() == objective end,
-        IsDoingTormentor = no, IsDoingRoshan = no,
+        IsDoingTormentor = no, IsDoingRoshan = no, IsRetreating = no,
         IsModeTurbo = function() return turbo end,
         IsCore = function(unit) return unit:GetPlayerID() <= 3 end,
-        DoesUnitHaveTemporaryBuff = no, GetPosition = function(unit) return unit:GetPlayerID() end,
+        DoesUnitHaveTemporaryBuff = yes, GetPosition = function(unit) return unit:GetPlayerID() end,
         GetFirstBotInTeam = function() return members[1] end,
         IsValidHero = yes, IsRealInvisible = no, CanNotUseAction = no,
         IsValid = function(unit) return unit == objective or (unit ~= nil and unit:IsAlive()) end,
         GetHP = function(unit) return unit == state.lowHealth and 0.4 or 0.9 end,
         GetNumOfAliveHeroes = function() return state.dead and 4 or 5 end,
+        GetAliveAllyCoreCount = function() return state.dead and state.dead <= 3 and 2 or 3 end,
     }
     local env = setmetatable({
         GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
@@ -139,6 +141,27 @@ do
     state.dead, state.away = 5, 2
     assert(mode.GetDesire() == NONE, 'a departed core must not remain in the readiness count')
 end
+
+do
+    local state, mode, members = tormentorFixture(1800, false, 900)
+    state.nearby, state.bossVisible = true, true
+    members[1].GetAttackDamage = function() return 1000 end
+    members[2].GetAttackDamage = function() return 200 end
+    members[3].GetAttackDamage = function() return 200 end
+    assert(mode.GetDesire() == HIGH)
+    mode.Think()
+    assert(state.orders[1] == 'attack', 'temporary effects do not disqualify cores that can attack')
+    state.away = 1
+    mode.Think()
+    assert(state.orders[2] == 'cancel', 'enough damage in the roster is insufficient if the main attacker leaves the pit')
+    state.away = nil
+    mode.Think()
+    assert(state.orders[3] == 'attack', 'resume with enough actual attackers nearby')
+    for _, member in ipairs(members) do member.GetAttackDamage = function() return 10 end end
+    mode.Think()
+    assert(state.orders[4] == 'cancel', 'stop an attack when current damage drops before the next desire update')
+    assert(mode.GetDesire() == NONE, 'a prior Tormentor kill does not justify attempting another with too little damage')
+end
 print('PASS: Tormentor commits with healthy support and stops on a threat or loss of nearby allies')
 
 local file = assert(io.open('bots/ability_item_usage_generic.lua', 'rb'))
@@ -153,19 +176,22 @@ local glyphBot = {
     ActionImmediate_Glyph = function() glyphs = glyphs + 1 end,
 }
 local roster = {glyphBot, glyphBot, glyphBot, glyphBot}
-local ancientHP, tierOne, clearers, wave = 40, nil, {}, {}
+local ancientHP, tierOne, clearers, wave, teleports = 40, nil, {}, {}, {}
 local ancient = {GetHealth = function() return ancientHP end, GetMaxHealth = function() return 100 end}
 local env = setmetatable({
     bot = glyphBot,
     X = {IsTargetedByEnemy = function(building) return building == ancient end},
-    J = {GetAlliesNearLoc = function() return clearers end, IsValid = yes},
+    J = {GetAlliesNearLoc = function() return clearers end, IsValid = yes,
+        GetOuterTowerThreat = function() return {count = 3, damageRate = 10} end,
+        GetLocationToLocationDistance = function(a,b) return math.abs(a.x-b.x) end},
     DotaTime = function() return 100 end,
     GetGlyphCooldown = function() return 0 end,
     GetAncient = function() return ancient end,
     GetTower = function(_, id) return id == 2 and tierOne or nil end,
     GetBarracks = function() end,
     GetUnitList = function() return wave end,
-    GetUnitToUnitDistance = function() return 900 end,
+    GetUnitToLocationDistance = function(ally) return ally.distance or 900 end,
+    GetIncomingTeleports = function() return teleports end,
     TOWER_TOP_1=1, TOWER_MID_1=2, TOWER_BOT_1=3, TOWER_TOP_2=4, TOWER_MID_2=5, TOWER_BOT_2=6,
     TOWER_TOP_3=7, TOWER_MID_3=8, TOWER_BOT_3=9, TOWER_BASE_1=10, TOWER_BASE_2=11,
     GetTeamMember = function(i) return roster[i] end,
@@ -181,7 +207,8 @@ useGlyph()
 assert(glyphs == 1, 'did not defend the threatened Ancient in a full Bot roster')
 ancientHP = 100
 tierOne = {GetHealth = function() return 48 end, GetMaxHealth = function() return 100 end,
-    GetLocation = function() return {} end, CanBeSeen = yes}
+    GetLocation = function() return {x = 0} end, CanBeSeen = yes}
+tierOne.HasModifier = no
 local creep = {GetAttackTarget = function() return tierOne end, GetUnitName = function() return 'npc_dota_creep_badguys_melee' end}
 wave = {creep, creep, creep}
 useGlyph()
@@ -190,4 +217,83 @@ clearers[1] = {_defend = {waveClearTower = tierOne}, ohaOuterTowerHoldUntil = 10
     GetCurrentMovementSpeed = function() return 300 end}
 useGlyph()
 assert(glyphs == 2, 'glyph a pressured tower before it becomes unsavable if a clearer is almost there')
+clearers[1].distance = 5000
+clearers[1].GetPlayerID = function() return 4 end
+clearers[1]._defend.waveClearTeleport = {x = 550}
+useGlyph()
+assert(glyphs == 2, 'a defensive TP plan alone does not justify Glyph')
+teleports = {{playerid = 4, location = {x = 550}, time_remaining = 2.5}}
+useGlyph()
+assert(glyphs == 3, 'an arriving defensive TP can clear within the Glyph window')
+clearers[1]._defend.waveClearRearTower = {}
+useGlyph()
+assert(glyphs == 3, 'the clearer assigned to the rear tower cannot help the front one')
+clearers[1]._defend.waveClearRearTower = nil
+clearers[1]._defend.waveClearGather = {x = 550}
+clearers[1]._defend.waveClearNeedsGlyph = true
+clearers[2] = {_defend = {waveClearTower = tierOne, waveClearGather = {x = 550}},
+    ohaOuterTowerHoldUntil = 103, distance = 300, GetCurrentMovementSpeed = function() return 300 end}
+useGlyph()
+assert(glyphs == 3, 'do not Glyph for an incomplete fighting group')
+clearers[3] = {_defend = {waveClearTower = tierOne, waveClearGather = {x = 550}},
+    ohaOuterTowerHoldUntil = 103, distance = 1400, GetCurrentMovementSpeed = function() return 300 end}
+useGlyph()
+assert(glyphs == 4, 'Glyph buys time for the confirmed group and an incoming defensive teleport')
+tierOne.HasModifier = yes
+useGlyph()
+assert(glyphs == 4, 'do not spend another charge during the same fortification')
 print('PASS: Glyph tolerates missing teammates and preserves full-Bot defense')
+
+do
+    local bought, remaining = 0, 30
+    local ancient = {GetLocation = empty, hp = 0.25}
+    local bot = {GetLevel = function() return 22 end, IsAlive = no, HasModifier = no, HasBuyback = yes,
+        GetRespawnTime = function() return remaining end,
+        ActionImmediate_Buyback = function() bought = bought + 1 end}
+    local j = {IsMeepoClone = no, Role = {ShouldBuyBack = yes}, GetHP = function(u) return u.hp end,
+        GetEnemiesAroundLoc = function() return 3 end, GetAlliesNearLoc = empty}
+    local env = setmetatable({bot=bot, J=j, X={SetTalkMessage=no}, DotaTime=function() return 1800 end,
+        GetTeam=function() return 2 end, GetAncient=function() return ancient end}, {__index = _G})
+    local first = assert(source:find('local function BuybackUsageComplement()', 1, true))
+    local last = assert(source:find('local nCourierLastActionTime', first, true))
+    local runBuyback = setfenv(assert(loadstring(source:sub(first, last - 1) .. '\nreturn BuybackUsageComplement')), env)()
+    remaining = 12
+    runBuyback()
+    assert(bought == 0, 'wait for a respawn that is already close')
+    remaining = 30
+    runBuyback()
+    assert(bought == 1, 'buy back when the Ancient is low and no defenders can reach it')
+end
+print('PASS: the emergency buyback uses Ancient health ratio and the actual remaining respawn time')
+
+do
+    local file = assert(io.open('bots/FunLib/jmz_func.lua', 'rb'))
+    local source = file:read('*a')
+    file:close()
+    local first = assert(source:find('local inventorySeen = ', 1, true))
+    local last = assert(source:find('function J.FindEnemyUnit(', first, true))
+    local function hero(id, cost, visible)
+        return {cost=cost, visible=visible, GetPlayerID=function() return id end,
+            GetUnitName=function() return 'npc_dota_hero_test' end, HasModifier=no,
+            GetItemInSlot=function(self, slot)
+                assert(self.visible, 'cannot inspect an unseen enemy inventory')
+                if slot == 0 then return {GetName=function() return self.cost end} end
+            end}
+    end
+    local ally, firstEnemy, secondEnemy = hero(1, 6000, true), hero(6, 950, true), hero(7, 1100, false)
+    local now = 300
+    local J = {IsValidHero=function(h) return h.visible end, IsSuspiciousIllusion=no, IsMeepoClone=no}
+    local env = setmetatable({J=J, GetTeam=function() return 2 end, GetOpposingTeam=function() return 3 end,
+        GetTeamPlayers=function(team) return team == 2 and {1} or {6, 7} end, GetTeamMember=function() return ally end,
+        GetUnitList=function() return {firstEnemy, secondEnemy} end, GetItemCost=function(name) return name end,
+        DotaTime=function() return now end}, {__index = _G})
+    setfenv(assert(loadstring(source:sub(first, last - 1))), env)()
+    local own, enemy = J.GetInventoryNetworth()
+    assert(own == 6000 and enemy == own, 'partial visibility cannot create a strategic lead')
+    now, secondEnemy.visible = 303, true
+    own, enemy = J.GetInventoryNetworth()
+    assert(own == 6000 and enemy == 2050, 'compare current items with complete observations')
+    now, secondEnemy.visible, ally.cost = 408, false, 4100
+    own, enemy = J.GetInventoryNetworth()
+    assert(own == 4100 and enemy == own, 'expire old opponent intel and use the current own inventory')
+end

@@ -171,6 +171,13 @@ function GetDesireHelper()
     local nEnemyTowers     = C.enemyTowers1200
     local nEnemyLaneCreeps = C.enemyLaneCreeps1200
 
+    if botHP <= 0.62 and J.IsInLaningPhase(bot) and not bot:IsChanneling()
+        and J.IsLaningUnderPressure(bot, nEnemyHeroes, nEnemyTowers[1])
+        and J.GetLaningHoldTower(bot) == nil
+    then
+        return BOT_MODE_DESIRE_ABSOLUTE
+    end
+
     local bWeAreStronger = J.WeAreStronger(bot, 1600)
     local bTeamFight     = J.IsInTeamFight(bot, 1200)
 
@@ -302,7 +309,7 @@ function GetDesireHelper()
 
     -- try complete items
     local nCompletItemDesire = X.ConsiderCompleteItem()
-    if nCompletItemDesire > 0 and J.GetLaningHoldTower(bot) == nil then
+    if nCompletItemDesire > 0 and J.GetLaningHoldTower(bot) == nil and not J.ShouldKeepLaningWave(bot) then
         return nCompletItemDesire
     end
 

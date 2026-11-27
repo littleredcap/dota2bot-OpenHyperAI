@@ -163,6 +163,16 @@ local function RefreshBotHandle()
 	return false
 end
 
+local missingLevelSkill, missingLevelSince
+
+local function IsMissingDefaultLevelSkill(name, paired)
+	if customLevelPlan or paired then return false end
+	if missingLevelSkill ~= name then
+		missingLevelSkill, missingLevelSince = name, DotaTime()
+	end
+	return DotaTime() - missingLevelSince >= 5
+end
+
 local function AbilityLevelUpComplement()
 	if GetGameState() ~= GAME_STATE_PRE_GAME
 		and GetGameState() ~= GAME_STATE_GAME_IN_PROGRESS
@@ -207,7 +217,7 @@ local function AbilityLevelUpComplement()
 		then
 			bot.stuckLoc = botLoc
 			bot.stuckTime = DotaTime()
-		elseif bot.stuckLoc ~= botLoc
+		elseif GetUnitToLocationDistance(bot, bot.stuckLoc) > 25
 		then
 			bot.stuckLoc = botLoc
 			bot.stuckTime = DotaTime()
@@ -224,9 +234,10 @@ local function AbilityLevelUpComplement()
 	end
 
 	if pendingLevelUp ~= nil then
-		local ability = FindLevelAbility(pendingLevelUp.name)
-		if ability == nil then return end
-		if ability:GetLevel() > pendingLevelUp.level then
+		local ability, paired = FindLevelAbility(pendingLevelUp.name)
+		if ability == nil then
+			if not IsMissingDefaultLevelSkill(pendingLevelUp.name, paired) then return end
+		elseif ability:GetLevel() > pendingLevelUp.level then
 			table.remove(sAbilityLevelUpList, 1)
 		elseif DotaTime() - pendingLevelUp.time < 0.4 then
 			return
@@ -252,29 +263,35 @@ local function AbilityLevelUpComplement()
 					local fallback = GetFallbackLevelPlan(botLevel)
 					if #fallback > 0 then sAbilityLevelUpList = fallback end
 				end
-				return
-			end
-
-			local alternateName = (name == 'phoenix_fire_spirits' and 'phoenix_launch_fire_spirit')
-				or (name == 'alchemist_unstable_concoction' and 'alchemist_unstable_concoction_throw')
-			if alternateName then
-				local alternate = bot:GetAbilityByName(alternateName)
-				if alternate ~= nil and not alternate:IsNull() and not alternate:IsHidden() then return end
-			end
-
-			local previousLevel = ability:GetLevel()
-			if previousLevel >= ability:GetMaxLevel() then
+				if ardm or not IsMissingDefaultLevelSkill(name, paired) then return end
 				table.remove(sAbilityLevelUpList, 1)
-			elseif IsLegalLevelUp(ability, botLevel) then
-				bot:ActionImmediate_LevelAbility(ability:GetName())
-				if ability:GetLevel() > previousLevel then
-					table.remove(sAbilityLevelUpList, 1)
-				else
-					pendingLevelUp = {name = name, level = previousLevel, time = DotaTime()}
+				if #sAbilityLevelUpList == 0 then
+					sAbilityLevelUpList = GetFallbackLevelPlan(botLevel)
 				end
-				return
 			else
-				return
+				missingLevelSkill, missingLevelSince = nil, nil
+
+				local alternateName = (name == 'phoenix_fire_spirits' and 'phoenix_launch_fire_spirit')
+					or (name == 'alchemist_unstable_concoction' and 'alchemist_unstable_concoction_throw')
+				if alternateName then
+					local alternate = bot:GetAbilityByName(alternateName)
+					if alternate ~= nil and not alternate:IsNull() and not alternate:IsHidden() then return end
+				end
+
+				local previousLevel = ability:GetLevel()
+				if previousLevel >= ability:GetMaxLevel() then
+					table.remove(sAbilityLevelUpList, 1)
+				elseif IsLegalLevelUp(ability, botLevel) then
+					bot:ActionImmediate_LevelAbility(ability:GetName())
+					if ability:GetLevel() > previousLevel then
+						table.remove(sAbilityLevelUpList, 1)
+					else
+						pendingLevelUp = {name = name, level = previousLevel, time = DotaTime()}
+					end
+					return
+				else
+					return
+				end
 			end
 		end
 	end
@@ -302,18 +319,6 @@ function X.GetNumEnemyNearby( building )
 	end
 
 	return nearbynum
-
-end
-
-local fDeathTime = 0
-function X.GetRemainingRespawnTime()
-
-	if fDeathTime == 0
-	then
-		return 0
-	else
-		return bot:GetRespawnTime() - ( DotaTime() - fDeathTime )
-	end
 
 end
 
@@ -486,16 +491,6 @@ local function BuybackUsageComplement()
 		return
 	end
 
-	if bot:IsAlive() and fDeathTime ~= 0
-	then
-		fDeathTime = 0
-	end
-
-	if not bot:IsAlive()
-	then
-		if fDeathTime == 0 then fDeathTime = DotaTime() end
-	end
-
 	if bot:IsAlive() then return end
 
 	if not bot:HasBuyback() then return end
@@ -503,21 +498,16 @@ local function BuybackUsageComplement()
 
 	local ancient = GetAncient( GetTeam() )
 
-	local nFullRespawnTime = bot:GetRespawnTime()
-	local nRemainingRespawnTime = X.GetRemainingRespawnTime()
+	local nRemainingRespawnTime = bot:GetRespawnTime()
 
-	if ancient ~= nil and ancient:GetHealth() < 0.8 then
+	if ancient ~= nil and J.GetHP(ancient) < 0.8 then
 		local nEnemyUnitsAroundAncient = J.GetEnemiesAroundLoc(ancient:GetLocation(), 1500)
 		local nAllyUnitsAroundAncient = J.GetAlliesNearLoc(ancient:GetLocation(), 1500)
-		if nEnemyUnitsAroundAncient > 1 and nAllyUnitsAroundAncient == 0 and nRemainingRespawnTime > 20 then
+		if nEnemyUnitsAroundAncient > 1 and #nAllyUnitsAroundAncient == 0 and nRemainingRespawnTime > 20 then
 			J.Role['lastbbtime'] = DotaTime()
 			bot:ActionImmediate_Buyback()
 			return
 		end
-	end
-
-	if nFullRespawnTime < 60 then
-		return
 	end
 
 	if bot:GetLevel() > 24
@@ -4630,7 +4620,30 @@ X.ConsiderItemDesire["item_tango_single"] = function( hItem )
 			return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
 		end
 	end
-	
+
+	-- A reachable Tango can be started during lane attrition without walking away from the wave.
+	if nMode == BOT_MODE_LANING and J.IsInLaningPhase(bot) and bot:WasRecentlyDamagedByAnyHero(3)
+		and nLostHealth >= math.min(160, bot:OriginalGetMaxHealth() * 0.2)
+		and not bot:HasModifier('modifier_flask_healing') and not bot:HasModifier('modifier_juggernaut_healing_ward_heal')
+		and not J.HasPendingLaningLastHit(bot) and not J.IsFinishingLaningAttack(bot, bot:GetAttackTarget()) then
+		local enemies = J.GetNearbyHeroes(bot, 1000, true, BOT_MODE_NONE)
+		local enemyTower = bot:GetNearbyTowers(1200, true)[1]
+		for _, tree in ipairs(bot:GetNearbyTrees(140)) do
+			local point = GetTreeLocation(tree)
+			local safe = IsLocationVisible(point) and IsLocationPassable(point)
+				and (not J.IsValidBuilding(enemyTower) or GetUnitToLocationDistance(enemyTower, point) > 850)
+			for _, enemy in ipairs(enemies) do
+				if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy)
+					and GetUnitToLocationDistance(enemy, point) <= math.max(425, enemy:GetAttackRange() + 150)
+					and GetUnitToLocationDistance(enemy, point) + 35 < GetUnitToUnitDistance(bot, enemy) then
+					safe = false
+					break
+				end
+			end
+			if safe then return BOT_ACTION_DESIRE_HIGH, tree, sCastType, '对线换血吃树' end
+		end
+	end
+
 	if J.IsWithoutTarget( bot )
 		and not bot:HasModifier( "modifier_flask_healing" )
 		and not bot:HasModifier( "modifier_juggernaut_healing_ward_heal" )
@@ -4807,6 +4820,11 @@ function X.GetLaningTPLocation( bot, nMinTPDistance, botLocation )
 		tp = true
 	end
 	if tp and laneToTP ~= LANE_MID and bot:DistanceFromFountain() < 1400 then
+		-- A recent forced reset is still relevant after the fountain restores health.
+		if (bot.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
+			and #J.GetLastSeenEnemiesNearLoc(GetLaneFrontLocation(team, laneToTP, 0), 1700) > 0 then
+			return nil, false
+		end
 		local tower = GetTower(team, laneToTP == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
 		if tower and tower:IsAlive() then return J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 200), true end
 	end
@@ -4814,9 +4832,36 @@ function X.GetLaningTPLocation( bot, nMinTPDistance, botLocation )
 end
 
 function X.GetDefendTPLocation( nLane )
+	local towers = nLane == LANE_TOP and {TOWER_TOP_1, TOWER_TOP_2, TOWER_TOP_3}
+		or (nLane == LANE_MID and {TOWER_MID_1, TOWER_MID_2, TOWER_MID_3}
+			or {TOWER_BOT_1, TOWER_BOT_2, TOWER_BOT_3})
+	for _, id in ipairs(towers) do
+		local tower = GetTower(team, id)
+		if J.IsValidBuilding(tower) then
+			local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
+			if IsLocationPassable(point) and J.CanCommitToLaneTeleport(bot, point, true) then return point end
+		end
+	end
+	local ancient = GetAncient(team)
+	if ancient ~= nil and X.GetNumEnemyNearby(ancient) > 0 then
+		local fountain = J.GetTeamFountain()
+		if J.CanCommitToLaneTeleport(bot, fountain, true) then return fountain end
+	end
+end
 
-	return GetLaneFrontLocation( team, nLane, -950 )
-
+function X.CanTeleportToFarm(wavePoint, landing)
+	if wavePoint == nil or landing == nil or not IsLocationVisible(wavePoint)
+		or not J.CanCommitToLaneTeleport(bot, landing, true)
+		or not J.CanCommitToLaneTeleport(bot, wavePoint, true) then return false end
+	local count = 0
+	for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
+		if J.IsValid(creep) and GetUnitToLocationDistance(creep, wavePoint) <= 1050
+			and (J.IsKeyWordUnit('npc_dota_creep_', creep) or J.IsKeyWordUnit('_siege', creep)) then
+			count = count + 1
+			if count >= 2 then return true end
+		end
+	end
+	return false
 end
 
 function X.GetPushTPLocation( nLane )
@@ -5013,12 +5058,14 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local nAllyCount = J.GetAllyCount( bot, 1600 )
 	local itemFlask = J.IsItemAvailable( "item_flask" )
 	local defense = bot._defend
-	local plannedDefense = defense and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
-		and defense.waveClearTeleport ~= nil and J.IsValidBuilding(defense.waveClearTower)
+	local plannedDefense = defense and defense.waveClearLane ~= nil and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
+		and defense.waveClearTeleport ~= nil and J.IsValidBuilding(defense.waveClearRearTower or defense.waveClearTower)
 	if plannedDefense and J.IsDefending(bot) and nEnemyCount == 0
+		and not J.ShouldKeepLaningWave(bot, defense.waveClearLane)
 		and GetUnitToLocationDistance(bot, defense.waveClearTeleport) > 1800
-		and J.CanCommitToLaneTeleport(bot, defense.waveClearTeleport, true) then
-		return BOT_ACTION_DESIRE_ABSOLUTE, defense.waveClearTeleport, sCastType, '提前转线清兵守塔'
+		and J.CanCommitToLaneTeleport(bot, defense.waveClearTeleport, true, defense.waveClearGather and 1250 or nil) then
+		return BOT_ACTION_DESIRE_ABSOLUTE, defense.waveClearTeleport, sCastType,
+			defense.waveClearGather and '集结守塔' or '提前转线清兵守塔'
 	end
 
 	if bot:GetLevel() > 12 and bot:DistanceFromFountain() < 600 then nMinTPDistance = nMinTPDistance + 600 end
@@ -5053,6 +5100,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	and not J.IsInTeamFight(bot, 1000)
 	and nEnemyCount == 0
 	and J.GetLaningHoldTower(bot) == nil
+	and not J.ShouldKeepLaningWave(bot)
 	then
 		hEffectTarget = J.GetTeamFountain()
 		sCastMotive = '撤退:1'
@@ -5141,7 +5189,10 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		if nMode == BOT_MODE_DEFEND_TOWER_TOP then nDefendLane, sLane = LANE_TOP, 'tower_top' end
 		if nMode == BOT_MODE_DEFEND_TOWER_BOT then nDefendLane, sLane = LANE_BOT, 'tower_bot' end
 
-		if not defense or defense.waveClearLane ~= nDefendLane or (bot.ohaOuterTowerHoldUntil or 0) <= DotaTime() then
+		local trade = bot.ohaOuterTowerTrade
+		local released = trade and trade.lane == nDefendLane and trade.expires > DotaTime()
+		if not released and not J.ShouldKeepLaningWave(bot, nDefendLane)
+			and (not defense or defense.waveClearLane ~= nDefendLane or (bot.ohaOuterTowerHoldUntil or 0) <= DotaTime()) then
 			local botAmount = GetAmountAlongLane(nDefendLane, botLocation)
 			local laneFront = GetLaneFrontAmount(team, nDefendLane, false)
 			if botAmount.distance > nMinTPDistance or botAmount.amount < laneFront / 5 then
@@ -5182,6 +5233,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		if nMode == BOT_MODE_PUSH_TOWER_TOP then nPushLane, sLane = LANE_TOP, 'tower_top' end
 		if nMode == BOT_MODE_PUSH_TOWER_BOT then nPushLane, sLane = LANE_BOT, 'tower_bot' end
 
+		if J.ShouldKeepLaningWave(bot, nPushLane) then return BOT_ACTION_DESIRE_NONE end
 		local botAmount = GetAmountAlongLane( nPushLane, botLocation )
 		local laneFront = GetLaneFrontAmount( team, nPushLane, false )
 		if botAmount.distance > nMinTPDistance
@@ -5387,13 +5439,14 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 
 		if mostFarmDesire > 0.1
 		then
-			farmTpLoc = GetLaneFrontLocation( team, mostFarmDesireLane, 0 )
+			local farmTpLoc = GetLaneFrontLocation( team, mostFarmDesireLane, 0 )
 			local bestTpLoc = J.GetNearbyLocationToTp( farmTpLoc )
 			if bestTpLoc ~= nil and farmTpLoc ~= nil
 				and J.IsLocHaveTower( 2000, false, farmTpLoc )
 				and GetUnitToLocationDistance( bot, bestTpLoc ) > nMinTPDistance
+				and X.CanTeleportToFarm(farmTpLoc, bestTpLoc)
 			then
-				tpLoc = farmTpLoc
+				tpLoc = bestTpLoc
 			end
 		end
 
@@ -5454,6 +5507,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 				local nNearAllyList = J.GetAlliesNearLoc( tpLoc, 1600 )
 				if GetUnitToLocationDistance( bot, tpLoc ) > nMinTPDistance - 1500
 					and #nNearAllyList == 0
+					and X.CanTeleportToFarm(GetLaneFrontLocation(team, mostFarmDesireLane, 0), tpLoc)
 				then
 					J.Role['lastFarmTpTime'] = DotaTime()
 					sCastMotive = '飞鞋带线'
@@ -5481,6 +5535,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 				and J.IsLocHaveTower( 1850, false, tpLoc )
 				and GetUnitToLocationDistance( bot, bestTpLoc ) > nMinTPDistance - 800
 				and #nNearAllyList == 0
+				and X.CanTeleportToFarm(tpLoc, bestTpLoc)
 			then
 				J.Role['lastFarmTpTime'] = DotaTime()
 				sCastMotive = '线上打钱'
@@ -5537,7 +5592,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 			and GetUnitToLocationDistance( bot, nTeamFightLocation ) > nMinTPDistance - 1200
 		then
 
-			if isTravelBootsAvailable
+			if isTravelBootsAvailable and J.CanCommitToLaneTeleport(bot, nTeamFightLocation)
 			then
 				sCastMotive = '飞鞋支援团战距离:'..GetUnitToLocationDistance( bot, nTeamFightLocation )
 
@@ -5560,6 +5615,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 			if bestTpLoc ~= nil
 				and J.GetLocationToLocationDistance( bestTpLoc, nTeamFightLocation ) < 1800
 				and GetUnitToLocationDistance( bot, bestTpLoc ) > nMinTPDistance - 1200
+				and J.CanCommitToLaneTeleport(bot, bestTpLoc)
 			then
 				sCastMotive = '支援团战:'..GetUnitToLocationDistance( bot, nTeamFightLocation )
 
@@ -5872,44 +5928,30 @@ end
 
 
 --真眼
-local nLastCheckSentryTime = 0
-X.ConsiderItemDesire["item_ward_sentry"] = function( hItem )
-
-	local nCastRange = 500 + aetherRange
-	local sCastType = 'ground'
-	local hEffectTarget = nil
-	local sCastMotive = nil
-	local nInRangeEnmyList = J.GetNearbyHeroes(bot, 1200, true, BOT_MODE_NONE )
-	local nAllyTowerList = bot:GetNearbyTowers( 1200, false )
-
-
-	--进攻时对拥有隐身能力的敌人使用
-	if J.IsGoingOnSomeone( bot )
-		and #nInRangeEnmyList >= 1
-	then
-		local targetHero = nil
-		for _, npcEnemy in pairs( nInRangeEnmyList )
-		do
-			if J.IsValidHero( npcEnemy )
-				and J.IsInRange( bot, npcEnemy, 900 )
-				and J.CanCastOnMagicImmune( npcEnemy )
-				and J.HasInvisibilityOrItem( npcEnemy )
-				and not npcEnemy:HasModifier( "modifier_slardar_amplify_damage" )
-				and not npcEnemy:HasModifier( "modifier_item_dustofappearance" )
-				and not J.Site.IsLocationHaveTrueSight( npcEnemy:GetLocation() )
-			then
-				hEffectTarget = J.GetUnitTowardDistanceLocation( bot, npcEnemy, nCastRange )
-				sCastMotive = '插真眼针对:'..J.Chat.GetNormName( npcEnemy )
-				return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
+local function ConsiderCombatSentry(hItem)
+	if J.Item.GetSentryCharges(hItem) <= 0
+		or not (J.IsGoingOnSomeone(bot) or J.IsDefending(bot) or J.IsInLaningPhase(bot)) then
+		return BOT_ACTION_DESIRE_NONE
+	end
+	for _, enemy in ipairs(J.GetEnemiesNearLoc(bot:GetLocation(), 900)) do
+		local point = enemy:GetLocation()
+		if (enemy:IsInvisible() or J.IsUnitWillGoInvisible(enemy, true) or J.HasInvisibilityOrItem(enemy))
+			and not J.HasInvisCounterBuff(enemy) and not J.HasLocalTrueSight(point)
+			and not J.HasDustCoverage(point, 0, 0.65) then
+			if hItem:GetName() == 'item_ward_dispenser' and hItem:GetToggleState() then
+				return BOT_ACTION_DESIRE_HIGH, bot, 'unit', '切换至真眼'
+			end
+			local location = J.GetUnitTowardDistanceLocation(bot, enemy, 500 + aetherRange)
+			return BOT_ACTION_DESIRE_HIGH, location, 'ground', '在交战位置插真眼', function()
+				J.RecordSentryOrder(bot, location)
 			end
 		end
-
 	end
-
-
 	return BOT_ACTION_DESIRE_NONE
-
 end
+
+X.ConsiderItemDesire["item_ward_sentry"] = ConsiderCombatSentry
+X.ConsiderItemDesire["item_ward_dispenser"] = ConsiderCombatSentry
 
 
 --GG树
@@ -6855,12 +6897,45 @@ X.ConsiderItemDesire['item_blood_grenade'] = function(item)
 	return BOT_ACTION_DESIRE_NONE, 0
 end
 
+local function CanSmokeToDefend(defense)
+	local now, location, gather = DotaTime(), bot:GetLocation(), defense.waveClearGather
+	local distance = GetUnitToLocationDistance(bot, gather)
+	if defense.waveClearTeleport or distance < 1200 or distance > 2250
+		or GetAmountAlongLane(defense.waveClearLane, location).distance < 550
+		or bot:HasModifier('modifier_smoke_of_deceit') or #bot:GetNearbyTowers(1350, true) > 0
+		or not J.CanCommitToLaneTeleport(bot, location, true, 1350) then return false end
+	local sight = J.GetOuterTowerThreat(defense.waveClearTower, defense.waveClearLane)
+	if sight.count < 3 or sight.briefHold then return false end
+	local joined = 1
+	for _, ally in ipairs(J.GetAlliesNearLoc(location, 850)) do
+		local plan = ally._defend
+		if ally ~= bot and J.IsValidHero(ally) and J.IsDefending(ally) and J.GetHP(ally) >= 0.5
+			and plan and plan.waveClearGather and plan.waveClearTower == defense.waveClearTower and not plan.waveClearTeleport
+			and not ally:IsChanneling() and (ally.ohaOuterTowerHoldUntil or 0) > now then
+			if ally:HasModifier('modifier_smoke_of_deceit') or #ally:GetNearbyTowers(1150, true) > 0
+				or not J.CanCommitToLaneTeleport(ally, ally:GetLocation(), true, 1150) then return false end
+			if ally:GetPlayerID() < bot:GetPlayerID()
+				and GetAmountAlongLane(plan.waveClearLane, ally:GetLocation()).distance >= 550
+				and GetUnitToLocationDistance(ally, gather) >= 1200 and GetUnitToLocationDistance(ally, gather) <= 2250
+				and J.CanCastAbility(J.Utils.GetItem(ally, 'item_smoke_of_deceit')) then return false end
+			joined = joined + 1
+		end
+	end
+	return joined >= 3
+end
+
 local roshDeathTime = 0
 X.ConsiderItemDesire['item_smoke_of_deceit'] = function(item)
 	local nRadius = 1200
 	local sCastType = 'none'
 	local hEffectTarget = nil
 	local sCastMotive = 'Smoke Of Deceit'
+	local defense = bot._defend
+	if defense and defense.waveClearLane and defense.waveClearGather and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
+		and J.IsDefending(bot) and J.IsValidBuilding(defense.waveClearTower) then
+		if CanSmokeToDefend(defense) then return BOT_ACTION_DESIRE_HIGH, nil, sCastType, '开雾侧翼回防' end
+		return BOT_ACTION_DESIRE_NONE
+	end
 
 	local isThereEnemyNearby = false
 	local nInRangeAlly = J.GetAllyList(bot, nRadius)
@@ -6938,17 +7013,10 @@ end
 -- Dust of Appearance
 local dustSightings = {}
 
-local function DustAlreadyCovers(location, time, radius)
-    local function covers(unit)
-        local coverage = unit.ohaDustCoverage
-        return coverage ~= nil and time < coverage.untilTime and J.GetDistance(coverage.location, location) <= coverage.radius
-    end
-
-    if covers(bot) then return true end
-    for _, ally in ipairs(J.GetAlliesNearLoc(location, radius * 2)) do
-        if ally ~= bot and covers(ally) then return true end
-    end
-    return false
+local function NeedsDust(location, margin, projectedLocation)
+    if J.HasDustCoverage(location, margin) then return false end
+    if not J.HasLocalTrueSight(location, margin) then return true end
+    return projectedLocation ~= nil and not J.HasLocalTrueSight(projectedLocation)
 end
 
 X.ConsiderItemDesire['item_dust'] = function(item)
@@ -6967,7 +7035,7 @@ X.ConsiderItemDesire['item_dust'] = function(item)
             local engaged = fighting or enemy == botTarget or enemy:GetAttackTarget() == bot
             dustSightings[id] = {location = position, time = now, speed = enemy:GetCurrentMovementSpeed(), engaged = engaged}
             if engaged and GetUnitToLocationDistance(bot, position) <= radius
-            and J.IsClosestToDustLocation(bot, position) and not DustAlreadyCovers(position, now, radius) then
+            and J.IsClosestToDustLocation(bot, position) and NeedsDust(position, 0, enemy:GetExtrapolatedLocation(0.5)) then
                 selectedLocation = position
             end
         else
@@ -6978,12 +7046,13 @@ X.ConsiderItemDesire['item_dust'] = function(item)
     local bestAge = selectedLocation == nil and math.huge or 0
     for id, seen in pairs(dustSightings) do
         local age = now - seen.time
+        local drift = age * math.max(200, seen.speed)
         if age > 0.9 or not IsHeroAlive(id) then
             dustSightings[id] = nil
         elseif not currentlyVisible[id] and age > 0 and age < bestAge
         and (seen.engaged or fighting) and IsLocationVisible(seen.location)
-        and GetUnitToLocationDistance(bot, seen.location) + age * math.max(200, seen.speed) <= radius
-        and J.IsClosestToDustLocation(bot, seen.location) and not DustAlreadyCovers(seen.location, now, radius) then
+        and GetUnitToLocationDistance(bot, seen.location) + drift <= radius
+        and J.IsClosestToDustLocation(bot, seen.location) and NeedsDust(seen.location, drift) then
             selectedLocation, bestAge = seen.location, age
         end
     end
@@ -8219,6 +8288,24 @@ local function HasGlyphPressure(building)
 	return false
 end
 
+local function GetGlyphClearerETA(ally, tower, defense)
+	local speed = math.max(250, ally:GetCurrentMovementSpeed())
+	local rally = defense.waveClearGather or tower:GetLocation()
+	local slack = defense.waveClearGather and 250 or 500
+	local time = math.max(0, GetUnitToLocationDistance(ally, rally) - slack) / speed
+	if defense.waveClearTeleport ~= nil then
+		for _, tp in ipairs(GetIncomingTeleports()) do
+			if tp.playerid == ally:GetPlayerID() and tp.location ~= nil and tp.time_remaining ~= nil
+				and tp.time_remaining >= 0
+				and J.GetLocationToLocationDistance(tp.location, defense.waveClearTeleport) <= 350 then
+				time = math.min(time, tp.time_remaining
+					+ math.max(0, J.GetLocationToLocationDistance(tp.location, rally) - slack) / speed)
+			end
+		end
+	end
+	return time
+end
+
 local function UseGlyph()
 
 	if GetGlyphCooldown( ) > 0
@@ -8254,23 +8341,39 @@ local function UseGlyph()
 	do
 		local tower = GetTower(team, T1[index])
 		if tower ~= nil and tower:GetHealth() > 0
-			and tower:GetHealth() / tower:GetMaxHealth() < (index > 6 and 0.40 or 0.50)
+			and (index <= 6 or tower:GetHealth() / tower:GetMaxHealth() < 0.40)
 			and tower:CanBeSeen()
+			and not tower:HasModifier('modifier_fountain_glyph')
 			and HasGlyphPressure(tower)
 		then
 			if index > 6 then
 				bot:ActionImmediate_Glyph()
 				return
 			end
-			for _, ally in ipairs(J.GetAlliesNearLoc(tower:GetLocation(), 2000)) do
+			local fraction = tower:GetHealth() / tower:GetMaxHealth()
+			local contestCount, lateETA, needed = 0, 0, false
+			for _, ally in ipairs(J.GetAlliesNearLoc(tower:GetLocation(), 24000)) do
 				local defense = ally._defend
 				if defense and defense.waveClearTower == tower and not defense.waveClearCover
+					and defense.waveClearRearTower == nil
 					and (ally.ohaOuterTowerHoldUntil or 0) > DotaTime()
-					and GetUnitToUnitDistance(ally, tower) / math.max(250, ally:GetCurrentMovementSpeed()) <= 5.5
 				then
-					coverOuter = true
-					break
+					local eta = GetGlyphClearerETA(ally, tower, defense)
+					if eta <= 5.5 then
+						if defense.waveClearGather then
+							contestCount, lateETA = contestCount + 1, math.max(lateETA, eta)
+							needed = needed or defense.waveClearNeedsGlyph
+						elseif fraction < 0.50 then
+							coverOuter = true
+						end
+					end
 				end
+			end
+			if contestCount >= 3 then
+				local lanes = {LANE_TOP, LANE_MID, LANE_BOT}
+				local threat = J.GetOuterTowerThreat(tower, lanes[(index - 1) % 3 + 1])
+				if contestCount >= threat.count and (needed or fraction < 0.45
+					or threat.damageRate > 0 and tower:GetHealth() / threat.damageRate <= lateETA + 2) then coverOuter = true end
 			end
 		end
 	end
@@ -8321,6 +8424,16 @@ function AbilityUsageThink()
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
 	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) and bot.isBear == nil then return end
 	bot.lastAbilityFrameProcessTime = DotaTime()
+	local protectingShot = bot.ohaLaningAttackTarget ~= nil and J.HasPendingLaningLastHit(bot)
+	if not protectingShot and bot.ohaEngineMid and J.IsLaning(bot) and J.IsInLaningPhase(bot) then
+		local target = bot:GetAttackTarget()
+		protectingShot = J.IsValid(target) and target:IsCreep() and J.IsFinishingLaningAttack(bot, target)
+	end
+	if protectingShot then
+		local enemies = J.GetNearbyHeroes(bot, 1050, true, BOT_MODE_NONE)
+		if #enemies == 0 or (J.IsLaning(bot) and J.GetHP(bot) >= 0.5
+			and not J.IsLaningUnderPressure(bot, enemies, bot:GetNearbyTowers(1200, true)[1])) then return end
+	end
 	if BotBuild ~= nil and not J.IsNoAbilityIllution(bot) then BotBuild.SkillsComplement() end
 end
 

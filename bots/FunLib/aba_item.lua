@@ -1278,6 +1278,46 @@ function Item.GetMissingPurchaseComponents(bot, name)
 	return missing, usedComponent, false
 end
 
+-- Return the component the queue will buy next and the cost to finish that target.
+function Item.GetPendingPurchase(bot)
+	local components = bot.currBuyingBasicItemList
+	local nextItem
+	if components and #components > 0 then
+		nextItem = components[#components]
+	else
+		local queue = bot.purchaseListInReverseOrder
+		local target = bot.currBuyingItemInPurchaseList or (queue and queue[#queue])
+		if target == nil then return nil, 0 end
+		components = Item.GetMissingPurchaseComponents(bot, target)
+		nextItem = components[1]
+	end
+	local remaining = 0
+	for _, component in ipairs(components) do
+		remaining = remaining + GetItemCost(component)
+	end
+	return nextItem, remaining
+end
+
+function Item.CanBuyOptionalConsumable(bot, name, nextItem, remaining)
+	local cost, gold = GetItemCost(name), bot:GetGold()
+	if cost <= 0 or gold < cost or nextItem == name then return false end
+	local function delays(price)
+		return price > 0 and gold + 60 >= price and gold - cost < price
+	end
+	return not (nextItem and delays(GetItemCost(nextItem))) and not delays(remaining or 0)
+end
+
+function Item.GetSentryCharges(item)
+	if item == nil or item:IsNull() then return 0 end
+	local name = item:GetName()
+	if name == 'item_ward_sentry' then return item:GetCurrentCharges() end
+	if name == 'item_ward_dispenser' then
+		if item.GetSecondaryCharges then return item:GetSecondaryCharges() or 0 end
+		if not item:GetToggleState() then return item:GetCurrentCharges() end
+	end
+	return 0
+end
+
 -- function Item.ItemBasicItemsNotInHeroSlots(finalItem, bot)
 	
 -- end

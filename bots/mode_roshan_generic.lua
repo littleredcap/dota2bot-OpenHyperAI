@@ -40,6 +40,9 @@ function GetDesireHelper()
 	end
 
     local pit = Roshan and Roshan:GetLocation() or J.GetCurrentRoshanLocation()
+    if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() or GetUnitToLocationDistance(bot, pit) > 2400 then
+        return BOT_MODE_DESIRE_NONE
+    end
     local nTeamFightLocation = J.GetTeamFightLocation(bot)
     if nTeamFightLocation ~= nil and GetUnitToLocationDistance(bot, pit) < 1600
     and GetUnitToLocationDistance(bot, nTeamFightLocation) < 2000 then
@@ -62,7 +65,11 @@ function GetDesireHelper()
     local nCoreWithNoEmptySlot = 0
     local aliveHeroesList = {}
     for _, h in pairs(GetUnitList(UNIT_LIST_ALLIED_HEROES)) do
-        if h:IsAlive()
+        if J.IsValidHero(h) and not h:IsIllusion() and not J.IsMeepoClone(h)
+            and not h:HasModifier('modifier_arc_warden_tempest_double')
+            and J.GetHP(h) > 0.5 and not J.IsRetreating(h)
+            and (h.ohaOuterTowerHoldUntil or 0) <= DotaTime()
+            and GetUnitToLocationDistance(h, pit) <= 2000
         then
             if J.Utils.CountBackpackEmptySpace(h) <= 0 and J.IsCore(h) then
                 nCoreWithNoEmptySlot = nCoreWithNoEmptySlot + 1
@@ -76,14 +83,14 @@ function GetDesireHelper()
         end
     end
 
-    if Roshan ~= nil and GetUnitToLocationDistance(bot, pit) < 1600 and #nearbyRecent == 0 and #pitRecent == 0 then
+    local shouldKillRoshan = Roshan ~= nil or J.IsRoshanAlive()
+    local ready = shouldKillRoshan and J.GetHP(bot) > 0.5 and J.HasEnoughDPSForRoshan(aliveHeroesList, Roshan)
+    if ready and Roshan ~= nil and GetUnitToLocationDistance(bot, pit) < 1600 and #nearbyRecent == 0 and #pitRecent == 0 then
         local roshHP = J.GetHP(Roshan)
         if roshHP < 0.5 then
             return RemapValClamped(roshHP, 0.5, 0, BOT_MODE_DESIRE_MODERATE, BOT_MODE_DESIRE_ABSOLUTE)
         end
     end
-
-    local shouldKillRoshan = Roshan ~= nil or J.IsRoshanAlive()
 
     if shouldKillRoshan
     and not roshTimeFlag
@@ -101,13 +108,13 @@ function GetDesireHelper()
     if J.IsRoshanCloseToChangingSides()
     then
         local botTarget = J.GetProperTarget(bot)
-        if J.IsRoshan(botTarget) then
+        if ready and J.IsRoshan(botTarget) then
             return RemapValClamped(J.GetHP(botTarget), 1, 0, BOT_MODE_DESIRE_NONE, BOT_MODE_DESIRE_VERYHIGH)
         end
         return BOT_MODE_DESIRE_NONE
     end
 
-    if shouldKillRoshan and #aliveHeroesList > 0 and J.HasEnoughDPSForRoshan(aliveHeroesList)
+    if ready
     then
         local human, humanPing = J.GetHumanPing()
         if human ~= nil and DotaTime() > 5.0 then

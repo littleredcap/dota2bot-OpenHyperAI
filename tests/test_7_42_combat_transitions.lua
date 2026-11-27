@@ -112,6 +112,7 @@ local function fixture(rescue)
         UNIT_LIST_ALLIED_HEROES = 1, UNIT_LIST_ENEMY_HEROES = 2,
         BOT_MODE_NONE = 0, BOT_MODE_DESIRE_NONE = 0, BOT_MODE_DESIRE_VERYHIGH = 0.9,
         BOT_MODE_DESIRE_MODERATE = 0.5, BOT_MODE_DESIRE_ABSOLUTE = 1, BOT_ACTION_DESIRE_NONE = 0,
+        BOT_ACTION_DESIRE_VERYHIGH = 0.9,
         BOT_ACTION_TYPE_DELAY = 5, BOT_MODE_WARD = 6, ITEM_SLOT_TYPE_BACKPACK = 2, DAMAGE_TYPE_ALL = 3,
     }, {__index = _G})
     env.dofile = function(name)
@@ -122,6 +123,15 @@ local function fixture(rescue)
     local path = rescue and 'bots/mode_team_roam_generic.lua' or 'bots/mode_attack_generic.lua'
     setfenv(assert(loadfile(path)), env)()
     return state, env, bot, core, backup, enemy, reinforcement, j
+end
+
+do
+    local _, _, bot, ally, _, _, _, j = fixture(false)
+    assert(j.GetAvailableFightAllies(bot, ally:GetLocation(), 900) == 1)
+    ally.IsChanneling = yes
+    assert(j.GetAvailableFightAllies(bot, ally:GetLocation(), 900) == 0, 'a channeling ally cannot rotate into the fight')
+    ally.IsChanneling, ally.IsStunned = no, yes
+    assert(j.GetAvailableFightAllies(bot, ally:GetLocation(), 900) == 0, 'a stunned ally does not provide immediate backup')
 end
 
 do
@@ -201,7 +211,7 @@ do
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'nearby available backup prevents an automatic retreat')
 end
 do
-    local state = {x = 500, slowed = true, zones = {}}
+    local state = {x = 500, slowed = true, zones = {}, time = 500}
     local bot = {
         HasModifier = function(_, name) return state.slowed and name == 'modifier_sniper_shrapnel_slow' end,
         IsRooted = function() return state.rooted end, IsMagicImmune = no,
@@ -219,6 +229,7 @@ do
         VectorAway = function(origin, center, step) return pos(origin.x + (origin.x < center.x and -step or step)) end,
     }
     local env = setmetatable({J = j, GetAvoidanceZones = function() return state.zones end,
+        DotaTime = function() return state.time end, GetUnitToLocationDistance = function(_, point) return math.abs(state.x-point.x) end,
         IsLocationVisible = function(point) return not point.hidden end, IsLocationPassable = yes,
         GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
         require = function(name) if name:find('jmz_func', 1, true) then return j end; return {} end,
@@ -234,21 +245,55 @@ do
     state.zones = {hostile}
     assert(env.GetDesire() == 1 and not state.order)
     env.Think()
-    assert(state.order.x == 295, 'leave by the short visible edge')
+    assert(state.order.x == 180, 'leave a movement margin beyond the short visible edge')
     hostile.location.hidden = true
     assert(j.GetShrapnelEscapeLocation(bot).x == -25, 'do not use hidden center coordinates')
     state.zones, state.order, state.channeling = {}, nil, true
     env.Think()
     assert(not state.order, 'do not cancel a committed channel')
     state.slowed, state.channeling = false, false
+    state.time = 500.6
     env.Think()
-    assert(not state.order, 'resume normal decisions as soon as exposure ends')
+    assert(state.order.x == -25, 'keep the exit on the first clear tick at the boundary')
+    state.order, state.time = nil, 502.1
+    env.Think()
+    assert(not state.order, 'release the escape after two clear seconds')
     state.slowed, state.rooted = true, true
     assert(j.GetShrapnelEscapeLocation(bot) == nil, 'do not take a walking path while rooted')
 end
 
 print('PASS: stop unsafe fights and rescue orders, including before visible hostile teleports finish')
 print('PASS: leave perceived Shrapnel promptly and preserve a channel already in progress')
+
+do
+    local state, mode, bot, core, _, enemy, reinforcement, j = fixture(false)
+    state.time, state.hp, core.retreating, enemy.target = 645, 0.67, true, bot
+    enemy.HasModifier = function(_, name) return name == 'modifier_rune_doubledamage' end
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'give ground when the visible empowered enemy targets a lone laner')
+    state.time, enemy.target = 648, nil
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'the rune alone does not displace a healthy farming hero')
+    enemy.HasModifier, reinforcement.alive = no, true
+    enemy.x, reinforcement.x = 1250, 1300
+    local third = setmetatable({x=920,id=8}, {__index=enemy})
+    j.GetEnemiesNearLoc = function() return {enemy, reinforcement, third} end
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'three stationary enemies outside immediate range are not an automatic rout')
+    enemy.GetExtrapolatedLocation = function(self) return pos(self.x - 160) end
+    reinforcement.GetExtrapolatedLocation = enemy.GetExtrapolatedLocation
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'an isolated bot withdraws as the group closes before the first hit')
+    state.time, reinforcement.alive, core.retreating = 660, false, false
+    j.GetEnemiesNearLoc = empty
+    bot.ohaOuterTowerHoldUntil = 663
+    assert(mode.GetDesire() == 0, 'a tower responder is not pulled away by the scripted attack mode')
+end
+
+do
+    local state, mode, bot, core = fixture(true)
+    core.retreating = true
+    bot.ohaOuterTowerHoldUntil = state.time + 3
+    assert(mode.GetDesire() == 0, 'a tower responder keeps its station instead of acquiring a roaming target')
+    bot.HasModifier = function(_, name) return name == 'modifier_warlock_upheaval' end
+    assert(mode.GetDesire() > 0, 'a tower assignment still allows escaping an active spell')
+end
 
 do
     local state, _, bot, carry, _, enemy, _, j = fixture(false)
@@ -295,6 +340,10 @@ do
     backup.retreating = false
     assert(j.GetSupportedFightTarget(bot, {enemy, reinforcement}, {core, backup}) == enemy,
         'prioritize the more dangerous enemy when both targets are reachable and have the same support')
+    core.IsStunned = yes
+    assert(j.GetSupportedFightTarget(bot, {enemy, reinforcement}, {core, backup}) == reinforcement,
+        'an unavailable ally with a stale attack target does not count as following up')
+    core.IsStunned = no
     core.retreating = true
     assert(j.GetSupportedFightTarget(bot, {enemy, reinforcement}, {core, backup}) == reinforcement,
         'change target if the ally committed to the first target backs out')

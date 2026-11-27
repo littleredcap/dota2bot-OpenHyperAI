@@ -9,7 +9,6 @@ function X.Think(bot, hMinionUnit)
 	if J.IsValidBuilding(siege) and J.CanBeAttacked(siege)
 		and not siege:HasModifier('modifier_fountain_glyph')
 		and not siege:HasModifier('modifier_backdoor_protection_active')
-		and not siege:HasModifier('modifier_backdoor_protection_in_base')
 		and GetUnitToUnitDistance(hMinionUnit, siege) <= thisMinionAttackRange then
 		hMinionUnit:Action_AttackUnit(siege, true)
 		return

@@ -110,7 +110,8 @@ local GetOffsetLocationTowardsTargetLocation = ____utils.GetOffsetLocationToward
 local IsModeTurbo = ____utils.IsModeTurbo
 local IsValidCreep = ____utils.IsValidCreep
 local visionRad = 2000
-local trueSightRad = 1000
+____exports.SentryTrueSightRange = 1050
+local towerTrueSightRange = 700
 local RADIANT_RUNE_WARD = Vector(2606, -1547, 0)
 local RADIANT_T3TOPFALL = Vector(-6600, -3072, 0)
 local RADIANT_T3MIDFALL = Vector(-4314, -3887, 0)
@@ -344,16 +345,18 @@ ____exports.IsCloseToAvailableWard = function(wardLoc)
     end
     return false
 end
-____exports.IsLocationHaveTrueSight = function(vLocation)
+____exports.IsLocationHaveTrueSight = function(vLocation, margin)
+    margin = margin or 0
     local WardList = GetUnitList(UnitType.AlliedWards)
     for ____, ward in ipairs(WardList) do
-        if ____exports.IsSentry(ward) and GetUnitToLocationDistance(ward, vLocation) <= trueSightRad then
+        if not ward:IsNull() and ward:IsAlive() and ____exports.IsSentry(ward)
+            and GetUnitToLocationDistance(ward, vLocation) + margin <= ____exports.SentryTrueSightRange then
             return true
         end
     end
     local nearbyTowers = GetBot():GetNearbyTowers(1600, false)
     for ____, tower in ipairs(nearbyTowers) do
-        if GetUnitToLocationDistance(tower, vLocation) < trueSightRad then
+        if tower:IsAlive() and GetUnitToLocationDistance(tower, vLocation) + margin <= towerTrueSightRange then
             return true
         end
     end

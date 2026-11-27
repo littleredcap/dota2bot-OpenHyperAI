@@ -29,6 +29,7 @@ declare global {
     function GameTime(): number;
 
     function IsLocationPassable(loc: Vector): boolean;
+    function GetHeightLevel(loc: Vector): number;
 
     function IsPlayerBot(playerId: number): boolean;
 
@@ -62,6 +63,8 @@ declare global {
     function GetHeroDeaths(playerId: number): number;
     function GetNeutralSpawners(): any;
     function GetLaneFrontLocation(team: Team, lane: Lane, deltaFromFront: number): Vector;
+    function GetLocationAlongLane(lane: Lane, amount: number): Vector;
+    function GetAmountAlongLane(lane: Lane, location: Vector): { amount: number; distance: number };
     function RandomVector(length: number): Vector;
     function Clamp(value: number, min: number, max: number): number;
     function RemapValClamped(value: number, fromMin: number, fromMax: number, toMin: number, toMax: number): number;

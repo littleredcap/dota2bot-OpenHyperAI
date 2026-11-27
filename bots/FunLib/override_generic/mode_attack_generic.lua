@@ -55,6 +55,7 @@ function Generic.GetDesire()
 	if not bot:IsAlive()
 	or bot:IsIllusion()
 	or bot:HasModifier('modifier_fountain_fury_swipes_damage_increase')
+	or (bot.ohaOuterTowerHoldUntil or 0) > math.max(0, DotaTime())
 	or J.ShouldRetreatFromEnemyReinforcements(bot)
 	then
 		return GetActualDesire(BOT_MODE_DESIRE_NONE)
@@ -126,12 +127,13 @@ function Generic.GetDesire()
 				and not allyHero:HasModifier('modifier_skeleton_king_reincarnation_scepter_active')
 				and not allyHero:HasModifier('modifier_teleporting')
 				and not J.IsRetreating(allyHero)
+				and not allyHero:IsStunned() and not allyHero:IsHexed() and not allyHero:IsNightmared()
 				and (((GetUnitToUnitDistance(allyHero, enemyHero) - allyHero:GetAttackRange()) / math.max(allyHero:GetCurrentMovementSpeed(), 1)) <= 6.0)
 				and (bot:GetPlayerID() == allyHero:GetPlayerID()
 					or allyHero:GetAttackTarget() == enemyHero
-					or J.IsInRange(allyHero, enemyHero, botAttackRange + 200))
+					or J.IsInRange(allyHero, enemyHero, allyHero:GetAttackRange() + 200))
 				then
-					fAllyDamage = fAllyDamage + allyHero:GetEstimatedDamageToTarget(true, enemyHero, 3.0, DAMAGE_TYPE_ALL) - enemyHero:GetHealthRegen() * 3.0
+					fAllyDamage = fAllyDamage + allyHero:GetEstimatedDamageToTarget(true, enemyHero, 3.0, DAMAGE_TYPE_ALL)
 					local nAllyTowers = allyHero:GetNearbyTowers(800, false)
 					if J.IsValidBuilding(nAllyTowers[1]) then
 						fAllyDamage = fAllyDamage + #nAllyTowers * nAllyTowers[1]:GetAttackDamage()
@@ -139,6 +141,7 @@ function Generic.GetDesire()
 				end
 			end
 
+			fAllyDamage = math.max(0, fAllyDamage - enemyHero:GetHealthRegen() * 3.0)
 			-- Laning: allow hero attacks if not recently damaged and numbers ok
 			if J.IsInLaningPhase() and not bot:WasRecentlyDamagedByAnyHero(3.0) and not bot:WasRecentlyDamagedByCreep(2.0) and #nInRangeAlly >= #nInRangeEnemy then
 				if not J.IsRetreating(bot) and GetUnitToUnitDistance(bot, enemyHero) < botAttackRange then
@@ -249,7 +252,8 @@ end
 --------------------------------------------------------------------
 function Generic.Think()
 	if J.CanNotUseAction(bot) then return end
-	if not canAttackThisTick or J.ShouldRetreatFromEnemyReinforcements(bot)
+	if not canAttackThisTick or (bot.ohaOuterTowerHoldUntil or 0) > math.max(0, DotaTime())
+		or J.ShouldRetreatFromEnemyReinforcements(bot)
 		or (joinEnemy ~= nil and not CanJoinFight(joinEnemy, joinAlly)) then
 		CancelCombatOrder()
 		return

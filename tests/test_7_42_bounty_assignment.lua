@@ -32,6 +32,7 @@ local function fixture()
         hero.Action_MoveDirectly = function(self, point) table.insert(self.orders, {'wisdom', point}) end
     end
     local j = {IsCore=function(h) return h.role <= 3 end, IsValidHero=function(h) return h and h:IsAlive() end,
+        CanLeaveLane=function(member) return member ~= state.stayOnLane end,
         GetHP=function(h) return h.hp or 1 end, GetMP=function() return 1 end,
         GetPosition=function(h) return h.role end, IsRetreating=function(h) return h.retreat end,
         GetEnemiesNearLoc=empty, GetLastSeenEnemiesNearLoc=function(p) return p == state.threat and {7} or {} end,
@@ -163,3 +164,14 @@ do
     order(h[1], 'pick', bounty2); order(h[2], 'pick', bounty1)
 end
 print('PASS: independent bots assign, release and reassign bounty runes while preserving lane and objective duties')
+
+do
+    local s, h, m = fixture()
+    s.time, s.spots[bounty2], s.status[bounty2] = 1210, 1450, unknown
+    s.spots[bounty1] = -4000
+    assert(m[2].GetDesire() > 0 and m[1].GetDesire() == 0, 'a free support can scout its unseen bounty a short walk away')
+    m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    h[2].ohaWaveClaim = {expires = 1215}
+    assert(m[2].GetDesire() == 0, 'a support already collecting a wave does not leave it to scout')
+end

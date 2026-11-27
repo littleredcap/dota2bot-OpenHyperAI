@@ -5,7 +5,7 @@ local function zero() return 0 end
 local function pos(x) return {x = x} end
 local function distance(a, b) return math.abs(a.x - b.x) end
 local detection = {}
-local chronosphereSafetySource
+local chronosphereSafetySource, detectionCoverageSource, staticDetectionSource
 do
     local file = assert(io.open('bots/FunLib/jmz_func.lua', 'r'))
     local source = file:read('*a')
@@ -13,6 +13,18 @@ do
     local start = assert(source:find('function J.HasItemConcealment(unit)', 1, true))
     local finish = assert(source:find('function J.HasInvisCounterBuff(unit)', start, true))
     setfenv(assert(loadstring(source:sub(start, finish - 1))), {J = detection})()
+    start = assert(source:find('local function HasTeamDetectionArea(', 1, true))
+    finish = assert(source:find('function J.IsClosestToDustLocation(', start, true))
+    detectionCoverageSource = source:sub(start, finish - 1)
+end
+do
+    local file = assert(io.open('bots/FunLib/aba_site.lua', 'r'))
+    local source = file:read('*a')
+    file:close()
+    local constants = assert(source:match('(____exports%.SentryTrueSightRange = %d+\nlocal towerTrueSightRange = %d+)'))
+    local start = assert(source:find('____exports.IsLocationHaveTrueSight =', 1, true))
+    local finish = assert(source:find('____exports.GetClosestSpot =', start, true))
+    staticDetectionSource = constants .. '\n' .. source:sub(start, finish - 1)
 end
 do
     local file = assert(io.open('bots/BotLib/hero_faceless_void.lua', 'r'))
@@ -104,6 +116,8 @@ local function fixture(itemNames, heroName)
         item_glimmer_cape = ability('item_glimmer_cape', 8, 600, 125, {initial_fade_delay = 0.5}),
         item_lotus_orb = ability('item_lotus_orb', 8, 900, 175),
         item_dust = ability('item_dust', 4, 1050, 0, {radius = 1050, duration = 12}),
+        item_ward_sentry = ability('item_ward_sentry', 16, 500, 0),
+        item_gem = ability('item_gem', 16, 300, 0, {radius = 900}),
         item_ghost = ability('item_ghost', 4, 0, 0),
         item_satanic = ability('item_satanic', 4, 0, 0),
         item_ethereal_blade = ability('item_ethereal_blade', 8, 800, 50),
@@ -113,9 +127,13 @@ local function fixture(itemNames, heroName)
     local slots = {}
     for i, name in ipairs(itemNames) do slots[6 - i] = items[name] end
     bot.GetItemInSlot = function(_, slot) return slots[slot] end
+    bot.FindItemSlot = function() return -1 end
+    ally.FindItemSlot = function() return ally.gemSlot or -1 end
+    ally.GetItemInSlot = function(_, slot) return slot == ally.gemSlot and items.item_gem or nil end
     bot.Action_UseAbility = function(_, h) state.orders[#state.orders + 1] = {h:GetName()} end
     bot.Action_UseAbilityOnEntity = function(_, h, target) state.orders[#state.orders + 1] = {h:GetName(), target} end
     bot.ActionQueue_UseAbilityOnLocation = function(_, h, location) state.orders[#state.orders + 1] = {h:GetName(), location} end
+    bot.Action_UseAbilityOnLocation = bot.ActionQueue_UseAbilityOnLocation
 
     local function near(units, point, radius)
         local result = {}
@@ -157,11 +175,15 @@ local function fixture(itemNames, heroName)
         HasItemConcealment = detection.HasItemConcealment, IsUnitWillGoInvisible = detection.IsUnitWillGoInvisible,
         HasInvisCounterBuff = function(unit) return unit.revealed == true end,
         IsClosestToDustLocation = yes, CheckBitfieldFlag = function(a, b) return a == b end,
-        Item = {IsSpecifiedItem = no},
+        HasInvisibilityOrItem = function(unit) return unit.fading end,
+        IsDefending = no, IsInLaningPhase = no,
+        GetUnitTowardDistanceLocation = function(_, target) return target:GetLocation() end,
+        Item = {IsSpecifiedItem = no, GetSentryCharges = function() return 1 end},
         Chat = {GetNormName = function() return 'test hero' end},
         Site = {
             GetXUnitsTowardsLocation = function(unit, goal, range) return pos(unit.x + (goal.x < unit.x and -range or range)) end,
             GetDistance = distance,
+            IsSentry = function(ward) return not ward.observer end,
         },
     }
     local build = {sSkillList = {}}
@@ -169,6 +191,9 @@ local function fixture(itemNames, heroName)
     local env = setmetatable({
         GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
         GetTeam = function() return 2 end, Vector = empty, RandomInt = function(first) return first end,
+        GetTeamPlayers = function() return {1, 2} end, GetTeamMember = function(slot) return roster[slot] end,
+        J = j, ____exports = j.Site, UnitType = {AlliedWards = 1},
+        GetUnitList = function() return state.placedWards or {} end,
         require = function(name) return name == 'bots/FunLib/jmz_func' and j or {} end,
         dofile = function() return build end,
         DotaTime = function() return state.time end, IsHeroAlive = yes, IsLocationVisible = yes,
@@ -177,6 +202,7 @@ local function fixture(itemNames, heroName)
         BOT_ACTION_DESIRE_NONE = 0, BOT_ACTION_DESIRE_HIGH = 0.8, BOT_MODE_NONE = 0, BOT_MODE_DESIRE_MODERATE = 0.4,
         ABILITY_BEHAVIOR_UNIT_TARGET = 8, DAMAGE_TYPE_MAGICAL = 2,
     }, {__index = _G})
+    setfenv(assert(loadstring(staticDetectionSource .. detectionCoverageSource)), env)()
     local usage = setfenv(assert(loadfile('bots/ability_item_usage_generic.lua')), env)()
     local function tick()
         state.orders = {}
@@ -350,6 +376,44 @@ do
     enemy.hidden, state.fighting, state.time = true, true, state.time + 1
     assert(#tick() == 0, 'forget stale invisibility evidence')
 end
+
+do
+    local state, _, ally, enemies, tick = fixture({'item_dust'})
+    local enemy = enemies[1]
+    state.fighting, enemy.hidden, enemy.fading = true, false, true
+    ally.x = 4000
+    ally.ohaDustCoverage = {location = pos(200), radius = 1050, untilTime = state.time + 12}
+    assert(#tick() == 0, 'dust keeps covering the area after its caster leaves')
+    ally.ohaDustCoverage = nil
+    ally.ohaSentryOrder = {location = pos(0), radius = 1050, untilTime = state.time + 0.65}
+    assert(#tick() == 0, 'give an already issued sentry order time to land')
+    state.placedWards = {{x = 0, IsNull = no, IsAlive = yes}}
+    state.time = state.time + 1
+    assert(#tick() == 0, 'hold dust while a live sentry covers both current and projected positions')
+    enemy.x, enemy.projectedX = 980, 1120
+    assert(tick()[1][1] == 'item_dust', 'catch the revealed target before it leaves the sentry’s range')
+end
+
+do
+    local state, _, ally, enemies, tick = fixture({'item_dust'})
+    state.fighting, enemies[1].hidden, enemies[1].fading = true, false, true
+    ally.gemSlot = 0
+    assert(#tick() == 0, 'a nearby active gem covers the target')
+    ally.gemSlot = 6
+    assert(tick()[1][1] == 'item_dust', 'a gem in a backpack cannot replace dust')
+end
+
+do
+    local state, bot, ally, enemies, tick = fixture({'item_ward_sentry'})
+    state.fighting, enemies[1].hidden, enemies[1].fading = true, false, true
+    ally.ohaDustCoverage = {location = pos(450), radius = 1050, untilTime = state.time + 2}
+    assert(#tick() == 0, 'combat sentry yields to a fresh dust field')
+    state.time = state.time + 1.4
+    assert(tick()[1][1] == 'item_ward_sentry', 'a sentry can take over as dust coverage ends')
+    assert(bot.ohaSentryOrder ~= nil and #tick() == 0, 'an issued combat placement claims the spot for this tick')
+    state.time = state.time + 1
+    assert(tick()[1][1] == 'item_ward_sentry', 'a canceled or unconfirmed placement does not block the site indefinitely')
+end
 do
     local state, bot, _, _, tick = fixture({'item_invis_sword'}, 'npc_dota_hero_drow_ranger')
     bot.retreating = true
@@ -478,6 +542,39 @@ do
     state.hp, state.hurt, bot.invisible = 0.4, true, true
     bot.mods.modifier_item_invisibility_edge_windwalk = 5
     assert(tick()[1][1] == 'item_armlet', 'Armlet may add temporary health without breaking invisibility in 7.42')
+end
+
+do
+    local file = assert(io.open('bots/ability_item_usage_generic.lua', 'rb'))
+    local source = file:read('*a')
+    file:close()
+    local start = assert(source:find('local function CanSmokeToDefend(', 1, true))
+    local stop = assert(source:find('local roshDeathTime =', start, true))
+    local plan = {waveClearGather = pos(1600), waveClearLane = 2, waveClearTower = {}}
+    local team = {}
+    for i = 1, 3 do
+        team[i] = {_defend = plan, ohaOuterTowerHoldUntil = 102, x = 100 * i, side = 750,
+            GetLocation = function(self) return {x = self.x, side = self.side} end, GetNearbyTowers = empty,
+            HasModifier = function(self) return self.smoked end, IsChanneling = no, GetPlayerID = function() return i end}
+    end
+    local safe, pushers = true, 4
+    local env = setmetatable({bot = team[2], DotaTime = function() return 100 end, GetUnitToLocationDistance = distance,
+        GetAmountAlongLane = function(_, point) return {distance = point.side} end,
+        J = {GetOuterTowerThreat = function() return {count = pushers} end,
+            GetAlliesNearLoc = function() return team end, IsValidHero = yes, IsDefending = yes, GetHP = function() return 1 end,
+            CanCommitToLaneTeleport = function() return safe end, CanCastAbility = function(item) return item ~= nil end,
+            Utils = {GetItem = function(ally) return ally.smoke end}},
+    }, {__index = _G})
+    local canSmoke = setfenv(assert(loadstring(source:sub(start, stop - 1) .. '\nreturn CanSmokeToDefend')), env)()
+    assert(canSmoke(plan), 'smoke a group already walking in from the safe flank')
+    team[1].smoke = {}
+    assert(not canSmoke(plan), 'one eligible teammate spends Smoke for the group')
+    team[1].smoke, team[3].smoked = nil, true
+    assert(not canSmoke(plan), 'do not consume Smoke on the same group twice')
+    team[3].smoked, safe = false, false
+    assert(not canSmoke(plan), 'do not Smoke in contact with the enemy')
+    safe, pushers = true, 2
+    assert(not canSmoke(plan), 'do not Smoke to clear a routine wave')
 end
 
 print('PASS: combat item timing, concealment, displacement, conflicting effects and cross-slot priority')

@@ -2,7 +2,8 @@ import { BotModeDesire, Unit, UnitType, Vector, BotMode, Team, Tower, Rune, Shop
 import { HasItem, GetLocationToLocationDistance, GetOffsetLocationTowardsTargetLocation, IsModeTurbo, IsValidCreep } from "bots/FunLib/utils";
 
 const visionRad = 2000; //--假眼查重范围
-const trueSightRad = 1000; //--真眼查重范围
+export const SentryTrueSightRange = 1050;
+const towerTrueSightRange = 700;
 
 const RADIANT_RUNE_WARD = Vector(2606, -1547, 0);
 
@@ -246,17 +247,18 @@ export const IsCloseToAvailableWard = function (wardLoc: Vector): boolean {
     return false;
 };
 
-export const IsLocationHaveTrueSight = function (vLocation: Vector): boolean {
+export const IsLocationHaveTrueSight = function (vLocation: Vector, margin = 0): boolean {
     const WardList = GetUnitList(UnitType.AlliedWards);
     for (const ward of WardList) {
-        if (IsSentry(ward) && GetUnitToLocationDistance(ward, vLocation) <= trueSightRad) {
+        if (!ward.IsNull() && ward.IsAlive() && IsSentry(ward)
+            && GetUnitToLocationDistance(ward, vLocation) + margin <= SentryTrueSightRange) {
             return true;
         }
     }
 
     const nearbyTowers = GetBot().GetNearbyTowers(1600, false);
     for (const tower of nearbyTowers) {
-        if (GetUnitToLocationDistance(tower, vLocation) < trueSightRad) {
+        if (tower.IsAlive() && GetUnitToLocationDistance(tower, vLocation) + margin <= towerTrueSightRange) {
             return true;
         }
     }
