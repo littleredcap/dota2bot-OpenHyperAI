@@ -22,6 +22,8 @@ local Customize = { }
 
 -- Local diagnostics only: log lane-pull transitions to the game console.
 Customize.TraceLanePull = false
+-- Local A/B only: position 4 Warlock buys Mekansm before Glimmer Cape.
+Customize.TestWarlockEarlyMek = false
 
 -- Set it to true to turn on ALL of the custom settings in this file, or set it to false to turn off the settings.
 Customize.Enable = true

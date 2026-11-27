@@ -118,6 +118,14 @@ sRoleItemsBuyList['pos_2'] = {
 
 sRoleItemsBuyList['pos_3'] = sRoleItemsBuyList['pos_2']
 
+if sRole == 'pos_4' and J.Customize and J.Customize.TestWarlockEarlyMek == true then
+	for i, item in ipairs(sRoleItemsBuyList['pos_4']) do
+		if item == 'item_glimmer_cape' then
+			table.insert(sRoleItemsBuyList['pos_4'], i, 'item_mekansm')
+			break
+		end
+	end
+end
 X['sBuyList'] = sRoleItemsBuyList[sRole]
 
 X['sSellList'] = {

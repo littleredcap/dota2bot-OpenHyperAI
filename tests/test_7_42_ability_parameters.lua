@@ -985,3 +985,25 @@ do
     shaman.SkillsComplement()
     assert(casts == 1, 'a close pursuer can justify dropping wards to survive')
 end
+
+do
+    local file = assert(io.open('bots/BotLib/hero_warlock.lua', 'rb'))
+    local source = file:read('*a')
+    file:close()
+    local first = assert(source:find('local sRoleItemsBuyList = {}', 1, true))
+    local needle = "X['sBuyList'] = sRoleItemsBuyList[sRole]"
+    local last = assert(source:find(needle, first, true)) + #needle
+    local function build(role, enabled)
+        local env = setmetatable({sRole=role, J={Customize={TestWarlockEarlyMek=enabled}}, X={}}, {__index=_G})
+        setfenv(assert(loadstring(source:sub(first,last-1))),env)()
+        local items = {}
+        for i, item in ipairs(env.X.sBuyList) do items[item] = i end
+        return items
+    end
+    assert(not build('pos_4', false).item_mekansm, 'control build must stay unchanged')
+    local trial = build('pos_4', true)
+    assert(trial.item_arcane_boots < trial.item_mekansm and trial.item_mekansm < trial.item_glimmer_cape
+        and trial.item_glimmer_cape < trial.item_guardian_greaves, 'only advance Mekansm in the trial')
+    assert(not build('pos_5', true).item_mekansm, 'do not change other roles')
+    print('PASS: Warlock early Mekansm A/B is opt-in and position-specific')
+end
