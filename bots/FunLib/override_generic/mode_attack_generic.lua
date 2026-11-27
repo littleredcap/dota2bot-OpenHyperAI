@@ -373,6 +373,10 @@ function Generic.Think()
 	end
 
 	if __target and J.IsValidHero(__target) then
+		if J.TryHoldFightApproach(bot, __target) then
+			issuedCombatOrder = true
+			return
+		end
 		local dist = GetUnitToUnitDistance(bot, __target)
 		botAttackRange = bot:GetAttackRange() + bot:GetBoundingRadius()
 
@@ -415,6 +419,10 @@ function Generic.Think()
 	end
 
 	if joinEnemy ~= nil then
+		if J.TryHoldFightApproach(bot, joinEnemy) then
+			issuedCombatOrder = true
+			return
+		end
 		local destination = joinAlly ~= nil and joinAlly:GetLocation() or joinEnemy:GetLocation()
 		bot:Action_MoveToLocation(destination)
 		issuedCombatOrder = true

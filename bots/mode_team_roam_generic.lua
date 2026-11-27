@@ -340,6 +340,10 @@ function Think()
         local liveEnemies, liveAllies = J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)
         if (not IsSupport or CanSupportCommitToTarget(focusEnemy))
             and J.GetSupportedFightTarget(bot, liveEnemies, liveAllies) == focusEnemy then
+            if J.TryHoldFightApproach(bot, focusEnemy) then
+                CancelFocusOrder()
+                return
+            end
             if bot.ohaFightFocus ~= focusEnemy then
                 bot.ohaFightFocus, bot.ohaFightFocusUntil = focusEnemy, DotaTime() + 1.25
             end
@@ -407,6 +411,11 @@ function Think()
     if not ShouldAttackSpecialUnit and ItemOpsThink() then return end
 
     if (IsHeroCore or IsSupport) and J.Utils.IsValidUnit(targetUnit) then
+        if J.IsValidHero(targetUnit) then
+            if J.TryHoldFightApproach(bot, targetUnit) then return end
+            local location = bot:GetLocation()
+            if J.TryTeamfightSpread(bot, targetUnit, J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)) then return end
+        end
         bot:Action_AttackUnit(targetUnit, false)
         return
     end

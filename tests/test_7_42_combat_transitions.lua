@@ -80,6 +80,7 @@ local function fixture(rescue)
         GetLocationToLocationDistance = distance,
         GetTeamFightLocation = function() return pos(650) end,
         GetDistance = distance, WeAreStronger = no, IsInLaningPhase = no, IsInTeamFight = yes,
+        GetTeamFountain = function() return pos(-6000) end,
         IsEarlyGame = no, IsMidGame = no, IsChasingTarget = no,
         GetSpecialModeAllies = empty, GetTotalEstimatedDamageToTarget = function() return 50 end,
         GetMostPushLaneDesire = function() return 2 end, GetMostDefendLaneDesire = function() return 2 end,
@@ -429,4 +430,33 @@ do
     enemy.IsChanneling = no
     control.visible = false
     assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies) == nil, 'do not locate an enemy caster through fog')
+end
+
+do
+    local state, _, bot, core, _, enemy, _, j = fixture(false)
+    state.time, enemy.x, core.x = 48 * 60, 920, -260
+    bot.GetAttackRange = function() return 175 end
+    enemy.GetExtrapolatedLocation = function() return pos(enemy.x + 205, enemy.y) end
+    assert(j.ShouldHoldFightApproach(bot, enemy), 'do not walk after a hero escaping at nearly our speed')
+    bot:SetTarget(enemy)
+    assert(j.TryHoldFightApproach(bot, enemy) and state.orders[1].x < 0 and state.target == nil,
+        'replace the exposed chase with a bounded step back towards support')
+    assert(j.TryHoldFightApproach(bot, enemy) and #state.orders == 1,
+        'do not resubmit the same regroup order each tick')
+    enemy.x = 220
+    assert(not j.ShouldHoldFightApproach(bot, enemy), 'preserve immediate attacks even on a moving target')
+    enemy.x = 860
+    enemy.IsRooted = yes
+    assert(not j.ShouldHoldFightApproach(bot, enemy), 'an immobilized enemy on same ground creates an opening')
+    enemy.IsRooted = no
+    enemy.x, core.x, core.target = 650, 500, enemy
+    enemy.GetExtrapolatedLocation = enemy.GetLocation
+    bot.WasRecentlyDamagedByAnyHero = yes
+    assert(not j.ShouldHoldFightApproach(bot, enemy), 'nearby active pressure can cover an approach')
+    core.IsDisarmed = yes
+    assert(j.ShouldHoldFightApproach(bot, enemy), 'a disarmed ally does not make the frontal approach safe')
+    bot.WasRecentlyDamagedByAnyHero, enemy.x = no, 1100
+    assert(j.ShouldHoldFightApproach(bot, enemy), 'do not walk uphill into an unsupported target')
+    state.time = 300
+    assert(not j.ShouldHoldFightApproach(bot, enemy), 'do not disrupt existing early laning micro')
 end

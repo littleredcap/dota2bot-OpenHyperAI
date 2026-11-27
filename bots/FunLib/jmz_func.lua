@@ -6010,6 +6010,7 @@ function J.GetSupportedFightTarget(bot, enemies, allies)
 				end
 				local name = FightHeroKey(enemy)
 				local dangerousChannel = enemy:IsChanneling() and fightControlSpacing[name] ~= nil
+					and not enemy:HasModifier('modifier_teleporting')
 				local hardDisabled = enemy:IsStunned() or enemy:IsHexed() or enemy:IsNightmared()
 				local canCast = not hardDisabled and not (enemy.IsSilenced and enemy:IsSilenced())
 				local spellThreat = fightControlSpacing[name] and canCast and 1.45 or 0
@@ -6094,7 +6095,8 @@ function J.GetTeamfightSpreadPoint(bot, target, enemies, allies)
 	local sign = bot:GetPlayerID() % 2 == 0 and 1 or -1
 	for _, side in ipairs({sign, -sign}) do
 		local point = Vector(origin.x - ux * 70 - uy * side * 290, origin.y - uy * 70 + ux * side * 290, origin.z)
-		local reach = bot:GetAttackRange() + 180
+		local attackRange = bot:GetAttackRange()
+		local reach = attackRange + (length <= attackRange and 75 or 180)
 		local exposure = false
 		if GetUnitToLocationDistance(target, point) <= reach
 			and GetUnitToLocationDistance(target, point) <= length + 155 and IsLocalFightStep(bot, point, towers) then
@@ -6126,6 +6128,105 @@ function J.TryTeamfightSpread(bot, target, enemies, allies)
 	if (bot.ohaNextSpreadAt or 0) > now then return false end
 	bot.ohaSpreadUntil, bot.ohaNextSpreadAt, bot.ohaSpreadPoint = now + 0.60, now + 1.10, point
 	bot:Action_MoveToLocation(point)
+	return true
+end
+
+-- Do not count a walk toward a receding hero as guaranteed contact.
+-- Use only visible movement, current attack pressure, and reachable teammates.
+function J.ShouldHoldFightApproach(bot, target)
+	if DotaTime() < 8 * 60 or not J.IsValidHero(target) or target:GetTeam() == bot:GetTeam() then return false end
+	local distance = GetUnitToUnitDistance(bot, target)
+	local gap = distance - bot:GetAttackRange() - 75
+	if gap <= 0 then return false end
+	if bot:IsRooted() or not IsFightFocusCandidate(target) then return true end
+
+	local origin, location = bot:GetLocation(), target:GetLocation()
+	local stopMovement = target:IsRooted() or target:IsStunned() or target:IsHexed() or target:IsNightmared()
+	local allies = J.GetAlliesNearLoc(location, 1200)
+	local pressure = false
+	for _, ally in ipairs(allies) do
+		if ally ~= bot and CanProvideFightContact(ally) and HasFightContact(ally, target, 110)
+			and ally:GetAttackTarget() == target then pressure = true; break end
+	end
+
+	for _, tower in ipairs(bot:GetNearbyTowers(1600, true)) do
+		if J.IsValidBuilding(tower) and J.IsInRange(target, tower, 800) and not pressure then return true end
+	end
+	if GetHeightLevel(location) > GetHeightLevel(origin) and not pressure then return true end
+
+	local drift = 0
+	if not stopMovement then
+		local nextPoint = target:GetExtrapolatedLocation(0.75)
+		if nextPoint ~= nil then
+			drift = math.max(0, (J.GetLocationToLocationDistance(origin, nextPoint) - distance) / 0.75)
+		end
+	end
+	local selfSpeed = math.max(1, bot:GetCurrentMovementSpeed())
+	local firedUpon = bot:WasRecentlyDamagedByAnyHero(1.75) or target:GetAttackTarget() == bot
+	local closingTime = gap / math.max(1, selfSpeed - drift)
+
+	if drift >= selfSpeed * 0.58 and closingTime > (pressure and 3.5 or 2.2) then return true end
+	if firedUpon and not pressure and not stopMovement and target:GetAttackRange() >= bot:GetAttackRange() + 130
+		and distance <= target:GetAttackRange() + 275 and closingTime > 1.2 then return true end
+	return false
+end
+
+function J.TryHoldFightApproach(bot, target)
+	if not J.ShouldHoldFightApproach(bot, target) then return false end
+	if bot:GetTarget() == target then bot:SetTarget(nil) end
+	if bot:IsRooted() or (J.IsAttacking and J.IsAttacking(bot)) then
+		if bot:IsRooted() and bot:GetAttackTarget() == target then bot:Action_ClearActions(true) end
+		return true
+	end
+
+	local origin, enemyPoint = bot:GetLocation(), target:GetLocation()
+	local dist = GetUnitToUnitDistance(bot, target)
+	local length = math.sqrt((enemyPoint.x - origin.x)^2 + (enemyPoint.y - origin.y)^2)
+	if length < 100 then return true end
+	local ux, uy = (enemyPoint.x - origin.x) / length, (enemyPoint.y - origin.y) / length
+	local towers = bot:GetNearbyTowers(1600, true)
+	local enemies = J.GetEnemiesNearLoc(origin, 1450)
+	local friends = J.GetAlliesNearLoc(origin, 1250)
+	local best, bestScore = nil, math.huge
+	local rear = 185
+	for _, side in ipairs({0, 1, -1}) do
+		local point = Vector(origin.x - ux * rear - uy * side * 230, origin.y - uy * rear + ux * side * 230, origin.z)
+		if GetUnitToLocationDistance(target, point) >= dist + 100 and IsLocalFightStep(bot, point, towers) then
+			local exposure = false
+			for _, enemy in ipairs(enemies) do
+				if GetUnitToLocationDistance(enemy, point) < GetUnitToUnitDistance(enemy, bot) - 35 then
+					exposure = true; break
+				end
+			end
+			if not exposure then
+				local support = math.huge
+				for _, ally in ipairs(friends) do
+					if ally ~= bot and CanProvideFightContact(ally) then
+						local d = GetUnitToLocationDistance(ally, point)
+						if d <= 1150 and d <= GetUnitToUnitDistance(ally, bot) + 115 then support = math.min(support, d) end
+					end
+				end
+				local score = support
+				if support == math.huge then
+					-- Alone, take only the short rear step if it also leads home.
+					local home = J.GetTeamFountain()
+					if side == 0 and J.GetLocationToLocationDistance(point, home) < J.GetLocationToLocationDistance(origin, home) then score = 1500 end
+				end
+				if score < bestScore then best, bestScore = point, score end
+			end
+		end
+	end
+
+	local now = DotaTime()
+	if best ~= nil then
+		local old = bot.ohaFightApproachPoint
+		if old ~= nil and bot.ohaFightApproachTarget == target and (bot.ohaFightApproachUntil or 0) > now
+			and J.GetLocationToLocationDistance(old, best) <= 140 and IsLocalFightStep(bot, old, towers) then return true end
+		bot.ohaFightApproachPoint, bot.ohaFightApproachTarget, bot.ohaFightApproachUntil = best, target, now + 0.5
+		bot:Action_MoveToLocation(best)
+	elseif bot:GetAttackTarget() == target then
+		bot:Action_ClearActions(true)
+	end
 	return true
 end
 
