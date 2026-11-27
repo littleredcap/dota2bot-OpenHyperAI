@@ -337,13 +337,16 @@ function Think()
 
     if focusEnemy ~= nil then
         local location = bot:GetLocation()
+        local liveEnemies, liveAllies = J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)
         if (not IsSupport or CanSupportCommitToTarget(focusEnemy))
-            and J.GetSupportedFightTarget(bot, J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)) == focusEnemy then
+            and J.GetSupportedFightTarget(bot, liveEnemies, liveAllies) == focusEnemy then
             if bot.ohaFightFocus ~= focusEnemy then
                 bot.ohaFightFocus, bot.ohaFightFocusUntil = focusEnemy, DotaTime() + 1.25
             end
             bot:SetTarget(focusEnemy)
-            bot:Action_AttackUnit(focusEnemy, true)
+            if not J.TryTeamfightSpread(bot, focusEnemy, liveEnemies, liveAllies) then
+                bot:Action_AttackUnit(focusEnemy, true)
+            end
             issuedFocusTarget = focusEnemy
         else
             CancelFocusOrder()

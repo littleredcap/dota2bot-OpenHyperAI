@@ -1,8 +1,8 @@
 local function yes() return true end
 local function no() return false end
 local function empty() return {} end
-local function pos(x) return {x = x} end
-local function distance(a, b) return math.abs(a.x - b.x) end
+local function pos(x, y, z) return {x = x, y = y or 0, z = z or 0} end
+local function distance(a, b) return math.sqrt((a.x - b.x)^2 + ((a.y or 0) - (b.y or 0))^2) end
 local function remap(n, lo, hi, a, b) return a + (b - a) * math.max(0, math.min(1, (n - lo) / (hi - lo))) end
 
 local file = assert(io.open('bots/FunLib/jmz_func.lua', 'rb'))
@@ -23,7 +23,7 @@ local function fixture(rescue)
     local reinforcement = {x = 700, side = 3, id = 6, alive = false}
     local members, opponents = {bot, fartherCore, backup, core}, {enemy, reinforcement}
     for _, unit in ipairs({bot, core, fartherCore, backup, enemy, reinforcement}) do
-        unit.GetLocation = function(self) return pos(self.x) end
+        unit.GetLocation = function(self) return pos(self.x, self.y) end
         unit.GetPlayerID = function(self) return self.id end
         unit.GetTeam = function(self) return self.side end
         unit.GetUnitName = function() return 'npc_dota_hero_test' end
@@ -104,6 +104,7 @@ local function fixture(rescue)
         GetHeightLevel = function(point) return point.x > 1000 and 2 or 1 end,
         GetIncomingTeleports = function() return state.teleports end,
         IsLocationVisible = function(location) return not location.hidden end,
+        Vector = pos, IsLocationPassable = yes,
         GetTeamPlayers = function() return {1, 2, 3, 4} end, GetTeamMember = function(i) return members[i] end,
         GetUnitList = function(kind) return kind == 1 and members or opponents end,
         require = function(name) return assert(modules[name], name) end,
@@ -391,4 +392,41 @@ do
     core.target = nil
     assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == nil,
         'do not turn a focus rule into a new teamfight with no commitment')
+end
+
+do
+    local state, env, bot, core, backup, enemy, control, j = fixture(false)
+    state.time, bot.id = 15 * 60, 2
+    enemy.x, control.x, control.y, control.alive = 600, 680, 100, true
+    core.x, core.y, backup.x, backup.y, backup.retreating = 240, 50, 80, 200, false
+    core.GetAttackRange = function() return 340 end
+    control.GetUnitName = function() return 'npc_dota_hero_warlock' end
+    local enemies, allies = {enemy, control}, {core, backup}
+    local point = assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies), 'split locally against known AoE')
+    assert(point.y < 0 and point.x < 0 and distance(point, enemy) <= 880)
+    assert(j.TryTeamfightSpread(bot, enemy, enemies, allies) and #state.orders == 1)
+    assert(j.TryTeamfightSpread(bot, enemy, enemies, allies) and #state.orders == 1,
+        'do not send duplicate move orders during the sidestep')
+    env.IsLocationPassable = function(p) return p.y >= 0 end
+    assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies).y > 0,
+        'use the safe alternate side if the first choice is blocked')
+    assert(not j.TryTeamfightSpread(bot, enemy, enemies, allies),
+        'do not preserve an order when its original route becomes unsafe')
+    env.IsLocationPassable = no
+    assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies) == nil,
+        'do not step at all if neither side is passable')
+    env.IsLocationPassable = yes
+    bot.IsRooted = yes
+    assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies) == nil)
+    bot.IsRooted, bot.IsChanneling = no, yes
+    assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies) == nil, 'do not interrupt your own channel')
+    bot.IsChanneling = no
+    j.IsAttacking = yes
+    assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies) == nil, 'do not throw away an attack already winding up')
+    j.IsAttacking = no
+    enemy.IsChanneling = yes
+    assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies) == nil, 'do not leave an in-range channel uninterrupted')
+    enemy.IsChanneling = no
+    control.visible = false
+    assert(j.GetTeamfightSpreadPoint(bot, enemy, enemies, allies) == nil, 'do not locate an enemy caster through fog')
 end

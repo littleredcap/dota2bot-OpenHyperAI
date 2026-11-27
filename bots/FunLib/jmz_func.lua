@@ -6035,6 +6035,100 @@ function J.GetSupportedFightTarget(bot, enemies, allies)
 end
 
 
+local function IsLocalFightStep(bot, point, towers)
+	local origin = bot:GetLocation()
+	local mid = Vector((origin.x + point.x) / 2, (origin.y + point.y) / 2, origin.z)
+	local height = GetHeightLevel(origin)
+	if not IsLocationPassable(mid) or not IsLocationPassable(point) or not IsLocationVisible(point)
+		or GetHeightLevel(mid) ~= height or GetHeightLevel(point) ~= height then return false end
+	for _, tower in ipairs(towers) do
+		if J.IsValidBuilding(tower) and GetUnitToLocationDistance(tower, point) < 825
+			and GetUnitToUnitDistance(tower, bot) > GetUnitToLocationDistance(tower, point) + 25 then return false end
+	end
+	return true
+end
+
+function J.GetTeamfightSpreadPoint(bot, target, enemies, allies)
+	if DotaTime() < 12 * 60 or #enemies < 2 or bot:GetAttackRange() < 420
+		or not IsFightFocusCandidate(target) or not CanProvideFightContact(bot) or bot:IsRooted()
+		or (J.IsAttacking and J.IsAttacking(bot)) or J.GetHP(bot) < 0.55
+		or (target:IsChanneling() and HasFightContact(bot, target, 35)) then return nil end
+
+	local origin, enemyPoint = bot:GetLocation(), target:GetLocation()
+	if not HasFightContact(bot, target, 180) then return nil end
+	local radius = 0
+	for _, enemy in ipairs(enemies) do
+		if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.IsInRange(bot, enemy, 1450)
+			and not (enemy.IsSilenced and enemy:IsSilenced()) then
+			radius = math.max(radius, fightControlSpacing[FightHeroKey(enemy)] or 0)
+		end
+	end
+	if radius == 0 then return nil end
+
+	-- Frontliners keep their position; among ranged allies the lowest ID anchors.
+	local friends, anchor, cover = {}, false, false
+	for _, ally in ipairs(allies) do
+		if ally ~= bot and CanProvideFightContact(ally) and J.IsInRange(bot, ally, 1250) then
+			friends[#friends + 1] = ally
+			local distance = GetUnitToUnitDistance(bot, ally)
+			if distance < radius and (ally:GetAttackRange() < 420 or ally:GetPlayerID() < bot:GetPlayerID()) then anchor = true end
+			if HasFightContact(ally, target, 250) then cover = true end
+		end
+	end
+	if #friends < 2 or not anchor or not cover then return nil end
+
+	local length = math.sqrt((enemyPoint.x - origin.x)^2 + (enemyPoint.y - origin.y)^2)
+	if length < 100 then return nil end
+	local ux, uy = (enemyPoint.x - origin.x) / length, (enemyPoint.y - origin.y) / length
+	local towers = bot:GetNearbyTowers(1600, true)
+	local function congestion(point)
+		local score = 0
+		for _, ally in ipairs(friends) do
+			local d = GetUnitToLocationDistance(ally, point)
+			score = score + math.max(0, radius - d)^2
+		end
+		return score
+	end
+	local best, bestScore = nil, congestion(origin) - (radius * 0.28)^2
+	-- Try short side steps, not long flanks. A small rearward offset preserves the firing line.
+	local sign = bot:GetPlayerID() % 2 == 0 and 1 or -1
+	for _, side in ipairs({sign, -sign}) do
+		local point = Vector(origin.x - ux * 70 - uy * side * 290, origin.y - uy * 70 + ux * side * 290, origin.z)
+		local reach = bot:GetAttackRange() + 180
+		local exposure = false
+		if GetUnitToLocationDistance(target, point) <= reach
+			and GetUnitToLocationDistance(target, point) <= length + 155 and IsLocalFightStep(bot, point, towers) then
+			for _, enemy in ipairs(enemies) do
+				if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy)
+					and GetUnitToLocationDistance(enemy, point) < GetUnitToUnitDistance(bot, enemy) - 75 then
+					exposure = true
+					break
+				end
+			end
+			if not exposure then
+				local score = congestion(point)
+				if score < bestScore then best, bestScore = point, score end
+			end
+		end
+	end
+	return best
+end
+
+-- Revalidate every tick; throttle starting a new move and let the short sidestep finish.
+function J.TryTeamfightSpread(bot, target, enemies, allies)
+	local now = DotaTime()
+	local point = J.GetTeamfightSpreadPoint(bot, target, enemies, allies)
+	if point == nil then return false end
+	if (bot.ohaSpreadUntil or 0) > now then
+		return bot.ohaSpreadPoint ~= nil and J.GetLocationToLocationDistance(point, bot.ohaSpreadPoint) <= 170
+			and IsLocalFightStep(bot, bot.ohaSpreadPoint, bot:GetNearbyTowers(1600, true))
+	end
+	if (bot.ohaNextSpreadAt or 0) > now then return false end
+	bot.ohaSpreadUntil, bot.ohaNextSpreadAt, bot.ohaSpreadPoint = now + 0.60, now + 1.10, point
+	bot:Action_MoveToLocation(point)
+	return true
+end
+
 local function IsSiegeSummon(name)
 	return string.find(name, 'shadow_shaman_ward', 1, true) ~= nil or string.find(name, 'warlock_golem', 1, true) ~= nil
 end

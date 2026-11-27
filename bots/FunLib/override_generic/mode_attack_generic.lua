@@ -381,6 +381,7 @@ function Generic.Think()
 		botTarget.id = __target:GetPlayerID()
 		bot:SetTarget(__target)
 		issuedCombatOrder = true
+		if J.TryTeamfightSpread(bot, __target, J.GetEnemiesNearLoc(botLocation, 1600), J.GetAlliesNearLoc(botLocation, 1600)) then return end
 
 		-- Melee vs ranged positioning
 		if botAttackRange < 330 and botName ~= 'npc_dota_hero_templar_assassin' then
