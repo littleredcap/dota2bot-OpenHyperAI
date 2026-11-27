@@ -201,12 +201,14 @@ function ____exports.GetPushDesireHelper(bot, lane)
             return 0.88
         end
     end
-    if (nH == 0 or currentTime > StartToPushTime) and not outsideCoreLane and not recentDefendPing
+    local earlyMidChip = lane == LANE_MID and currentTime >= 240 and currentTime <= 780
+        and bot:GetAssignedLane() == LANE_MID and bot:GetAttackRange() >= 550
+    if (earlyMidChip or nH == 0 or currentTime > StartToPushTime) and not outsideCoreLane and not recentDefendPing
         and not criticalBaseCreeps and not baseDefenseLimited and not activeDefense then
         local opportunity = GetOuterTowerOpportunity(bot, lane, gameState)
-        if opportunity ~= nil then
+        if opportunity ~= nil and (opportunity.earlyMidChip or nH == 0 or currentTime > StartToPushTime) then
             local tower = opportunity.tower
-            bot.ohaOuterTowerPush = {lane = lane, tower = tower}
+            bot.ohaOuterTowerPush = {lane = lane, tower = tower, earlyMidChip = opportunity.earlyMidChip}
             bot.laneToPush = lane
             return GetUnitToUnitDistance(bot, tower) <= 1600 and 0.8 or 0.76
         end
@@ -779,7 +781,36 @@ local function CanEscortOuterWave(bot, tower, lane, travel)
     return true
 end
 
+-- A brief mid T1 attack behind a living wave is not a general push.
+local function GetEarlyMidTowerChip(bot, lane, gameState)
+    local now = gameState.currentTime
+    if lane ~= LANE_MID or now < 240 or now > 780
+        or bot:GetAssignedLane() ~= LANE_MID or bot:GetAttackRange() < 550
+        or not jmz.IsCore(bot) or jmz.GetHP(bot) < 0.65 or bot:IsDisarmed()
+        or jmz.IsRetreating(bot) or bot:WasRecentlyDamagedByAnyHero(2)
+        or bot:WasRecentlyDamagedByTower(2) then return end
+    local tower = GetTower(gameState.enemyTeam, TOWER_MID_1)
+    if not jmz.IsValidBuilding(tower) or not tower:CanBeSeen()
+        or not jmz.IsInRange(bot, tower, bot:GetAttackRange())
+        or tower:HasModifier('modifier_fountain_glyph') or ____exports.HasBackdoorProtect(tower) then return end
+    local tank = tower:GetAttackTarget()
+    if not jmz.IsValid(tank) or tank:GetTeam() ~= bot:GetTeam()
+        or not jmz.IsKeyWordUnit('npc_dota_creep_', tank)
+        or tank:GetHealth() <= math.max(100, tower:GetAttackDamage()) then return end
+    local count = 0
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(1400, false)) do
+        if jmz.IsValid(creep) and jmz.IsInRange(creep, tower, 850) then count = count + 1 end
+    end
+    if count < 2 or #jmz.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 1200) > 1 then return end
+    for _, enemy in ipairs(jmz.GetEnemiesNearLoc(tower:GetLocation(), 1650)) do
+        if jmz.IsInRange(bot, enemy, math.max(725, enemy:GetAttackRange() + 150)) then return end
+    end
+    return {tower = tower, earlyMidChip = true}
+end
+
 function GetOuterTowerOpportunity(bot, lane, gameState)
+    local chip = GetEarlyMidTowerChip(bot, lane, gameState)
+    if chip then return chip end
     if jmz.GetHP(bot) < 0.6 or jmz.IsRetreating(bot) or jmz.IsDoingTormentor(bot) or jmz.IsDoingRoshan(bot)
         or bot:IsDisarmed() or bot:WasRecentlyDamagedByTower(2) or bot:WasRecentlyDamagedByAnyHero(2)
         or #jmz.GetEnemiesNearLoc(bot:GetLocation(), 1400) > 0 then return nil end
@@ -1203,8 +1234,12 @@ function ____exports.PushThink(bot, lane)
         end
         local opportunity = not criticalBaseCreeps and (bot.ohaOuterTowerHoldUntil or 0) <= now
             and GetOuterTowerOpportunity(bot, lane, gameState) or nil
-        if not opportunity or opportunity.tower ~= plan.tower then
+        if not opportunity or opportunity.tower ~= plan.tower or (plan.earlyMidChip and not opportunity.earlyMidChip) then
             ____exports.CancelPushOrder(bot, lane)
+            return
+        end
+        if opportunity.earlyMidChip then
+            bot:Action_AttackUnit(opportunity.tower, true)
             return
         end
         RunOuterTowerPlan(bot, opportunity)

@@ -210,7 +210,8 @@ function X.SkillsComplement()
 	nLV = bot:GetLevel()
 	hEnemyHeroList = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE )
 
-	local holdingTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) ~= nil
+	local holdingTower = (J.IsDefending(bot) and J.GetAssignedOuterTower(bot) ~= nil)
+		or (DotaTime() >= 240 and DotaTime() <= 780 and J.GetEarlyMidSiegeDefense(bot) ~= nil)
 	if holdingTower then castQDesire, castQLocation = X.ConsiderQ() end
 	if not holdingTower or castQDesire <= 0 then
 		castRDesire, castRTarget = X.ConsiderR()
@@ -308,6 +309,7 @@ function X.ConsiderQ()
 	local nCanHurtCreepCount = waveLocation and J.GetInLocLaneCreepCount(bot, 1600, nRadius, waveLocation) or 0
 	local nCanHurtHeroLocationAoE = bot:FindAoELocation(true, true, botLocation, nCastRange, nRadius - 30, impactDelay, 0)
 	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
+	if not holdTower and DotaTime() >= 240 and DotaTime() <= 780 then holdTower = J.GetEarlyMidSiegeDefense(bot) end
 	if holdTower ~= nil then
 		if waveLocation ~= nil and nCanHurtCreepCount >= 2
 			and GetUnitToLocationDistance(holdTower, waveLocation) <= 1050
@@ -323,9 +325,12 @@ function X.ConsiderQ()
 				local fromTower = GetUnitToLocationDistance(holdTower, point)
 				if fromTower <= 1250 and GetUnitToLocationDistance(bot, point) <= nCastRange then
 					local hits = J.GetInLocLaneCreepCount(bot, 1600, nRadius - 25, point)
-					if hits >= 2 and (hits > count or hits == count and fromTower < distance)
+					local siegeNow = J.IsKeyWordUnit and J.IsKeyWordUnit('_siege', creep)
+						and (creep:GetAttackTarget() == holdTower or fromTower <= 900)
+					local priority = hits + (siegeNow and 2 or 0)
+					if (hits >= 2 or siegeNow) and (priority > count or priority == count and fromTower < distance)
 						and not X.IsAbiltyQCastedHere(point, nRadius) then
-						aim, count, distance = point, hits, fromTower
+						aim, count, distance = point, priority, fromTower
 					end
 				end
 			end
@@ -335,6 +340,26 @@ function X.ConsiderQ()
 
 	if J.IsInLaningPhase() and (J.IsLaning(bot) or J.IsGoingOnSomeone(bot) or J.IsRetreating(bot)) then
 		local attackRange = bot:GetAttackRange()
+		local now = DotaTime()
+		-- Escort a live catapult by clearing its blockers, not by blindly
+		-- shoving every wave or consuming the last defensive charge.
+		if now >= 240 and now <= 780 and bot:GetAssignedLane() == LANE_MID and J.IsLaning(bot)
+			and not J.IsRetreating(bot) and not J.IsAttacking(bot) and #nEnemysHeroesInSkillRange <= 1
+			and not bot:WasRecentlyDamagedByAnyHero(2) and nHP >= 0.62
+			and GetShrapnelCharges() >= 2 and bot:GetMana() >= abilityQ:GetManaCost() * 2
+			and waveLocation and nCanHurtCreepCount >= 3
+			and GetUnitToLocationDistance(bot, waveLocation) <= nCastRange
+			and GetAmountAlongLane(LANE_MID, waveLocation).distance < 600
+			and not X.IsAbiltyQCastedHere(waveLocation, nRadius)
+			and not X.HasLaningCreepShot(nEnemysLaneCreepsInSkillRange, nEnemysHeroesInSkillRange, bot:GetNearbyTowers(1200, true)[1])
+		then
+			for _, unit in ipairs(bot:GetNearbyLaneCreeps(1400, false)) do
+				if J.IsValid(unit) and J.IsKeyWordUnit('_siege', unit)
+					and GetUnitToLocationDistance(unit, waveLocation) <= 900
+					and GetAmountAlongLane(LANE_MID, unit:GetLocation()).distance < 550
+				then return BOT_ACTION_DESIRE_HIGH, waveLocation end
+			end
+		end
 		if not J.IsRetreating(bot) and (J.IsAttacking(bot) or X.HasLaningCreepShot(nEnemysLaneCreepsInSkillRange,
 			nEnemysHeroesInSkillRange, bot:GetNearbyTowers(1200, true)[1])) then return BOT_ACTION_DESIRE_NONE end
 		local manaReserve = abilityR:IsTrained() and abilityR:GetManaCost() or abilityQ:GetManaCost()

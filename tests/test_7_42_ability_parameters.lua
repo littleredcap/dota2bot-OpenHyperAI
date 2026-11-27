@@ -481,7 +481,7 @@ print('PASS: Nyx clears a lined-up tower wave while preserving Vendetta and low 
 do
     local aim, enemyCreep, mana, lane, lastHit, waveCount = 100, {}, 250, true, false, 1
     local retreating, enemyInRange, reserve, deny, windingUp = false, true, false, false, false
-    local holdTower = nil
+    local holdTower, earlyTower, catapult = nil, nil, nil
     local casts, creepAim = {}, 700
     local shrapnel = ability({radius = 450, damage_delay = 1.2, duration = 10, AbilityCharges = 3, AbilityChargeRestoreTime = 35})
     shrapnel.GetAOERadius = function() return 450 end
@@ -493,7 +493,9 @@ do
         GetHealth = function() return 600 end, GetMaxHealth = function() return 600 end,
         GetMana = function() return mana end, GetMaxMana = function() return 300 end,
         GetAttackRange = function() return 600 end, GetAttackDamage = function() return 60 end,
-        GetLocation = function() return 0 end, GetNearbyLaneCreeps = function() return {enemyCreep} end,
+        GetLocation = function() return 0 end, GetAssignedLane = function() return 2 end,
+        WasRecentlyDamagedByAnyHero = no,
+        GetNearbyLaneCreeps = function(_, _, enemy) return enemy and {enemyCreep} or (catapult and {catapult} or {}) end,
         GetNearbyTowers = empty,
         FindAoELocation = function() return (not lane or retreating) and {targetloc = aim} or nil end,
         ActionQueue_UseAbilityOnLocation = function(_, spell, point)
@@ -504,6 +506,8 @@ do
     local sniper = loadHero('sniper', {sniper_shrapnel = shrapnel, sniper_assassinate = {IsTrained = no}}, sniperBot, {
         IsLaning = function() return lane end, IsInLaningPhase = yes, IsDefending = function() return not lane end,
         GetAssignedOuterTower = function() return holdTower end,
+        GetEarlyMidSiegeDefense = function() return earlyTower end,
+        IsKeyWordUnit = function(_, unit) return unit == catapult end,
         IsRetreating = function() return retreating end, IsGoingOnSomeone = no,
         GetNearbyHeroes = function() return {enemy} end,
         GetInLocLaneCreepCount = function() return waveCount end,
@@ -523,6 +527,7 @@ do
     assert(buy:find('item_dragon_lance item_maelstrom item_hurricane_pike item_mask_of_madness item_aghanims_shard', 1, true))
     local env = getfenv(sniper.ConsiderQ)
     env.GetUnitToLocationDistance = function(_, point) return math.abs(point) end
+    env.LANE_MID, env.GetAmountAlongLane = 2, function() return {distance = 0} end
     sniper.ConsiderTarget = no
     sniper.ConsiderR, sniper.ConsiderE, sniper.ConsiderAS = function() return NONE end,
         function() return NONE end, function() return NONE end
@@ -577,6 +582,15 @@ do
     aim, creepAim, sniperBot.clock = 1500, 400, 225
     sniper.SkillsComplement()
     assert(casts[8] == 400, 'clear the assigned tower wave even when the engine AoE search picks another cluster')
+    lane, earlyTower, holdTower, aim, waveCount, sniperBot.clock = true, {}, nil, nil, 2, 300
+    sniperBot.FindAoELocation = function() return aim and {targetloc = aim} or nil end
+    assert(sniper.ConsiderQ() > 0, 'clear the early siege near own mid before the team defense mode switches')
+    earlyTower, aim, waveCount, lastHit, mana = nil, 410, 3, true, 280
+    catapult = {GetLocation = function() return 390 end}
+    assert(sniper.ConsiderQ() == NONE, 'escort cannot interrupt a secured last hit')
+    lastHit = false
+    local desire, point = sniper.ConsiderQ()
+    assert(desire > 0 and point == 410, 'spare charge clears the wave stopping our siege creep')
 end
 print('PASS: Sniper balances last hits, lane pressure and distinct Shrapnel zones')
 

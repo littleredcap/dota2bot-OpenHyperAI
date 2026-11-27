@@ -1370,6 +1370,19 @@ function J.GetLaningPeelTarget(bot, ally, enemies, castRange)
     return best
 end
 
+-- A visible early siege wave can reach mid without an escort: do not wait for
+-- the team-defense assignment before the ranged mid starts clearing it.
+function J.GetEarlyMidSiegeDefense(bot)
+    local now = DotaTime()
+    if now < 4 * 60 or now > 13 * 60 or bot:GetAssignedLane() ~= LANE_MID then return nil end
+    local tower = GetTower(bot:GetTeam(), TOWER_MID_1)
+    if not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 2200) then return nil end
+    local threat = J.GetOuterTowerThreat(tower, LANE_MID)
+    if threat.siegeAttacking or (threat.siege and threat.waveSize >= 2 and threat.eta <= 7) then
+        return tower
+    end
+end
+
 function J.GetLaningHoldTower(bot)
     local delivery = bot.ohaLaneSupply
     if delivery and delivery.waitUntil > DotaTime() and (bot.ohaCourierUnsafeUntil or 0) <= DotaTime()
