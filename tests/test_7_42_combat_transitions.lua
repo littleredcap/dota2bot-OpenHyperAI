@@ -116,6 +116,7 @@ local function fixture(rescue)
         BOT_MODE_DESIRE_MODERATE = 0.5, BOT_MODE_DESIRE_ABSOLUTE = 1, BOT_ACTION_DESIRE_NONE = 0,
         BOT_ACTION_DESIRE_VERYHIGH = 0.9,
         BOT_ACTION_TYPE_DELAY = 5, BOT_MODE_WARD = 6, ITEM_SLOT_TYPE_BACKPACK = 2, DAMAGE_TYPE_ALL = 3,
+        DAMAGE_TYPE_PHYSICAL = 1,
     }, {__index = _G})
     env.dofile = function(name)
         if name == 'bots/FunLib/aba_special_units' then return {GetDesire = function() return 0 end} end
@@ -384,6 +385,19 @@ do
     control.IsSilenced, control.IsChanneling = no, yes
     assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == control,
         'prioritize a reachable control caster already channeling')
+    control.IsChanneling = no
+    control.GetHealth = function() return 160 end
+    j.GetHP = function(unit) if unit == control then return 0.8 end; return oldHP(unit) end
+    assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == enemy,
+        'do not redirect everyone for a healthy caster with no real burst')
+    bot.GetEstimatedDamageToTarget = function(_, available, unit) return unit == control and 95 or 10 end
+    core.GetEstimatedDamageToTarget = bot.GetEstimatedDamageToTarget
+    assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == control,
+        'a fragile caster can be a burst target even when its health percentage is high')
+    core.IsDisarmed = yes
+    assert(j.GetSupportedFightTarget(bot, {enemy, control}, {core, backup}) == nil,
+        'do not count burst or existing commitment from a disarmed ally')
+    core.IsDisarmed = no
     control.visible = false
     assert(j.GetSupportedFightTarget(bot, {control, enemy}, {backup, core}) == enemy,
         'a threat in fog cannot be selected')
@@ -460,3 +474,25 @@ do
     state.time = 300
     assert(not j.ShouldHoldFightApproach(bot, enemy), 'do not disrupt existing early laning micro')
 end
+
+do
+    local state, mode, bot, core, _, enemy = fixture(true)
+    state.time, enemy.x, core.x, enemy.target = 48 * 60, 560, 495, nil
+    bot.GetAttackRange = function() return 175 end
+    core.target = enemy
+    enemy.GetExtrapolatedLocation = function() return pos(enemy.x + 219) end
+    local desire = mode.GetDesire()
+    assert(desire == 0.86, 'the live team-roam path proposes a supported visible target: ' .. tostring(desire))
+    mode.Think()
+    assert(state.orders[1].x < 0 and state.target == nil,
+        'the actual mode stages rather than committing a raw follow attack on the escaping target')
+    enemy.x = 200
+    mode.Think()
+    assert(state.orders[2] == enemy and state.target == enemy,
+        'the actual mode resumes the fast attack once the target is in reach')
+    enemy.visible = false
+    mode.Think()
+    assert(state.orders[3] == 'cancel' and state.target == nil, 'vision loss clears the existing focus attack')
+end
+
+print('PASS: reachable fight focus, formation movement and frontal-chase controls')

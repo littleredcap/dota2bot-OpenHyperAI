@@ -6002,12 +6002,19 @@ function J.GetSupportedFightTarget(bot, enemies, allies)
 			end
 			if safe then
 				local committed, inRange = 0, 0
+				local burst = HasFightContact(bot, enemy, 70)
+					and bot:GetEstimatedDamageToTarget(false, enemy, 1.6, DAMAGE_TYPE_PHYSICAL) or 0
 				for _, ally in ipairs(ready) do
 					if HasFightContact(ally, enemy, 250) then
 						inRange = inRange + 1
 						if ally:GetAttackTarget() == enemy then committed = committed + 1 end
+						if HasFightContact(ally, enemy, 70) then
+							burst = burst + ally:GetEstimatedDamageToTarget(false, enemy, 1.6, DAMAGE_TYPE_PHYSICAL)
+						end
 					end
 				end
+				-- Only short, immediately deliverable attack damage, not hypothetical allied spell chains.
+				local burstReady = burst >= math.max(1, enemy:GetHealth()) * 1.15
 				local name = FightHeroKey(enemy)
 				local dangerousChannel = enemy:IsChanneling() and fightControlSpacing[name] ~= nil
 					and not enemy:HasModifier('modifier_teleporting')
@@ -6017,12 +6024,12 @@ function J.GetSupportedFightTarget(bot, enemies, allies)
 				local damageThreat = math.min(enemy:GetAttackDamage() / 250, 1.5)
 				local location = enemy:GetLocation()
 				local exposed = HasFightContact(bot, enemy, 120) and inRange > 0
-					and (J.GetHP(enemy) <= 0.72 or dangerousChannel)
+					and (J.GetHP(enemy) <= 0.72 or burstReady or dangerousChannel)
 				-- Do not drag the team toward a full-health backline just because of its roster role.
 				if inRange > 0 and (committed > 0 or exposed and (spellThreat > 0 or damageThreat >= 1))
 					and J.GetAvailableFightAllies(bot, location, 1250) + 1 >= #J.GetEnemiesNearLoc(location, 1250) then
 					local score = math.min(committed, 2) * 0.5 + (1 - J.GetHP(enemy)) * 1.8
-						+ damageThreat + spellThreat + (dangerousChannel and 1.15 or 0)
+						+ damageThreat + spellThreat + (dangerousChannel and 1.15 or 0) + (burstReady and 1.05 or 0)
 						+ (HasFightContact(bot, enemy, 75) and 0.25 or 0)
 					if bot.ohaFightFocus == enemy and (bot.ohaFightFocusUntil or 0) > DotaTime() then score = score + 0.3 end
 					if score > bestScore or (score == bestScore and enemy:GetPlayerID() < best:GetPlayerID()) then
