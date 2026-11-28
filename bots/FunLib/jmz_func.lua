@@ -1568,6 +1568,18 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local sheltered = not towerOnly and (covered or hasLaneCover)
     local threatRadius = covered and 775 or 950
     local enemyTower = GetTower(GetOpposingTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+    local function IsSafeReturnStep(step, radius)
+        local travel = GetUnitToLocationDistance(bot, step)
+        if travel <= 225 then return false end
+        local mid = J.VectorTowards(origin, step, travel * 0.5)
+        return IsLocationPassable(step) and IsLocationPassable(mid) and IsLocationVisible(step)
+            and (not J.IsValidBuilding(enemyTower) or GetUnitToLocationDistance(enemyTower, step) > 1050)
+            and #J.GetEnemiesNearLoc(origin, radius) == 0
+            and #J.GetEnemiesNearLoc(mid, radius) == 0
+            and #J.GetLastSeenEnemiesNearLoc(mid, radius) == 0
+            and #J.GetEnemiesNearLoc(step, radius) == 0
+            and #J.GetLastSeenEnemiesNearLoc(step, radius) == 0
+    end
     -- If the wave is contested, return to the tower instead of abandoning
     -- the lane or walking all the way into the contested wave.
     local offsets = towerOnly and {math.max(distanceToTower, 825)}
@@ -1575,18 +1587,23 @@ function J.GetSideLaneReturnPoint(bot, lane)
         or {distanceToTower > 1050 and distanceToTower or 825, 1325}
     for _, offset in ipairs(offsets) do
         local step = distanceToTower > offset + 70 and J.VectorTowards(point, hub, offset) or hub
-        local travel = GetUnitToLocationDistance(bot, step)
-        local mid = travel > 225 and J.VectorTowards(origin, step, travel * 0.5) or origin
-        if travel > 225 and J.GetLocationToLocationDistance(step, point) + 90 < distance
-            and IsLocationPassable(step) and IsLocationPassable(mid)
-            and IsLocationVisible(step)
-            and (not J.IsValidBuilding(enemyTower) or GetUnitToLocationDistance(enemyTower, step) > 1050)
-            and #J.GetEnemiesNearLoc(origin, threatRadius) == 0
-            and #J.GetEnemiesNearLoc(mid, threatRadius) == 0
-            and #J.GetLastSeenEnemiesNearLoc(mid, threatRadius) == 0
-            and #J.GetEnemiesNearLoc(step, threatRadius) == 0
-            and #J.GetLastSeenEnemiesNearLoc(step, threatRadius) == 0 then
+        if J.GetLocationToLocationDistance(step, point) + 90 < distance and IsSafeReturnStep(step, threatRadius) then
             return step, recovered and early
+        end
+    end
+    -- Rejoin from the rear while the wave or the T1 approach is contested.
+    -- Each stop still has to advance toward the lane from the bot's current location.
+    if returning and not J.IsInRange(bot, tower, 2400) then
+        local rear = J.AdjustLocationWithOffsetTowardsFountain(hub, 850)
+        if IsSafeReturnStep(rear, 950) then return rear, recovered, tower end
+        local towerDistance = GetUnitToUnitDistance(bot, tower)
+        local rearTowers = lane == LANE_TOP and {TOWER_TOP_2, TOWER_TOP_3} or {TOWER_BOT_2, TOWER_BOT_3}
+        for _, id in ipairs(rearTowers) do
+            local anchor = GetTower(team, id)
+            if J.IsValidBuilding(anchor) and GetUnitToUnitDistance(anchor, tower) + 225 < towerDistance
+                and IsSafeReturnStep(anchor:GetLocation(), 950) then
+                return anchor:GetLocation(), recovered, anchor
+            end
         end
     end
 end

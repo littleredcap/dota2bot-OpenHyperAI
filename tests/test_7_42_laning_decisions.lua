@@ -798,6 +798,13 @@ do
     j.GetMP = function() return 0.95 end
     assert(j.GetSideLaneReturnPoint(bot, lane.LANE_BOT) == own.x,
         'a recovered support can walk from the fountain to tower cover when the defending partner is present')
+    bot.IsInvulnerable = yes
+    bot.HasModifier = function(_, name) return name == 'modifier_fountain_invulnerability' end
+    assert(lane.GetDesire() == 0.68, 'fountain protection allows an eligible reentry to win mode selection')
+    expect(s, lane, 'move', own.x)
+    bot.HasModifier = no
+    assert(lane.GetDesire() == 0, 'another invulnerability does not allow a reentry order')
+    bot.IsInvulnerable = no
     j.GetMP = function() return 0.65 end
     assert(not j.GetSideLaneReturnPoint(bot, lane.LANE_BOT), 'finish healing mana before leaving the fountain')
 end
@@ -1058,6 +1065,11 @@ do
     desire, destination = teleport()
     assert(desire > 0 and destination == 50,
         'return to the actual side lane behind the T1 even when the default role lane differs')
+    state.fallbackTower = {GetLocation = function() return -3200 end}
+    j.GetLastSeenEnemiesNearLoc = function(at) return at == 50 and {6, 7} or {} end
+    desire, destination = teleport()
+    assert(desire > 0 and destination == -3450, 'return behind a safe T2 when the surviving side T1 is contested')
+    state.fallbackTower = nil
     bot.ohaCarryLaneRecoveryUntil = state.time + 20
     j.GetLastSeenEnemiesNearLoc = function() return {6, 7} end
     assert(teleport() == 0, 'the same contested lane is unsafe immediately after a forced reset')

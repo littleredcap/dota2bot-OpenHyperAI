@@ -3,7 +3,7 @@ local bot = GetBot()
 if bot == nil then return end
 local botName = bot:GetUnitName()
 if not bot:IsHero() or not string.find(botName, "hero") or bot:IsIllusion()
-	or bot:IsInvulnerable() and DotaTime() >= 0 then return end
+	or bot:IsInvulnerable() and DotaTime() >= 0 and not bot:HasModifier('modifier_fountain_invulnerability') then return end
 if not bot.frameProcessTime then bot.frameProcessTime = 0.1 end
 
 local team = GetTeam()
@@ -978,7 +978,7 @@ local function ItemUsageComplement()
 		or bot:IsHexed()
 		or bot:IsStunned()
 		or bot:IsChanneling()
-		or bot:IsInvulnerable()
+		or bot:IsInvulnerable() and not bot:HasModifier('modifier_fountain_invulnerability')
 		or bot:IsUsingAbility()
 		or bot:IsCastingAbility()
 		or bot:NumQueuedActions() > 0
@@ -4807,11 +4807,14 @@ function X.GetLaningTPLocation( bot, nMinTPDistance, botLocation )
 		if DotaTime() < 0 or bot:DistanceFromFountain() > 1400 then return nil, false end
 		local towers = laneToTP == LANE_TOP and {TOWER_TOP_1, TOWER_TOP_2}
 			or (laneToTP == LANE_MID and {TOWER_MID_1, TOWER_MID_2} or {TOWER_BOT_1, TOWER_BOT_2})
-		local tower = GetTower(team, towers[1])
-		if not J.IsValidBuilding(tower) then tower = GetTower(team, towers[2]) end
-		if not J.IsValidBuilding(tower) then return nil, false end
-		local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 250)
-		if J.CanReturnToLaneByTeleport(bot, point, nMinTPDistance - 900) then return point, true end
+		for _, towerId in ipairs(towers) do
+			local tower = GetTower(team, towerId)
+			if J.IsValidBuilding(tower) then
+				local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 250)
+				if J.CanReturnToLaneByTeleport(bot, point, nMinTPDistance - 900) then return point, true end
+				if laneToTP == LANE_MID then break end
+			end
+		end
 		return nil, false
 	end
 
@@ -8500,7 +8503,9 @@ end
 
 function ItemUsageThink()
 	if RefreshBotHandle() then return end
-	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+	if not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion()
+		or bot:IsInvulnerable() and not bot:HasModifier('modifier_fountain_invulnerability')
+	then return end
 	if bot.lastItemFrameProcessTime == nil then bot.lastItemFrameProcessTime = DotaTime() end
 	if DotaTime() > 30 and (DotaTime() - bot.lastItemFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) then return end
 	bot.lastItemFrameProcessTime = DotaTime()

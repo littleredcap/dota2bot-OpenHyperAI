@@ -27,16 +27,20 @@ bot.GetAttackRange=function() return 150 end
 local j={IsInLaningPhase=function() return not state.laneEnded end,IsCore=function(unit) return unit~=bot or not state.support end,IsModeTurbo=noop,
     GetHP=function(unit) return unit==bot and state.hp or state.allyHP or 0.9 end,
     GetMP=function() return state.mp or 1 end,
-    IsDisabled=noop, IsValidBuilding=function(x) return x==tower end, IsValid=function(x) return x~=nil end,
+    IsDisabled=noop, IsValidBuilding=function(x) return x==tower or x~=nil and x==state.rearTower end, IsValid=function(x) return x~=nil end,
     IsValidHero=function(x) return x==ally end, GetLanePartner=function() return ally end,
     IsRetreating=noop, GetLocationTowardDistanceLocation=function(unit,b,d) return toward(unit:GetLocation(),b,d) end,VectorTowards=toward,
     GetLocationToLocationDistance=distance,GetEnemiesNearLoc=hostile,
+    AdjustLocationWithOffsetTowardsFountain=function(x,d) return x-d end,
     IsInRange=function(a,b,r) return distance(a.x,b.x) <= r end,
     GetLastSeenEnemiesNearLoc=hostile}
-local env=setmetatable({J=j,LANE_TOP=1,LANE_BOT=2,TOWER_TOP_1=1,TOWER_BOT_1=2,
+local env=setmetatable({J=j,LANE_TOP=1,LANE_BOT=2,TOWER_TOP_1=1,TOWER_BOT_1=2,TOWER_TOP_2=3,TOWER_TOP_3=5,
     UNIT_LIST_ENEMY_CREEPS=1,UNIT_LIST_ALLIED_CREEPS=2,DotaTime=function() return state.time or 300 end,
     GetUnitList=function(k) return k==1 and {wave} or {cover} end,
-    GetTower=function(team) return team==2 and tower or nil end,GetOpposingTeam=function() return 3 end,
+    GetTower=function(team,id)
+        if team==2 and id==3 then return state.rearTower end
+        if team==2 and (id==1 or id==2) then return tower end
+    end,GetOpposingTeam=function() return 3 end,
     GetLaneFrontLocation=function() return wave.x end,GetAmountAlongLane=function() return {distance=0} end,
     GetUnitToUnitDistance=function(a,b) return distance(a.x,b.x) end,
     GetUnitToLocationDistance=function(a,b) return distance(a.x,b) end,
@@ -95,6 +99,16 @@ state.enemy = -500
 assert(not j.GetSideLaneReturnPoint(bot,1),'cancel a recovery route when the tower approach becomes unsafe')
 state.fountainDistance, bot.ohaSideLaneReturnUntil, state.hp = nil, nil, 0.9
 state.enemy, state.support, state.allyHP, state.time = nil, false, nil, nil
+
+state.fountainDistance, state.hp, state.enemy = 300, 1, 500
+bot.x, wave.x, ally.x = -10000, 1500, -9500
+assert(j.GetSideLaneReturnPoint(bot,1)==-850,'route behind T1 when the enemy controls its front')
+state.enemy, state.rearTower, wave.x = 0, entity(-4000), 1000
+assert(j.GetSideLaneReturnPoint(bot,1)==-4000,'leave the fountain for T2 when the T1 route is unsafe')
+bot.x, state.fountainDistance, bot.ohaSideLaneReturnUntil = -3500, 4500, 400
+assert(not j.GetSideLaneReturnPoint(bot,1),'do not send an already advanced hero back to T2')
+state.fountainDistance, state.hp, state.enemy, state.rearTower = nil, 0.9, nil, nil
+bot.ohaSideLaneReturnUntil = nil
 bot.GetAttackRange=function() return 150 end
 bot.x, wave.x, ally.x = 200, 2250, 1700
 

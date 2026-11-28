@@ -10,8 +10,11 @@ local Localization = require(GetScriptDirectory()..'/FunLib/localization')
 local bot = GetBot()
 if bot == nil then return end
 local botName = bot:GetUnitName()
+local function IsInvulnerableOutsideFountain()
+	return bot:IsInvulnerable() and DotaTime() >= 0 and not bot:HasModifier('modifier_fountain_invulnerability')
+end
 if not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion()
-	or (bot:IsInvulnerable() and DotaTime() >= 0) then return end
+	or IsInvulnerableOutsideFountain() then return end
 
 local local_mode_laning_generic = nil
 local nAllyCreeps = nil
@@ -112,7 +115,7 @@ function GetDesire()
 	AnnounceMessages()
 
 	if not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion()
-		or (bot:IsInvulnerable() and DotaTime() >= 0) then return BOT_MODE_DESIRE_NONE end
+		or IsInvulnerableOutsideFountain() then return BOT_MODE_DESIRE_NONE end
 	local botLV = bot:GetLevel()
 	local currentTime = DotaTime()
 
@@ -301,10 +304,10 @@ local function ThinkLane()
 	end
 	if not local_mode_laning_generic and not J.HasPendingLaningLastHit(bot)
 		and J.GetSideLaneReturnPoint then
-		local point, recovered = J.GetSideLaneReturnPoint(bot, botAssignedLane or bot:GetAssignedLane())
+		local point, recovered, anchor = J.GetSideLaneReturnPoint(bot, botAssignedLane or bot:GetAssignedLane())
 		if point then
 			if recovered then bot.ohaSideLaneReturnUntil = DotaTime() + 50 end
-			TraceLaneDecision('side-wave-reentry')
+			TraceLaneDecision(anchor and 'side-rear-tower-reentry' or 'side-wave-reentry', anchor)
 			if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'side-wave-reentry') end
 			bot:Action_MoveToLocation(point)
 			return
