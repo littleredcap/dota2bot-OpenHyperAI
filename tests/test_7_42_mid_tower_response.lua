@@ -110,6 +110,28 @@ env.LaneTeleportPolicy = dofile('bots/FunLib/lane_teleport_policy.lua')
 extract('local function BuildDefenseLanePlan','local function GetOuterTowerHoldPoint',env)
 local spare=unit(-1000,.90,3)
 do
+    local oldTowers,oldWave,oldBot,oldAlly=towers,wave,bot.x,ally.x
+    towers={[env.TOWER_MID_3]=tower}
+    wave={waveSize=0,count=0,score=0,towerHP=553/2500}
+    tower.ohaSiegeWatch={lastHit=now-15}
+    bot.x,ally.x=-450,-2000
+    local watch=j.GetPostFightCoverage(2)
+    assert(watch and watch.primary and watch.primary.hero==bot and watch.primary.onStation
+        and not watch.needsBackup and not watch.primary.teleport,
+        'during a gap between waves, keep one nearby safe clearer at the recently hit low T3')
+    assert(j.CanTakePostFightTrip(spare,6500,true),'the watch releases the rest of the team')
+    bot.x=-5000
+    assert(not j.GetPostFightCoverage(2),'an empty wave cannot summon a distant clearer')
+    bot.x=-450
+    wave.towerHP=.8
+    assert(not j.GetPostFightCoverage(2),'a healthy tower does not need a between-wave watch')
+    wave.towerHP=553/2500
+    tower.ohaSiegeWatch.lastHit=now-21
+    assert(not j.GetPostFightCoverage(2),'an empty wave cannot renew the watch')
+    towers,wave,bot.x,ally.x=oldTowers,oldWave,oldBot,oldAlly
+    tower.ohaSiegeWatch,tower.ohaCoverOwner=nil,nil
+end
+do
     local savedWave,savedBot,savedAlly=wave,bot.x,ally.x
     towers[env.TOWER_MID_1]=tower
     tower.GetHealth=function() return 1200 end

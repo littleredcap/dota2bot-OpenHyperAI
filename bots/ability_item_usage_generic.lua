@@ -8510,7 +8510,9 @@ function X.TraceDefenseMovement(now)
 	if high and high.expires <= now then high = nil end
 	if guard and guard.expires <= now then guard = nil end
 	if (bot.ohaOuterTowerHoldUntil or 0) <= now then outer = nil end
-	local duty = high and 'high-ground' or guard and (guard.cover and 'cover' or 'clear')
+	local duty = (bot._ohaCreepDefenseUntil or -1) > now and 'base-creeps'
+		or (bot.ohaInnerHeroDefenseUntil or -1) > now and 'base-hero'
+		or high and ('high-ground-' .. (high.duty or 'reserve')) or guard and (guard.cover and 'cover' or 'clear')
 		or outer and 'outer' or 'unassigned'
 	local tower = high and high.tower or guard and guard.tower or outer and outer.waveClearTower
 	local mode = bot:GetActiveMode()

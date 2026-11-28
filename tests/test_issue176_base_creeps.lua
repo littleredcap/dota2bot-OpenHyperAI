@@ -10,7 +10,7 @@ end
 
 local path = "bots/FunLib/aba_defend.lua"
 local code = read(path)
-local first = assert(code:find("function WeightedEnemiesAroundLocation(vLoc, nRadius)", 1, true),
+local first = assert(code:find("local function GetInnerBaseAttacker(ancient)", 1, true),
     "Missing generated production threat helper: npm run build required")
 local last = assert(code:find("\nfunction GetThreatenedLane()", first, true),
     "Missing production end marker")
@@ -65,9 +65,10 @@ return function(options)
         IsValidHero=function(u) return u ~= nil and u.hero == true and u.alive ~= false end,
         IsSuspiciousIllusion=function(u) return u.illusion == true end,
         IsCore=function(u) return u.core == true end,
-        Utils = {CountEnemyHeroesNear=function() return options.enemyHeroesAtBase or 0 end},
     }
     local function GetUnitToLocationDistance(unit, loc) return math.abs(unit.x-loc.x) end
+    local function GetUnitToUnitDistance(a, b) return math.abs(a.x-b.x) end
+    local function IsStandingHighGroundBuilding(unit) return unit == t4a or unit == t4b end
     local function GetTeamPlayers() return members end
     local function GetTeamMember(i) return members[i] end
     local function GetTower(_, which)
@@ -231,7 +232,8 @@ end)
 test("enemy heroes at base use existing teamfight logic instead", function()
     local a=bot(1,400)
     local unit=creep(100,nil)
-    local g=create({members={a},creeps={unit},enemyHeroesAtBase=2})
+    local foe={hero=true,x=500,GetAttackTarget=function() end}
+    local g=create({members={a},creeps={unit},heroes={foe}})
     unit.GetAttackTarget=function() return g.ancient end
     eq(g.desire(a),nil,"Do not override hero-driven defense")
 end)

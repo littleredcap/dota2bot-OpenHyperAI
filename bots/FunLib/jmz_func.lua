@@ -7502,6 +7502,32 @@ function J.GetSiegeFiringPosition(bot, tower, threat, stage)
     if J.GetHighGroundWalkPoint(bot, point) then return point end
 end
 
+-- Keep a reserve within reach of a teammate already defending the wave.
+-- Validate each side of the lane independently so the group can spread out.
+function J.GetSiegeSupportPosition(bot, tower, threat, stage)
+    if not threat.clearAt or not IsLocationVisible(threat.clearAt)
+        or not (threat.underAttack or (threat.waveSize or 0) >= 2 and (threat.eta or 99) <= 5)
+        or J.GetHP(bot) < 0.65 or bot:WasRecentlyDamagedByAnyHero(2) then return nil end
+    local hub = tower:GetLocation()
+    if J.GetAvailableFightAllies(bot, hub, 950) == 0 then return nil end
+    local _, spellReach, damage = GetWaveClearScore(bot, 0)
+    local reach = math.max(bot:GetAttackRange(), damage > 0 and spellReach - 90 or 0)
+    if J.GetLocationToLocationDistance(stage, threat.clearAt) <= reach then return nil end
+    local depth = bot:GetAttackRange() < 350 and 390 or 600
+    local center = J.AdjustLocationWithOffsetTowardsFountain(hub, depth)
+    local dx, dy = center.x - hub.x, center.y - hub.y
+    local length = math.max(1, math.sqrt(dx*dx + dy*dy))
+    local side = bot:GetPlayerID() % 2 == 0 and 1 or -1
+    for _, offset in ipairs({side*260, -side*260}) do
+        local point = Vector(center.x - dy/length*offset, center.y + dx/length*offset, center.z)
+        if IsLocationVisible(point) and IsLocationPassable(point) and GetHeightLevel(point) >= GetHeightLevel(hub)
+            and J.GetAvailableFightAllies(bot, point, 850) > 0
+            and J.CanCommitToLaneTeleport(bot, point, true, 750) and J.GetHighGroundWalkPoint(bot, point) then
+            return point
+        end
+    end
+end
+
 -- Shared coverage for an open lane. Estimates use only live visible / previously
 -- sighted threats and the bounded public death-status estimate, never replay data.
 local function BuildDefenseLanePlan(team, demand, claimed, now)
@@ -7529,7 +7555,7 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 	local needsBackup = (sight.count or 0) >= 2 or deadline <= 10 and
 		(waveSize >= 3 or waveSize >= 2 and sight.siege
 			or waveSize == 0 and enemies >= 2 and reinforcement <= 5)
-	local plan = {building=building, lane=lane, hold=hold, deadline=deadline, needsBackup=needsBackup == true,
+	local plan = {building=building, lane=lane, hold=hold, deadline=deadline, needsBackup=not demand.watch and needsBackup == true,
 		waveDefense=not demand.open and waveSize > 0 and (sight.count or 0) <= 1}
 	local unsafe = #J.GetEnemiesNearLoc(hold, 800) >= 2
 	local rows, incumbent = {}, nil
@@ -7546,7 +7572,7 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 			incoming[tp.playerid] = tp
 		end
 	end
-	for _, ally in ipairs(J.GetAlliesNearLoc(hold, unsafe and 2000 or 24000)) do
+	for _, ally in ipairs(J.GetAlliesNearLoc(hold, demand.watch and 750 or unsafe and 2000 or 24000)) do
 		if J.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and not claimed[ally:GetPlayerID()]
 			and J.GetHP(ally) >= 0.50 and not J.IsRetreating(ally) and not J.IsDisabled(ally) then
 			local tp = ally:HasModifier('modifier_teleporting') and incoming[ally:GetPlayerID()]
@@ -7570,23 +7596,24 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 					arrival = 0
 				elseif tp and not unsafe then
 					arrival = tp.time_remaining + math.max(0, J.GetLocationToLocationDistance(tp.location, hold) - 550) / speed * 1.25
-				elseif not unsafe and arrival > deadline and J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')) then
+				elseif not demand.watch and not unsafe and arrival > deadline and J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')) then
 					local landing = J.GetHighGroundResponseTeleport(ally, hold, anchors)
 					if landing then
 						local tpETA = 4 + math.max(0, J.GetLocationToLocationDistance(landing, hold) - 550) / speed * 1.25
 						if tpETA < arrival and tpETA < deadline then arrival, teleport = tpETA, landing end
 					end
 				end
-				if arrival < 24 then
+				if arrival < 24 and (not demand.watch or safe and not tp and gap <= 750
+					and GetUnitToLocationDistance(ally, hub) <= 1000 and not ally:WasRecentlyDamagedByAnyHero(2)) then
 					local score, reach, damage, castLead = GetWaveClearScore(ally, math.min(arrival, deadline))
-					if damage == 0 and (sight.count or 0) == 0 and (sight.waveSize or 0) > 0
-						and (sight.waveSize or 0) <= 2 then
+					if damage == 0 and (demand.watch and ally:GetAttackRange() >= 350 or (sight.count or 0) == 0
+						and (sight.waveSize or 0) > 0 and (sight.waveSize or 0) <= 2) then
 						reach, damage, castLead = ally:GetAttackRange(), 1, 0.35
 					end
 					local onSite = fireHere or not tp and gap <= 750 and J.GetHP(ally) >= 0.55
 					castLead = castLead or 0.35
 					local clearStage = fireHere and point or hold
-					local actionablePoint = not demand.rear and sight.clearAt or nil
+					local actionablePoint = not demand.rear and not demand.watch and sight.clearAt or nil
 					if actionablePoint and J.GetLocationToLocationDistance(actionablePoint, hub) > 1280 then
 						-- An approaching wave will move; don't require a defender to chase its present position.
 						actionablePoint = hub
@@ -7643,6 +7670,7 @@ function J.GetPostFightCoverage(team)
 	local cached = J.Utils.GetCachedVars(key, 0.25)
 	if cached ~= nil then return cached or nil end
 	local demands = {}
+	local watch
 	for _, ids in ipairs({
 		{LANE_MID,TOWER_MID_1,TOWER_MID_2,TOWER_MID_3,BARRACKS_MID_MELEE,BARRACKS_MID_RANGED},
 		{LANE_TOP,TOWER_TOP_1,TOWER_TOP_2,TOWER_TOP_3,BARRACKS_TOP_MELEE,BARRACKS_TOP_RANGED},
@@ -7691,6 +7719,12 @@ function J.GetPostFightCoverage(team)
 				local value=(immediate and 40 or 0)+(open and 24 or 0)+(sight.underAttack and 20 or 0)
 					+math.min(count,5)*5-math.min(sight.eta or 12,12)
 				demands[#demands+1]={lane=lane,building=building,sight=sight,open=open,rear=rear,value=value}
+			elseif not open and wave == 0 and count <= 1 and (sight.towerHP or 1) <= 0.35
+				and GetTower(team, ids[4]) == building then
+				local hit = building.ohaSiegeWatch and building.ohaSiegeWatch.lastHit
+				if hit and now >= hit and now - hit <= 20 and (not watch or hit > watch.hit) then
+					watch = {lane=lane, building=building, sight=sight, watch=true, hit=hit}
+				end
 			end
 		end
 	end
@@ -7698,7 +7732,18 @@ function J.GetPostFightCoverage(team)
 		if a.value == b.value then return a.lane < b.lane end
 		return a.value > b.value
 	end)
-	if #demands == 0 then J.Utils.SetCachedVars(key,false); return nil end
+	if #demands == 0 then
+		-- Between two waves at a damaged T3, retain one nearby, ready clearer.
+		-- An empty wave never spends a TP or reserves the rest of the team.
+		local plan = watch and BuildDefenseLanePlan(team, watch, {}, now)
+		if plan and plan.primary and plan.primary.onStation then
+			plan.candidates = nil
+			J.Utils.SetCachedVars(key, plan)
+			return plan
+		end
+		J.Utils.SetCachedVars(key,false)
+		return nil
+	end
 	local lanes, claimed = {}, {}
 	-- Reserve distinct clearers before optional cover on any lower-value front.
 	for i=1,math.min(3,#demands) do

@@ -71,4 +71,19 @@ do
     assert(j.GetSiegeFiringPosition(bot,building,threat,deep),'intercept a visible approaching wave before the first tower hit')
     threat.clearAt=v(2600,0)
     assert(not j.GetSiegeFiringPosition(bot,building,threat,deep),'do not walk past the tower for an incoming wave')
+    threat.clearAt=wave
+    bot.GetAttackRange,bot.GetPlayerID=function() return 150 end,function() return 2 end
+    j.GetAvailableFightAllies=function() return 1 end
+    env.GetHeightLevel=function() return 2 end
+    local screen=j.GetSiegeSupportPosition(bot,building,threat,deep)
+    assert(screen and dist(screen,building:GetLocation())<600 and screen.x<building:GetLocation().x,
+        'a melee reserve can support a teammate from the inside of the live T3')
+    j.GetAvailableFightAllies=function() return 0 end
+    assert(not j.GetSiegeSupportPosition(bot,building,threat,deep),'no lone advance without a front to support')
+    j.GetAvailableFightAllies=function() return 1 end
+    seen={enemy(600,0)}
+    assert(not j.GetSiegeSupportPosition(bot,building,threat,deep),'blocked routes keep the reserve back')
+    seen={}
+    env.IsLocationVisible=no
+    assert(not j.GetSiegeSupportPosition(bot,building,threat,deep),'no support movement toward a wave in fog')
 end

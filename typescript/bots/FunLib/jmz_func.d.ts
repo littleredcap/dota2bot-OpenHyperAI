@@ -113,6 +113,7 @@ declare function CanCommitToLaneTeleport(bot: Unit, location: Vector, requireCle
 export function IsHighGroundResponseThreat(threat: OuterTowerThreat): boolean;
 export function GetHighGroundWalkPoint(bot: Unit, stage: Vector, rear?: Vector): Vector | undefined;
 export function GetSiegeFiringPosition(bot: Unit, tower: Unit, threat: OuterTowerThreat, stage: Vector): Vector | undefined;
+export function GetSiegeSupportPosition(bot: Unit, tower: Unit, threat: OuterTowerThreat, stage: Vector): Vector | undefined;
 export function GetHighGroundResponseTeleport(bot: Unit, stage: Vector, anchors: Unit[]): Vector | undefined;
 declare function ShouldRetreatFromEnemyReinforcements(bot: Unit): boolean;
 declare function GetAlliesNearLoc(location: Vector, radius: number): Unit[];

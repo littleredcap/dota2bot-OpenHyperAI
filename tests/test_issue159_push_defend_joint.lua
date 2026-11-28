@@ -236,7 +236,7 @@ local function fixture(opts)
         GetTeamPlayers=function() return opts.allyCount == 5 and {1,2,3,4,5} or {1,2,3,4} end,
         GetTeamMember=function(i) return members[i] end,
         GetUnitList=function(kind)
-            if kind == 1 then return creeps end
+            if kind == 1 then return opts.baseIntruders or creeps end
             if kind == 3 then return stagedWave() end
             if kind == 9 and opts.conversion then
                 conversionCreep.visible = not opts.conversionFog
@@ -534,7 +534,7 @@ local function fixture(opts)
     jmz.GetPostFightCoverage = function() return nil end
     jmz.GetScheduledFarmWaveOwner = function() return nil end
     return push,defend,members,orders,Lan,farm,
-        {ancient=enemy, ourAncient=ancient, melee=melee, ranged=ranged, outerTower=outerTower, counterTower=counterTower, fightTower=fightTower}, jmz, advanceTime
+        {ancient=enemy, ourAncient=ancient, t4=t4, melee=melee, ranged=ranged, outerTower=outerTower, counterTower=counterTower, fightTower=fightTower}, jmz, advanceTime
 end
 
 local function same(actual, expected, label)
@@ -1887,6 +1887,47 @@ do
     local push, _, members, _, lane = fixture(opts)
     for _, ally in ipairs(members) do ally.damage = 0 end
     assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.88, 'zero building damage cannot finish a tower')
+end
+
+do
+    local opts={outerSiege=true,highDefend=true,captureTargets=true}
+    local _,defend,members,orders,lane,_,buildings,j,advance=fixture(opts)
+    local bot,front=members[1],buildings.outerTower
+    front.x,bot.x=1900,1200
+    front.GetLocation=function(self) return {x=self.x,y=0} end
+    local function fighter(x)
+        return {x=x,IsHero=function() return true end,IsCreep=function() return false end,
+            IsAncientCreep=function() return false end,GetAttackTarget=function(self) return self.target end,
+            GetAttackRange=function() return 700 end,
+            GetLocation=function(self) return {x=self.x,y=0} end,target=front}
+    end
+    local attackers={fighter(2100),fighter(2200)}
+    opts.baseIntruders=attackers
+    j.Utils.CountEnemyHeroesOnHighGround=function() return 2 end
+    j.Utils.CountEnemyHeroesNear=function() return 2 end
+    j.GetOuterTowerThreat=function(b)
+        return {tower=b,count=2,waveSize=3,eta=0,score=b==front and 18 or 0,towerHP=0.25,underAttack=b==front}
+    end
+    j.GetOuterTowerResponse=function() return true,{[bot:GetPlayerID()]={reach=900,cover=false}} end
+    j.GetPostFightDuty=function() end
+    j.GetExposedMidCover=function() end
+    same(defend.GetDefendDesire(bot,lane.Mid),0.96,'two escorts at T3 inside the 2600 alarm radius defend the lane')
+    local held
+    j.RunOuterTowerHold=function(_,hub) held=hub;return true end
+    defend.DefendThink(bot,lane.Mid)
+    assert(held and held.x==front.x,'issue the order at the live T3 while both inner towers are quiet')
+    attackers[1].target=buildings.t4
+    advance(1)
+    same(defend.GetDefendDesire(bot,lane.Mid),0.96,'a distant attack order cannot turn the lane siege into a T4 breach')
+    attackers[1].x,attackers[1].target=900,buildings.t4
+    bot.x=1300
+    advance(1)
+    same(defend.GetDefendDesire(bot,lane.Mid),0.97,'an actual T4 attacker takes priority over the simultaneous T3 siege')
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders]==attackers[1],'attack the reachable T4 intruder before pulling back toward the Ancient')
+    attackers[1].x,attackers[1].target=2100,front
+    advance(5)
+    same(defend.GetDefendDesire(bot,lane.Mid),0.96,'the T3 remains the objective after the breach ends')
 end
 
 do
