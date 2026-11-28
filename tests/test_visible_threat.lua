@@ -139,6 +139,17 @@ do
     bot.HasModifier = function(_, name) return name == 'modifier_item_urn_damage' end
     bot.GetHealth = value(55)
     assert(not j.CanStartTeleportHere(bot),'an already active urn can kill during the channel without a hero in sight')
+    bot.GetHealth, j.GetHP = value(73), value(73 / 1470)
+    bot.modifierTime = 2
+    bot.HasModifier = function(_, name) return name == 'modifier_dragon_knight_corrosive_breath_dot' end
+    bot.WasRecentlyDamagedByAnyHero = yes
+    j.GetLastSeenEnemiesNearLoc = function(_, radius) return radius >= 1156 and {10} or {} end
+    assert(not j.CanStartTeleportHere(bot),'16:38: active corrosion and a recently seen pursuer make critical HP unsafe')
+    j.GetLastSeenEnemiesNearLoc = function() return {} end
+    assert(j.CanStartTeleportHere(bot),'corrosion alone is survivable after reaching a cleared point')
+    bot.GetHealth = value(28)
+    assert(not j.CanStartTeleportHere(bot),'remaining corrosion alone can be lethal in the channel window')
+    j.GetHP, bot.WasRecentlyDamagedByAnyHero = value(162 / 890), no
     bot.GetHealth = value(162)
     bot.HasModifier = no
     local golem={x=140,CanBeSeen=yes,IsAlive=yes,IsDisarmed=no,GetAttackTarget=value(bot),

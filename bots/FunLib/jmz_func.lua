@@ -1263,6 +1263,11 @@ function J.CanLandByTeleport(bot, point)
     return damage < (bot:GetHealth() + 4 * bot:GetHealthRegen()) * 0.60
 end
 
+local teleportPeriodicDamage = {
+    modifier_item_urn_damage = 25,
+    modifier_dragon_knight_corrosive_breath_dot = 24,
+}
+
 function J.CanStartTeleportHere(bot)
     -- Include a small margin for the next order to reach the engine, and use
     -- team vision for long-range interrupts rather than the nearby-hero cap.
@@ -1286,21 +1291,31 @@ function J.CanStartTeleportHere(bot)
     if hp <= 0.40 and (inGolemAura or bot:WasRecentlyDamagedByAnyHero(3)) then
         focused = focused + GetNonHeroDamageAt(bot, GetUnitList(UNIT_LIST_ENEMY_CREEPS), location, channel, seen, false, true)
     end
-    if not immune and bot:HasModifier('modifier_item_urn_damage') then
-        local duration = math.min(channel, J.GetModifierTime(bot, 'modifier_item_urn_damage'))
-        if duration > 0 then
-            focused = focused + bot:GetActualIncomingDamage(25 * math.ceil(duration), DAMAGE_TYPE_MAGICAL)
+    local ongoing = 0
+    if not immune then
+        for modifier, damage in pairs(teleportPeriodicDamage) do
+            if bot:HasModifier(modifier) then
+                local duration = math.min(channel, J.GetModifierTime(bot, modifier))
+                if duration > 0 then
+                    ongoing = ongoing + bot:GetActualIncomingDamage(damage * math.ceil(duration), DAMAGE_TYPE_MAGICAL)
+                end
+            end
         end
     end
+    focused = focused + ongoing
     local now = DotaTime()
     local denied = bot.ohaUnsafeChannel
     if #enemies == 0 and denied and now < denied.expires
         and J.GetLocationToLocationDistance(location, denied.point) <= 475 then return false end
     local recentlyHit = bot:WasRecentlyDamagedByAnyHero(2)
-    if #enemies == 0 and hp <= 0.25 and recentlyHit and #J.GetLastSeenEnemiesNearLoc(location, 750) > 0 then
-        return false
+    local lostContact = false
+    if #enemies == 0 and hp <= 0.25 and recentlyHit then
+        -- With critical HP and damage still ticking, a pursuer can finish
+        -- the channel from farther away than the normal melee chase radius.
+        local reach = hp <= 0.15 and ongoing > 0 and 1400 or 750
+        lostContact = #J.GetLastSeenEnemiesNearLoc(location, reach) > 0
     end
-    if #enemies == 0 and not projectile and inFlight == 0 and focused == 0 then return true end
+    if #enemies == 0 and not lostContact and not projectile and inFlight == 0 and focused == 0 then return true end
     local damage, interrupt, contacts = J.GetVisibleThreatAt(bot, enemies, location, channel, true)
     damage = damage + inFlight + focused
     local health = bot:GetHealth() + channel * bot:GetHealthRegen()
@@ -1312,7 +1327,7 @@ function J.CanStartTeleportHere(bot)
     elseif focused > 0 or contacts >= 2 and recentlyHit then
         health = health * 0.90
     end
-    if not projectile and not interrupt and damage < health then return true end
+    if not projectile and not interrupt and not lostContact and damage < health then return true end
     if contacts > 0 and (interrupt or damage >= health) then
         bot.ohaUnsafeChannel = {point=location, expires=now + 1.8}
     end
@@ -1326,7 +1341,8 @@ function J.CanStartTeleportHere(bot)
             end
         end
         print(string.format('[OHA tp] %.2f hero=%s denied=%s hp=%.0f incoming=%.0f enemies=%s',
-            DotaTime(), bot:GetUnitName(), projectile and 'projectile' or interrupt and 'control' or 'damage',
+            DotaTime(), bot:GetUnitName(), projectile and 'projectile' or interrupt and 'control'
+                or lostContact and 'last-seen' or 'damage',
             bot:GetHealth(), damage, table.concat(sources, ',')))
     end
     return false
@@ -1690,16 +1706,49 @@ function J.GetSideLaneYieldPoint(bot, enemies, enemyTower, underPressure)
     local lane = bot:GetAssignedLane()
     if (lane ~= LANE_TOP and lane ~= LANE_BOT) or not J.IsInLaningPhase(bot)
         or not bot.DistanceFromFountain or not bot.GetCurrentMovementSpeed or J.GetHP(bot) < 0.46
-        or not J.IsCore(bot) or J.IsDisabled(bot) or bot:IsRooted()
-        or #enemies == 0 or #enemies > 2 or bot:WasRecentlyDamagedByTower(2)
+        or J.IsDisabled(bot) or bot:IsRooted() or #enemies > 2 or bot:WasRecentlyDamagedByTower(2)
         or J.IsValidBuilding(enemyTower) and enemyTower:GetAttackTarget() == bot then return nil end
+    local partner = J.GetLanePartner(bot, true)
+    local core = J.IsCore(bot)
+    local linked = bot:HasModifier('modifier_warlock_fatal_bonds')
+    local linkedPair = not core and linked and J.IsValidHero(partner) and J.IsInRange(bot, partner, 950)
+        and partner:HasModifier('modifier_warlock_fatal_bonds')
+    local pending = bot.ohaSideLaneYield
+    if pending and pending.expires <= DotaTime() then pending = nil end
+    if not (core or linkedPair or pending) then return nil end
     local own = GetTower(bot:GetTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
     if not J.IsValidBuilding(own) then return nil end
     local origin, front, rear = bot:GetLocation(), GetLaneFrontLocation(bot:GetTeam(), lane, 0), own:GetLocation()
+    local cover = J.IsValidHero(partner) and J.GetHP(partner) >= 0.55 and not J.IsRetreating(partner)
+        and not J.IsDisabled(partner) and not partner:HasModifier('modifier_teleporting')
+
+    local function CanYieldTo(point, step)
+        local mid = J.VectorTowards(origin, point, step / 2)
+        if not IsLocationPassable(point) or not IsLocationPassable(mid) or not IsLocationVisible(point)
+            or J.GetLocationToLocationDistance(point, front) > 1350
+            or cover and GetUnitToLocationDistance(partner, point) > 1250 then return false end
+        for _, foe in ipairs(enemies) do
+            if J.IsValidHero(foe) and not J.IsSuspiciousIllusion(foe) then
+                local reach = math.max(500, foe:GetAttackRange() + 150)
+                if GetUnitToLocationDistance(foe, point) <= reach
+                    or GetUnitToLocationDistance(foe, mid) + 30 < GetUnitToUnitDistance(foe, bot) then return false end
+            end
+        end
+        if #J.GetLastSeenEnemiesNearLoc(point, 520) > 0 then return false end
+        local escapeTime = math.min(3, step / math.max(1, bot:GetCurrentMovementSpeed()) + 0.6)
+        local damage, control = J.GetVisibleThreatAt(bot, enemies, point, escapeTime, true)
+        return damage < bot:GetHealth() * (control and 0.20 or 0.35)
+            and (not control or J.GetHP(bot) > 0.62)
+    end
+
+    if pending then
+        local gap = GetUnitToLocationDistance(bot, pending.point)
+        if gap > 75 and CanYieldTo(pending.point, gap) then return pending.point end
+    end
+    if #enemies == 0 or not (core or linkedPair) then return nil end
     local early = underPressure == false
     if early then
-        local linked = bot:HasModifier('modifier_warlock_fatal_bonds')
-        if bot:GetAttackRange() >= 310 or not (linked or bot:WasRecentlyDamagedByAnyHero(2)) then return nil end
+        if not linked and (bot:GetAttackRange() >= 310 or not bot:WasRecentlyDamagedByAnyHero(2)) then return nil end
         local focused = false
         for _, enemy in ipairs(J.GetHeroesTargetingUnit(enemies, bot)) do
             if J.IsInRange(bot, enemy, enemy:GetAttackRange() + 150) then focused = true; break end
@@ -1710,8 +1759,6 @@ function J.GetSideLaneYieldPoint(bot, enemies, enemyTower, underPressure)
         if J.GetVisibleThreatAt(bot, enemies, origin, 2.2) < bot:GetHealth() * limit then return nil end
     end
     local partner = J.GetLanePartner(bot, true)
-    local cover = J.IsValidHero(partner) and J.GetHP(partner) >= 0.55 and not J.IsRetreating(partner)
-        and not J.IsDisabled(partner) and not partner:HasModifier('modifier_teleporting')
     if #enemies == 2 and not cover and not early then return nil end
     if J.GetLocationToLocationDistance(origin, rear) < 250 then rear = J.GetTeamFountain() end
     local pathLength = J.GetLocationToLocationDistance(origin, rear)
@@ -1719,29 +1766,7 @@ function J.GetSideLaneYieldPoint(bot, enemies, enemyTower, underPressure)
     for _, offset in ipairs({360, 540, 720}) do
         local step = math.min(offset, pathLength)
         local point = J.VectorTowards(origin, rear, step)
-        local mid = J.VectorTowards(origin, point, step / 2)
-        local safe = IsLocationPassable(point) and IsLocationPassable(mid) and IsLocationVisible(point)
-            and J.GetLocationToLocationDistance(point, front) <= 1350
-            and (not cover or GetUnitToLocationDistance(partner, point) <= 1250)
-        if safe then
-            for _, foe in ipairs(enemies) do
-                if J.IsValidHero(foe) and not J.IsSuspiciousIllusion(foe) then
-                    local reach = math.max(500, foe:GetAttackRange() + 150)
-                    if GetUnitToLocationDistance(foe, point) <= reach
-                        or GetUnitToLocationDistance(foe, mid) + 30 < GetUnitToUnitDistance(foe, bot) then
-                        safe = false; break
-                    end
-                end
-            end
-        end
-        if safe and #J.GetLastSeenEnemiesNearLoc(point, 520) == 0 then
-            local escapeTime = math.min(3, step / math.max(1, bot:GetCurrentMovementSpeed()) + 0.6)
-            local damage, control = J.GetVisibleThreatAt(bot, enemies, point, escapeTime, true)
-            -- The retreat mode must keep control when a short step still
-            -- leaves an injured core in reach of a disable or follow-up.
-            if damage < bot:GetHealth() * (control and 0.20 or 0.35)
-                and (not control or J.GetHP(bot) > 0.62) then return point end
-        end
+        if CanYieldTo(point, step) then return point end
     end
 end
 

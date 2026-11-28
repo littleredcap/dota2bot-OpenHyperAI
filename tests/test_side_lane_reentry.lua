@@ -143,6 +143,25 @@ assert(j.GetSideLaneYieldPoint(bot, {attacker}, nil, false) == 1440,
     'a healthy melee core breaks repeated attack contact before its blood loss triggers retreat')
 j.GetVisibleThreatAt = function() return 45 end
 assert(not j.GetSideLaneYieldPoint(bot, {attacker}, nil, false), 'a light poke permits the core to keep farming')
+bot.ohaSideLaneYield = {point=1440, expires=302}
+bot.x = 1700
+assert(j.GetSideLaneYieldPoint(bot, {}, nil, false) == 1440, 'complete a safe step after the pursuer briefly leaves sight')
+state.enemy = 1440
+assert(not j.GetSideLaneYieldPoint(bot, {}, nil, false), 'abandon the committed waypoint if new danger appears')
+state.enemy, state.time = nil, 303
+assert(not j.GetSideLaneYieldPoint(bot, {}, nil, false), 'do not restore an expired yielding order')
+bot.ohaSideLaneYield, bot.x = nil, 1800
+
+state.support = true
+local function hasLink(_, modifier) return modifier == 'modifier_warlock_fatal_bonds' end
+bot.HasModifier, bot.GetAttackRange = hasLink, function() return 400 end
+j.GetVisibleThreatAt = function(_, _, point) return point == bot.x and 110 or 0 end
+assert(not j.GetSideLaneYieldPoint(bot, {attacker}, nil, false), 'a solo support keeps normal lane behavior')
+ally.HasModifier = hasLink
+assert(j.GetSideLaneYieldPoint(bot, {attacker}, nil, false) == 1440,
+    'a linked support can also take the covered retreat step when both laners are taking pressure')
+bot.HasModifier, ally.HasModifier, bot.GetAttackRange = noop, noop, function() return 150 end
+state.support = false
 state.hp=0.35
 assert(not j.GetSideLaneYieldPoint(bot,{attacker}),'a low core still commits to the real escape')
 state.hp=0.59

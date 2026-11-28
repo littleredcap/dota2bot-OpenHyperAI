@@ -308,11 +308,17 @@ local function ThinkLane()
 	if not local_mode_laning_generic and J.GetSideLaneYieldPoint then
 		local point = J.GetSideLaneYieldPoint(bot, nInRangeEnemy, enemyTower, underPressure)
 		if point then
+			local pending = bot.ohaSideLaneYield
+			if not pending or pending.expires <= DotaTime() or pending.point ~= point then
+				local travel = GetUnitToLocationDistance(bot, point) / math.max(1, bot:GetCurrentMovementSpeed())
+				bot.ohaSideLaneYield = {point=point, expires=DotaTime() + math.min(3, travel + 0.6)}
+			end
 			TraceLaneDecision('short-yield')
 			if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'short-yield') end
 			bot:Action_MoveToLocation(point)
 			return
 		end
+		bot.ohaSideLaneYield = nil
 	end
 	if not local_mode_laning_generic and not J.HasPendingLaningLastHit(bot)
 		and J.GetSideLaneReturnPoint then
