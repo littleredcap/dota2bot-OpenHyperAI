@@ -10,7 +10,7 @@ local first = assert(source:find('function J.GetHeroesTargetingUnit(', 1, true))
 local last = assert(source:find('function J.GetSameUnitType(', first, true))
 local laneSafety = assert(loadstring(source:sub(first, last - 1)))
 
-local function fixture(core, overridden, startMid)
+local function fixture(core, overridden, startMid, nativeSideTrial)
     local state = {time = 180, creepHP = 30, orders = {}, hp = 0.9, mid = startMid}
     local heroName = 'npc_dota_hero_test'
     local creep = {x = 200, GetHealth = function() return state.creepHP end,
@@ -88,6 +88,7 @@ local function fixture(core, overridden, startMid)
         GetLastSeenEnemyIdsNearLocation = empty}
     local j = {
         Utils = utils, GetPosition = function() return core and (state.mid and 2 or 1) or 5 end,
+        Customize = nativeSideTrial and {TestNativeSideLaneCores = true} or nil,
         IsPosxHuman = no, IsInLaningPhase = yes, IsModeTurbo = no,
         GetEnemiesAroundAncient = function() return 0 end,
         IsValid = function(unit) return unit ~= nil end,
@@ -248,6 +249,17 @@ do
     assert(j.TrySecureNativeMidLastHit(bot) and #state.orders == 1 and state.orders[1][2] == creep,
         'a safe lethal shot can replace a stalled native lane order')
     assert(not j.TrySecureNativeMidLastHit(bot), 'do not reissue a pending fallback shot')
+end
+
+do
+    local _, scripted = fixture(true, false, false)
+    local _, native, _, _, bot = fixture(true, false, false, true)
+    local _, support = fixture(false, false, false, true)
+    local _, overridden = fixture(true, true, false, true)
+    assert(type(scripted.Think) == 'function' and native.Think == nil and not bot.ohaEngineMid,
+        'the local trial changes supported side-core lane actions without enabling the mid fallback')
+    assert(type(support.Think) == 'function' and type(overridden.Think) == 'function',
+        'the trial preserves support lane actions and required hero overrides')
 end
 
 do

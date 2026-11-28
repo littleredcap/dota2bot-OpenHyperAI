@@ -73,6 +73,15 @@ local assignedLane = bot:GetAssignedLane()
 local engineMid = local_mode_laning_generic == nil and botAttackRange >= 400
 	and (assignedLane == LANE_MID or ((assignedLane == LANE_NONE or assignedLane == nil) and J.GetPosition(bot) == 2))
 bot.ohaEngineMid = engineMid
+local engineSideCore = false
+if local_mode_laning_generic == nil and J.Customize and J.Customize.TestNativeSideLaneCores
+	and (assignedLane == LANE_TOP or assignedLane == LANE_BOT or assignedLane == LANE_NONE or assignedLane == nil) then
+	local role = J.GetPosition(bot)
+	engineSideCore = role == 1 or role == 3
+	if engineSideCore and J.Customize.TraceLaneDecisions then
+		print('[OHA lane controller]', bot:GetPlayerID(), botName, 'native-side-core')
+	end
+end
 
 local function GetOpeningLaneDestination(lane, enemies)
 	local now = DotaTime()
@@ -589,9 +598,8 @@ local function ThinkLane()
 	end
 end
 
--- Omitting this callback lets the engine time the ranged mid's attacks and denies.
--- Heroes that need a script override and the two side lanes keep their lane controller.
-if not engineMid then Think = ThinkLane end
+-- Omitting this callback lets the engine time lane attacks and denies.
+if not engineMid and not engineSideCore then Think = ThinkLane end
 
 function OnEnd()
 	laneShot = nil
