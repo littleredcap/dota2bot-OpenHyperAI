@@ -125,6 +125,26 @@ do
 end
 
 do
+    local state, support, _, neutral, wave, mode = fixture(false)
+    support.y = state.camp.location.y - 1600
+    wave.x, state.wave[2].x = -1040, -1070
+    local scans = 0
+    support.GetNearbyNeutralCreeps = function()
+        scans = scans + 1
+        return {neutral}
+    end
+    local approach = assert(mode.Plan(support, 3))
+    assert(approach.kind == 'probe' and scans == 0 and distance(support, approach.goal) <= 240,
+        'a visible camp just outside scan range still gets a bounded approach')
+    assert(mode.Think(support, approach) and state.orders[1].move == approach.goal and scans == 0,
+        'visibility alone does not clear an approach before the camp can be scanned')
+    support.x, support.y = approach.goal.x, approach.goal.y
+    local pull = assert(mode.Plan(support, 3))
+    assert(scans > 0 and pull.kind == 'pull' and pull.target == neutral,
+        'plan the actual pull once the bot can inspect the camp and the wave')
+end
+
+do
     local state, support, carry, neutral, wave, mode = fixture(false)
     state.unsafeLane = true
     assert(mode.Plan(support, 3) == nil, 'keep the lane partner covered')

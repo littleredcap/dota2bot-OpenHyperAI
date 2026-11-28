@@ -94,6 +94,20 @@ do
     assert(not j.CanStartTeleportHere(bot),'a visible lock-on already marks the channel origin as dangerous')
     bot.HasModifier, j.GetEnemiesNearLoc = no, function() return enemies end
 end
+do
+    local sniper = caster(10, 591, 0, 3000, 175, 'sniper_assassinate')
+    sniper.GetAttackRange, sniper.GetAttackDamage, sniper.GetSecondsPerAttack = value(550), value(86), value(1.4)
+    local currentHP, maxFraction, regen = bot.GetHealth, j.GetHP, bot.GetHealthRegen
+    bot.GetHealth, j.GetHP, bot.GetHealthRegen = value(145), value(145 / 780), value(0)
+    bot.WasRecentlyDamagedByAnyHero = yes
+    j.GetEnemiesNearLoc = function() return {sniper} end
+    assert(not j.CanStartTeleportHere(bot), '5:03: a critical hero needs margin against a single reachable attacker')
+    bot.WasRecentlyDamagedByAnyHero = no
+    assert(j.CanStartTeleportHere(bot), 'the extra margin is limited to a recent chase')
+    bot.ohaUnsafeChannel = nil
+    bot.GetHealth, j.GetHP, bot.GetHealthRegen = currentHP, maxFraction, regen
+    j.GetEnemiesNearLoc = function() return enemies end
+end
 now=now+6;dk.IsUsingAbility=no
 local wl=caster(8,854,347,700,110,'warlock_shadow_word')
 dk.x,dk.magic,wl.magic=572,75,170
@@ -123,6 +137,7 @@ do
     assert(j.CanStartTeleportHere(bot),'the same critical hero may channel after moving away from the chase')
     enemies={dk}
     dk.x, dk.GetAttackDamage = 140, value(94)
+    j.GetHP = value(162 / 600)
     bot.WasRecentlyDamagedByAnyHero = yes
     bot.HasModifier = function(_, name) return name == 'modifier_warlock_fatal_bonds' end
     assert(not j.CanStartTeleportHere(bot),'reserve health for ongoing shared damage even when the enemy is out of mana')

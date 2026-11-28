@@ -2,6 +2,7 @@ local J = require(GetScriptDirectory() .. '/FunLib/jmz_func')
 
 local Camp = {}
 local Customize = J.Customize or require(GetScriptDirectory() .. '/Customize/general')
+local campScanRange = 1530
 
 local function TracePull(bot, plan, stage, detail)
     if not Customize.TraceLanePull or plan.kind == 'stack' then return end
@@ -24,6 +25,10 @@ local function NearCamp(bot, location)
         end
     end
     return creeps
+end
+
+local function CanInspectCamp(bot, camp)
+    return GetUnitToLocationDistance(bot, camp.location) <= campScanRange and IsLocationVisible(camp.location)
 end
 
 local function IsSafe(point)
@@ -210,6 +215,9 @@ local function PlanPullProbe(bot, camp, lane, crossing, distance)
     -- to a pull. No camp is assumed to contain an attackable unit.
     local origin = bot:GetLocation()
     local step = math.min(360, distance - 220)
+    if IsLocationVisible(camp.location) then
+        step = math.min(step, math.max(140, distance - campScanRange + 80))
+    end
     if step < 140 then return nil, 'camp-fog' end
     local point = J.VectorTowards(origin, camp.location, step)
     local midpoint = J.VectorTowards(origin, camp.location, step * 0.5)
@@ -278,8 +286,8 @@ function Camp.Plan(bot, lane)
     if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 60 or now >= 14 * 60
         or now < (bot.ohaNextCampWork or 0) or not CanWorkCamp(bot) then return end
     local work = bot.ohaLaneCamp
-    if work and work.kind == 'probe' and IsLocationVisible(work.camp.location) then
-        TracePull(bot, work, 'probe-spotted')
+    if work and work.kind == 'probe' and CanInspectCamp(bot, work.camp) then
+        TracePull(bot, work, 'probe-ready')
         bot.ohaLaneCamp, work = nil, nil
     end
     if work ~= nil and work.expires > now and IsSafe(work.goal)
@@ -299,13 +307,11 @@ function Camp.Plan(bot, lane)
             nearestCamp, nearestDistance = camp, distance
         end
         local eligible = (ownCamp or offlaneCamp) and distance <= 1770
-        local visible = eligible and IsLocationVisible(camp.location)
-        if eligible and (not visible or distance <= 1530)
-            and IsSafe(camp.location) and not CampTaken(bot, camp.location) then
+        if eligible and IsSafe(camp.location) and not CampTaken(bot, camp.location) then
             local track = GetAmountAlongLane(lane, camp.location)
             local point = GetLocationAlongLane(lane, track.amount)
             if track.distance >= 180 and IsSafe(point) then
-                if not visible then
+                if not CanInspectCamp(bot, camp) then
                     local candidate, reason = PlanPullProbe(bot, camp, lane, point, distance)
                     rejection = reason or rejection
                     if candidate and (not probeDistance or distance < probeDistance) then
@@ -337,8 +343,11 @@ function Camp.Plan(bot, lane)
         bot.ohaNextPullTrace = now + 15
         local reason = rejection or 'no-safe-visible-camp'
         if nearestCamp then
-            reason = string.format('%s nearest=%.0f type=%s loc=%.0f,%.0f', reason, nearestDistance,
-                tostring(nearestCamp.type), nearestCamp.location.x, nearestCamp.location.y)
+            local nearestStatus = nearestDistance > 1770 and 'distance' or not IsSafe(nearestCamp.location) and 'threat-or-terrain'
+                or CampTaken(bot, nearestCamp.location) and 'claimed' or 'candidate'
+            reason = string.format('%s nearest=%.0f type=%s loc=%.0f,%.0f visible=%s nearestStatus=%s', reason, nearestDistance,
+                tostring(nearestCamp.type), nearestCamp.location.x, nearestCamp.location.y,
+                tostring(IsLocationVisible(nearestCamp.location)), nearestStatus)
         end
         TracePull(bot, {kind = 'pull', lane = lane}, 'rejected', reason)
     end
@@ -357,13 +366,13 @@ function Camp.Think(bot, plan)
         return false
     end
     if plan.kind == 'probe' then
-        if IsLocationVisible(plan.camp.location) then
-            TracePull(bot, plan, 'probe-spotted')
+        if CanInspectCamp(bot, plan.camp) then
+            TracePull(bot, plan, 'probe-ready')
             bot.ohaLaneCamp = nil
             return false
         end
         if GetUnitToLocationDistance(bot, plan.goal) <= 55 then
-            Camp.Cancel(bot, 'camp-still-hidden')
+            Camp.Cancel(bot, 'camp-out-of-view-or-range')
             return false
         end
         if bot.ohaLaneCamp ~= plan then TracePull(bot, plan, 'probe-order') end

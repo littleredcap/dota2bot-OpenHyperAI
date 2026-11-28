@@ -1322,6 +1322,8 @@ function J.CanStartTeleportHere(bot)
     -- Keep a margin for attack variance and damage already ticking in a contested lane.
     if inGolemAura or (bot:HasModifier('modifier_warlock_fatal_bonds') and recentlyHit) then
         health = health * 0.80
+    elseif contacts == 1 and hp <= 0.25 and recentlyHit then
+        health = health * 0.80
     elseif contacts >= 2 and hp <= 0.30 then
         health = health * 0.85
     elseif focused > 0 or contacts >= 2 and recentlyHit then
@@ -9876,8 +9878,12 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 		and (backup == 0 or now >= 8 * 60 and J.IsCore(bot)
 			and not J.IsValidBuilding(bot:GetNearbyTowers(850, false)[1])
 			and not HasImmediateFightCover(bot, location, enemies))
+	local exposedMeleeHero = now >= 8 * 60 and #enemies >= 2 and bot:GetAttackRange() < 310
+		and not J.IsValidBuilding(bot:GetNearbyTowers(850, false)[1])
+		and not HasImmediateFightCover(bot, location, enemies)
 	local closing = 0
-	if close > 0 and (isolatedLaner or exposedRangedHero or now >= 8 * 60 and backup == 0 and total >= 3 and close < 3) then
+	if close > 0 and (isolatedLaner or exposedRangedHero or exposedMeleeHero
+		or now >= 8 * 60 and backup == 0 and total >= 3 and close < 3) then
 		for _, enemy in ipairs(enemies) do
 			local distance = GetUnitToUnitDistance(bot, enemy)
 			if J.GetLocationToLocationDistance(enemy:GetExtrapolatedLocation(0.8), location) < distance - 90 then
@@ -9888,7 +9894,7 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local losingGank, keepLeaving = false, false
 	local advancing = closing > 0 or underFire
 	local exposureUntil = bot.ohaExposureRetreatUntil or 0
-	if (isolatedLaner or exposedRangedHero) and (advancing or exposureUntil > now) then
+	if (isolatedLaner or exposedRangedHero or exposedMeleeHero) and (advancing or exposureUntil > now) then
 		local window = isolatedLaner and 5.0 or 4.5
 		local damage, control, contacts = J.GetVisibleThreatAt(bot, enemies, location, window, true)
 		local health = bot:GetHealth() + window * bot:GetHealthRegen()

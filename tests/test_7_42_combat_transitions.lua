@@ -365,6 +365,15 @@ do
     state.time = state.time + 2
     core.retreating, reinforcement.visible = true, false
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'do not use the second opponent through fog')
+
+    state.time, state.hp, core.x, core.retreating, reinforcement.visible = 20 * 60 + 47, 1, 100, false, true
+    bot.GetAttackRange = function() return 150 end
+    damage, control = 850, true
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), '20:47: even a full-health melee hero needs immediate cover against two closing threats')
+    core.x = 670
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'a nearby partner in contact can support that melee hero')
+    core.x, damage, control = 100, 440, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'no forced retreat when the closing enemies cannot maintain a dangerous burst')
 end
 
 do
