@@ -831,6 +831,10 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
             stage = assignedStage;
         } else if (!IsLocationPassable(stage) || jmz.GetLastSeenEnemiesNearLoc(stage, 850).length > 0
             || jmz.GetEnemiesNearLoc(stage, 850).length > 0) stage = rear || stage;
+        if (!cover) {
+            const threat = siege.tower === tower ? siege : jmz.GetOuterTowerThreat(tower, siegeLane);
+            stage = jmz.GetSiegeFiringPosition(bot, tower, threat, stage) ?? stage;
+        }
         (bot as any).ohaHighGroundResponse = {lane, tower, stage, rear, reach, cover, expires: DotaTime() + 1};
         bot.laneToDefend = lane;
         ds.defendLoc = stage;
@@ -1172,14 +1176,14 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
 }
 
 function AttackHighGroundWaveFromHere(bot: Unit, tower: Unit, rear: Vector | undefined): boolean {
-    if (!rear || GetUnitToUnitDistance(bot, tower) > 1300
-        || GetUnitToLocationDistance(bot, rear) > GetUnitToLocationDistance(tower, rear)
+    if (!rear || bot.IsDisarmed() || GetUnitToLocationDistance(bot, rear) > GetUnitToLocationDistance(tower, rear)
+        || (GetUnitToUnitDistance(bot, tower) > 1300 && GetUnitToLocationDistance(bot, rear) > 1500)
         || jmz.GetHP(bot) < 0.55 || bot.WasRecentlyDamagedByAnyHero(2)) return false;
     const current = bot.GetAttackTarget();
     let target: Unit | undefined;
     for (const creep of bot.GetNearbyLaneCreeps(bot.GetAttackRange(), true)) {
         if (jmz.IsValid(creep) && creep.CanBeSeen() && jmz.CanBeAttacked(creep)
-            && GetUnitToUnitDistance(creep, tower) <= 950) {
+            && (GetUnitToUnitDistance(creep, tower) <= 950 || GetUnitToLocationDistance(creep, rear) <= 1500)) {
             if (creep === current) { target = creep; break; }
             if (!target || creep.GetAttackTarget() === tower) target = creep;
         }
@@ -1201,8 +1205,8 @@ export function DefendThink(bot: Unit, lane: Lane) {
     if (response && response.lane === lane && now < response.expires) {
         if (bot.HasModifier("modifier_teleporting") || bot.IsChanneling() || bot.IsCastingAbility()
             || bot.IsUsingAbility()) return;
+        if (AttackHighGroundWaveFromHere(bot, response.tower, response.rear)) return;
         if (GetUnitToLocationDistance(bot, response.stage) > 350) {
-            if (AttackHighGroundWaveFromHere(bot, response.tower, response.rear)) return;
             const point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear);
             if (point && GetUnitToLocationDistance(bot, point) > 180) {
                 bot.Action_MoveToLocation(point);

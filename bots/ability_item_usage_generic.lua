@@ -941,6 +941,7 @@ local function ConsiderItemSlot(slot, combat, preserveConcealment, revealed)
 	local consider = X.ConsiderItemDesire[name]
 	if consider ~= nil and not X.IsItemInStash(name) then
 		local desire, target, castType, motive, followUp, emergency = consider(item)
+		if name == 'item_tpscroll' and desire > 0 and not J.CanStartTeleportHere(bot) then return end
 		if desire > 0 and (not preserveConcealment or name == 'item_armlet' or emergency == 'always'
 			or (revealed and emergency == 'revealed')) then
 			return {item = item, name = name, slot = slot, desire = desire, target = target,

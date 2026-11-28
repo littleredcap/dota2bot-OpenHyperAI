@@ -1082,6 +1082,10 @@ function ____exports.GetDefendDesireHelper(bot, lane)
             stage = assignedStage
         elseif not IsLocationPassable(stage) or #jmz.GetLastSeenEnemiesNearLoc(stage, 850) > 0
             or #jmz.GetEnemiesNearLoc(stage, 850) > 0 then stage = rear or stage end
+        if not cover then
+            local threat = siege.tower == tower and siege or jmz.GetOuterTowerThreat(tower, siegeLane)
+            stage = jmz.GetSiegeFiringPosition(bot, tower, threat, stage) or stage
+        end
         bot.ohaHighGroundResponse = {lane = lane, tower = tower, stage = stage, rear = rear, reach = reach, cover = cover, expires = DotaTime() + 1}
         bot.laneToDefend = lane
         ds.defendLoc = stage
@@ -1516,13 +1520,13 @@ function ____exports.GetDefendDesire(bot, lane)
     return res
 end
 local function AttackHighGroundWaveFromHere(bot, tower, rear)
-    if not rear or GetUnitToUnitDistance(bot, tower) > 1300
-        or GetUnitToLocationDistance(bot, rear) > GetUnitToLocationDistance(tower, rear)
+    if not rear or bot:IsDisarmed() or GetUnitToLocationDistance(bot, rear) > GetUnitToLocationDistance(tower, rear)
+        or (GetUnitToUnitDistance(bot, tower) > 1300 and GetUnitToLocationDistance(bot, rear) > 1500)
         or jmz.GetHP(bot) < 0.55 or bot:WasRecentlyDamagedByAnyHero(2) then return false end
     local current, target = bot:GetAttackTarget(), nil
     for _, creep in ipairs(bot:GetNearbyLaneCreeps(bot:GetAttackRange(), true)) do
         if jmz.IsValid(creep) and creep:CanBeSeen() and jmz.CanBeAttacked(creep)
-            and GetUnitToUnitDistance(creep, tower) <= 950 then
+            and (GetUnitToUnitDistance(creep, tower) <= 950 or GetUnitToLocationDistance(creep, rear) <= 1500) then
             if creep == current then target = creep; break end
             if not target or creep:GetAttackTarget() == tower then target = creep end
         end
@@ -1544,8 +1548,8 @@ function ____exports.DefendThink(bot, lane)
     if response and response.lane == lane and now < response.expires then
         if bot:HasModifier("modifier_teleporting") or bot:IsChanneling() or bot:IsCastingAbility()
             or bot:IsUsingAbility() then return end
+        if AttackHighGroundWaveFromHere(bot, response.tower, response.rear) then return end
         if GetUnitToLocationDistance(bot, response.stage) > 350 then
-            if AttackHighGroundWaveFromHere(bot, response.tower, response.rear) then return end
             local point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear)
             if point and GetUnitToLocationDistance(bot, point) > 180 then
                 bot:Action_MoveToLocation(point)

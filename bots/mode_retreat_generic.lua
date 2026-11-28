@@ -178,8 +178,48 @@ function GetDesireHelper()
     local nEnemyTowers     = C.enemyTowers1200
     local nEnemyLaneCreeps = C.enemyLaneCreeps1200
 
-    if (C.focusedUnitDps - botHealthRegen) * 3 >= botHealth * 0.55 then
-        return BOT_MODE_DESIRE_VERYHIGH
+    if botHP < 0.30 then
+        bot.ohaRecoveringFromCriticalHP = true
+    elseif botHP >= 0.50 then
+        bot.ohaRecoveringFromCriticalHP = nil
+    end
+    local structureDamage = C.focusedUnitDps * 3
+    if botTarget and not bot:IsChanneling() and J.IsLethalChaseStep(bot, botTarget) then
+        bot.ohaReinforcementRetreatAt = DotaTime()
+        return BOT_MODE_DESIRE_ABSOLUTE * 1.15
+    end
+    if #nEnemyHeroes > 0 and not bot:IsChanneling() and not bot:HasModifier('modifier_teleporting')
+        and (botHP <= 0.60 or structureDamage > 0
+            or #nEnemyHeroes >= 2 and #nAllyHeroes <= 1) then
+        local damage = J.GetVisibleThreatAt(bot, nEnemyHeroes, botLocation, 3)
+        if damage + structureDamage >= botHealth + botHealthRegen * 3 then
+            return BOT_MODE_DESIRE_ABSOLUTE * 1.15
+        end
+    end
+    if structureDamage - botHealthRegen * 3 >= botHealth * 0.55 then
+        return BOT_MODE_DESIRE_ABSOLUTE
+    end
+
+    if botHP < 0.50 and bot:GetAttackRange() < 310 and J.IsCore(bot) and J.IsInLaningPhase()
+        and not bot:IsChanneling() and not bot:IsUsingAbility() and not bot:IsCastingAbility()
+        and not bot:HasModifier('modifier_teleporting') and not J.IsInTeamFight(bot, 1200) then
+        local lane = bot:GetAssignedLane()
+        if lane == LANE_TOP or lane == LANE_BOT then
+            local front = GetLaneFrontLocation(bot:GetTeam(), lane, 0)
+            if GetUnitToLocationDistance(bot, front) <= 4000 then
+                local threats = #J.GetLastSeenEnemiesNearLoc(front, 1200)
+                -- Check the place the core would enter, even if the opponents
+                -- are outside its local scan. Nearby allies do not absorb a lethal spell.
+                local visible = J.GetEnemiesNearLoc(front, 1400)
+                if threats > 0 or #visible > 0 then
+                    local exposed = math.max(threats, #visible) > J.GetAvailableFightAllies(bot, front, 850)
+                    if exposed and botHP < 0.30 then return BOT_MODE_DESIRE_ABSOLUTE end
+                    local damage, _, contacts = J.GetVisibleThreatAt(bot, visible, front, 4)
+                    if damage >= botHealth + 4 * botHealthRegen or (exposed and bot.ohaRecoveringFromCriticalHP and contacts >= 2
+                        and damage >= botHealth * 0.65) then return BOT_MODE_DESIRE_ABSOLUTE end
+                end
+            end
+        end
     end
 
     local shortYield = botHP >= 0.46 and botHP <= 0.62 and J.GetSideLaneYieldPoint
@@ -408,22 +448,6 @@ function GetDesireHelper()
     end
 
     if J.IsInLaningPhase() then
-        -- After breaking contact, a solo melee core can be far from the
-        -- opponents who still control its next wave. Use actual HP here.
-        if botHealth < bot:GetMaxHealth() * 0.30 and bot:GetAttackRange() < 310 and J.IsCore(bot)
-            and not bTeamFight and not bot:IsChanneling() and not bot:IsUsingAbility()
-            and not bot:IsCastingAbility() and not bot:HasModifier('modifier_teleporting') then
-            local lane = bot:GetAssignedLane()
-            if lane == LANE_TOP or lane == LANE_BOT then
-                local front = GetLaneFrontLocation(bot:GetTeam(), lane, 0)
-                if GetUnitToLocationDistance(bot, front) <= 4000 then
-                    local threats = #J.GetLastSeenEnemiesNearLoc(front, 1200)
-                    if threats > 0 and threats > J.GetAvailableFightAllies(bot, front, 850) then
-                        return BOT_MODE_DESIRE_ABSOLUTE
-                    end
-                end
-            end
-        end
         if not bot:WasRecentlyDamagedByAnyHero(3.0)
             and botHP > 0.25
             and bot:DistanceFromFountain() > 4000

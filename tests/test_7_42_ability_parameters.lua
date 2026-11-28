@@ -614,7 +614,7 @@ do
     warlockBot.ActionQueue_UseAbilityOnEntity = function(_, spell, target) orders[#orders + 1] = {spell, target} end
     local word, bonds = ability({}), ability({})
     local warlock = loadHero('warlock', {warlock_shadow_word = word, warlock_fatal_bonds = bonds}, warlockBot, {
-        IsInLaningPhase = function() return laning end, IsInTeamFight = no, IsGoingOnSomeone = no,
+        IsInLaningPhase = function() return laning end, IsInTeamFight = no, IsGoingOnSomeone = no, IsDefending = no,
         GetSideLanePressureTarget = function() return pressLane and pressureEnemy or nil end,
         CanCastOnNonMagicImmune = yes, CanCastOnTargetAdvanced = yes,
         IsValidHero = yes, GetHP = function(unit) return unit.hp end, IsCore = function(unit) return unit.core end,
@@ -656,6 +656,40 @@ end
 print('PASS: Warlock learns and prioritizes useful lane healing')
 
 do
+    local spell = ability({search_aoe=400})
+    spell.GetManaCost = function() return 120 end
+    local target, creeps, enemies = nil, {}, {}
+    local function unit(x) return {x=x, HasModifier=no} end
+    local caster = unit(0)
+    caster.IsInvisible, caster.GetLevel = no, function() return 9 end
+    caster.GetHealth, caster.GetMaxHealth = function() return 800 end, function() return 900 end
+    caster.GetMana, caster.GetMaxMana = function() return 400 end, function() return 600 end
+    caster.ActionQueue_UseAbilityOnEntity=function(_, skill, other) assert(skill==spell);target=other end
+    local warlock=loadHero('warlock',{warlock_fatal_bonds=spell},caster,{
+        CanNotUseAbility=no,IsItemAvailable=no,SetQueuePtToINT=no,IsLaning=no,IsDefending=yes,
+        IsValidHero=yes,IsSuspiciousIllusion=no,IsValid=yes,CanBeAttacked=yes,
+        CanCastOnNonMagicImmune=yes,CanCastOnTargetAdvanced=yes,
+        IsInRange=function(a,b,r) return math.abs(a.x-b.x)<=r end,
+        GetNearbyHeroes=function() return enemies end,
+    },{'warlock_fatal_bonds'})
+    local env=getfenv(warlock.ConsiderQ)
+    env.UNIT_LIST_ENEMY_CREEPS=7
+    env.GetUnitList=function(team) assert(team==7);return creeps end
+    local function skip() return NONE end
+    warlock.WarlockShouldMove,warlock.ConsiderRFR,warlock.ConsiderR,warlock.ConsiderW,warlock.ConsiderE=no,skip,skip,skip,skip
+    local isolated,front,follow=unit(-260),unit(620),unit(820)
+    enemies={isolated,front,follow}
+    warlock.SkillsComplement()
+    assert(target==front,'Bonds must choose an in-range hero in the enemy cluster, even if another hero is closer')
+    target,enemies=nil,{isolated}
+    warlock.SkillsComplement()
+    assert(not target,'a single enemy without hostile links cannot justify Bonds')
+    creeps={unit(-250),unit(-240)}
+    warlock.SkillsComplement()
+    assert(target==isolated,'Bonds can link an actual tower attacker to its wave')
+end
+
+do
     local near, orders = true, {}
     local spell, bonds = ability({aoe=500}), ability({})
     spell.GetManaCost, bonds.GetManaCost = function() return 250 end, function() return 100 end
@@ -694,7 +728,7 @@ do
         warlock_upheaval = slow, warlock_rain_of_chaos = golem}, caster, {
         CanNotUseAbility = no, IsItemAvailable = no, SetQueuePtToINT = no,
         GetNearbyHeroes = function() return {enemyFront} end, IsInTeamFight = yes, IsValidHero = yes,
-        IsRetreating = no, IsDisabled = no, IsInRange = yes, IsChasingTarget = no,
+        IsRetreating = no, IsDisabled = no, IsInRange = yes, IsChasingTarget = no, IsDefending = no,
     }, {'warlock_fatal_bonds', 'warlock_shadow_word', 'warlock_upheaval', [6] = 'warlock_rain_of_chaos'})
     warlock.WarlockShouldMove = no
     local function noTarget() return NONE end
@@ -886,6 +920,25 @@ do
     assert(dk.ConsiderElderDragonForm() == HIGH, 'prepare to clear the actual incoming wave at the assigned tower')
     incoming = false
     assert(dk.ConsiderElderDragonForm() == NONE, 'an assignment alone does not use Dragon Form')
+    defending=false
+    local ally={x=200,GetAttackRange=function() return 600 end}
+    local foe={x=580,HasModifier=no,GetLocation=function(self) return self.x end}
+    common.IsValidHero=function(unit) return unit==ally or unit==foe end
+    common.GetLanePartner=function() return ally end
+    common.IsCore,common.HasPendingLaningLastHit,common.IsLateGame=no,no,no
+    common.GetSideLanePressureTarget=function(partner,enemies)
+        assert(partner==ally and enemies[1]==foe)
+        return foe
+    end
+    common.CanCastOnNonMagicImmune,common.GetCorrectLoc=yes,function(unit) return unit.x end
+    dragon.GetNearbyCreeps=empty
+    dragon.GetNearbyHeroes=function(_,_,hostile) return hostile and {foe} or {ally} end
+    dk.ConsiderElderDragonForm=function() return NONE end
+    order=nil
+    dk.SkillsComplement()
+    assert(order and order[1]==breath and order[2]==580,'Breathe Fire can contest a covered enemy on a wave without a creep kill')
+    common.HasPendingLaningLastHit=yes
+    assert(dk.ConsiderBreatheFire()==NONE,'the optional trade cannot steal a pending last hit')
 end
 
 do

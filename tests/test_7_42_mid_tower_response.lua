@@ -91,6 +91,20 @@ assert(j.GetPostFightCoverage(2).backup==nil,'a single unescorted creep does not
 danger=true
 assert(not j.GetExposedMidCover(2),'no assignment into an already overrun hold point')
 danger=false
+do
+    local oldThreats = j.GetEnemiesNearLoc
+    local oldWave = wave
+    bot.x,ally.x=-1250,-750
+    wave={waveSize=4,eta=0,underAttack=true,count=3,clearAt=-300}
+    j.GetEnemiesNearLoc=function(point) return point==-750 and {foe,foe} or {} end
+    local response=j.GetPostFightCoverage(2)
+    assert(response.primary and response.primary.hero==bot and response.primary.onStation,
+        'an unsafe rally must not dismiss a live clearer already in safe casting range')
+    assert(not response.backup,'the unsafe rally does not recruit the other hero as a screen')
+    bot.x=-1600
+    assert(not j.GetPostFightCoverage(2).primary,'no unsafe advance when the actual wave is outside cast reach')
+    wave,j.GetEnemiesNearLoc=oldWave,oldThreats
+end
 objective=false
 assert(not j.GetExposedMidCover(2) and j.CanTakePostFightTrip(spare,6500,true),'release if no vulnerable objective remains')
 print('PASS: shared post-fight cover protects the return budget, validates handoff, and preserves safe conversion')

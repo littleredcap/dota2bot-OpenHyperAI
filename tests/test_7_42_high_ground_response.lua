@@ -48,3 +48,22 @@ assert(j.GetHighGroundResponseTeleport(bot, v(1000,0), {tower(760,0)}) == nil, '
 bot.WasRecentlyDamagedByAnyHero = yes
 assert(j.GetHighGroundResponseTeleport(bot, stage, {tower(4100,0)}) == nil, 'do not channel in danger')
 print('PASS: early high-ground response reacts to real escorts, avoids unsafe routes, and compares TP arrival')
+
+do
+    local start = assert(source:find('function J.GetSiegeFiringPosition(',1,true))
+    local stop = assert(source:find('-- Shared coverage',start,true))
+    bot.WasRecentlyDamagedByAnyHero, bot.GetAttackRange=no,function() return 600 end
+    j.AdjustLocationWithOffsetTowardsFountain=function(p,offset) return v(p.x-offset,p.y) end
+    env.GetWaveClearScore=function() return 0,0,0 end
+    env.IsLocationVisible=yes
+    setfenv(assert(loadstring(source:sub(start,stop-1))),env)()
+    local building, wave, deep=tower(1450,0),v(1666,0),v(0,0)
+    local threat={clearAt=wave,underAttack=true}
+    local point=j.GetSiegeFiringPosition(bot,building,threat,deep)
+    assert(point and dist(point,wave)<=600, '33:31: a healthy ranged defender at 1450 can find a safe firing position')
+    assert(not j.GetSiegeFiringPosition(bot,building,threat,point),'do not move again once already in range')
+    seen={enemy(600,0)}
+    assert(not j.GetSiegeFiringPosition(bot,building,threat,deep),'do not advance through an occupied exit')
+    seen={}; threat.underAttack=false
+    assert(not j.GetSiegeFiringPosition(bot,building,threat,deep),'a quiet tower does not trigger an advance')
+end

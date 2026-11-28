@@ -182,7 +182,7 @@ function ThinkIndividualRoaming()
 		then
 			nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), 1400)
 			if J.Item.GetItemCharges(bot, 'item_tpscroll') >= 1
-			and nInRangeEnemy ~= nil and #nInRangeEnemy == 0
+		and nInRangeEnemy ~= nil and #nInRangeEnemy == 0 and J.CanStartTeleportHere(bot)
 			then
 				if botName == 'npc_dota_hero_furion'
 				then
@@ -1073,7 +1073,7 @@ ThinkLaneGank = function()
 	if partner == nil then EndLaneGank(); return end
 	bot.ohaLaneGank = plan
 	if plan.landing ~= nil then
-		if J.CanCastAbility(TPScroll) and J.CanCommitToLaneTeleport(bot, plan.landing, true) then
+		if J.CanCastAbility(TPScroll) and J.CanStartTeleportHere(bot) and J.CanCommitToLaneTeleport(bot, plan.landing, true) then
 			bot:Action_UseAbilityOnLocation(TPScroll, plan.landing)
 			if J.TraceLaneTeleport then J.TraceLaneTeleport(bot, 'observed-lane-gank', plan.landing) end
 		else

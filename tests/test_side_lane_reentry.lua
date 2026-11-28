@@ -92,6 +92,7 @@ assert(not j.GetSideLaneYieldPoint(bot,{attacker}),'do not select a short retrea
 
 do
     local health, enemiesAtWave, availableAllies, recentHit = 178, 2, 0, 13
+    local expectedDamage = 250
     local position, waveFront, attackRange, lane = 0, 3082, 150, 3
     local function yes() return true end
     local function none() end
@@ -118,6 +119,8 @@ do
             local ids={}; for i=1,enemiesAtWave do ids[i]=i end; return ids
         end,
         GetAvailableFightAllies=function(_,point) assert(point==waveFront); return availableAllies end,
+        GetEnemiesNearLoc=function() return enemiesAtWave > 0 and {attacker,attacker} or {} end,
+        GetVisibleThreatAt=function() return expectedDamage, false, enemiesAtWave end,
     },{__index=function() return noop end})
     local env=setmetatable({ GetBot=constant(hero),GetTeam=constant(2),GetOpposingTeam=constant(3),
         GetAncient=none, GetUnitList=empty, GetTeamPlayers=empty, GetDroppedItemList=empty,
@@ -132,10 +135,15 @@ do
     assert(env.GetDesire()>=0.9,'continue recovery after leaving two opponents at the next wave with only 178/980 health')
     position,health=2600,257
     assert(env.GetDesire()>=0.9,'stay out of the same defended wave at 257/980')
+    health=355
+    assert(env.GetDesire()>=0.9,'recently critical core at 36% will not reenter two affordable threats alone')
     enemiesAtWave=0
     assert(env.GetDesire()<0.9,'a previously unsafe wave that has cleared does not force a retreat')
     enemiesAtWave,availableAllies=2,2
     assert(env.GetDesire()<0.9,'available allies already screening that wave allow ordinary lane decisions')
+    expectedDamage=410
+    assert(env.GetDesire()>=0.9,'having nearby allies cannot excuse a lethal cast already in reach at the wave')
+    expectedDamage=250
     availableAllies,health=0,500
     assert(env.GetDesire()<0.9,'a recovered core can return to normal lane selection')
     health,position=178,-2000

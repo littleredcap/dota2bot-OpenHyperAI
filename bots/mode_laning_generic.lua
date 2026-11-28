@@ -254,6 +254,11 @@ local function ThinkLane()
 				if IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 900) == 0 then hold = point end
 			end
 		end
+		local press = J.GetSideLanePressureTarget(bot, nInRangeEnemy, bot:GetNearbyTowers(1500, true)[1], botAttackRange)
+		if press and J.IsInRange(bot, press, botAttackRange) then
+			if bot:GetAttackTarget() ~= press then bot:Action_AttackUnit(press, true) end
+			return
+		end
 		if GetUnitToLocationDistance(bot, hold) > 90 then
 			bot:Action_MoveToLocation(hold)
 		elseif J.IsValid(current) then

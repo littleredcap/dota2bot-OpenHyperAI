@@ -438,6 +438,15 @@ function X.ConsiderBreatheFire()
 			end
 		end
 
+		local partner = J.GetLanePartner(bot)
+		if J.IsValidHero(partner) and not J.IsCore(partner) and J.IsInRange(bot, partner, 800)
+			and not J.HasPendingLaningLastHit(bot) then
+			local target = J.GetSideLanePressureTarget(partner, nEnemyHeroes, bot:GetNearbyTowers(1500, true)[1], partner:GetAttackRange())
+			if target and J.IsInRange(bot, target, nCastRange) and J.CanCastOnNonMagicImmune(target)
+				and not target:HasModifier('modifier_dragonknight_breathefire_reduction') then
+				return BOT_ACTION_DESIRE_HIGH, J.GetCorrectLoc(target, nCastPoint)
+			end
+		end
 		local nLocationAoE = bot:FindAoELocation(true, false, bot:GetLocation(), nCastRange, nRadius, 0, nDamage)
 		if not J.IsInLaningPhase() and nLocationAoE.count >= 2 then
 			return BOT_ACTION_DESIRE_HIGH, nLocationAoE.targetloc

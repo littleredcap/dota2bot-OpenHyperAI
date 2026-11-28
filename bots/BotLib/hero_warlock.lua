@@ -243,7 +243,7 @@ modifier_warlock_golem_permanent_immolation_debuff
 
 
 function X.SkillsComplement()
-	X.WarlockShouldMove()
+	if X.WarlockShouldMove() then return end
 	if J.CanNotUseAbility( bot ) or bot:IsInvisible() then return end
 
 	nKeepMana = 400
@@ -342,7 +342,7 @@ function X.WarlockShouldMove()
 	then
 		bot:Action_ClearActions( true )
 		bot:Action_MoveToLocation(J.GetTeamFountain())
-		return
+		return true
 	end
 end
 
@@ -415,6 +415,15 @@ function X.ConsiderE()
 	local nCastPoint = abilityE:GetCastPoint()
 	local nRadius = abilityE:GetSpecialValueInt( "aoe" )
 
+	if J.IsDefending(bot) then
+		local tower = J.GetAssignedOuterTower(bot)
+		local threat = tower and bot.laneToDefend and J.GetOuterTowerThreat(tower, bot.laneToDefend)
+		if threat and threat.underAttack and threat.clearAt and threat.waveSize >= 3
+			and IsLocationVisible(threat.clearAt) and GetUnitToLocationDistance(bot, threat.clearAt) <= nCastRange - 30 then
+			local damage, interrupt = J.GetVisibleThreatAt(bot, hEnemyHeroList, bot:GetLocation(), 3, true)
+			if not interrupt and damage < bot:GetHealth() * 0.35 then return BOT_ACTION_DESIRE_HIGH, threat.clearAt end
+		end
+	end
 	if J.IsInTeamFight( bot, 1200 )
 	then
 		local locationAoE = bot:FindAoELocation( true, true, bot:GetLocation(), nCastRange, nRadius/2, 0, 0 )
@@ -478,10 +487,24 @@ function X.ConsiderW()
 
 	if laning then
 		local pressureTarget = J.GetSideLanePressureTarget(bot,
-			J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE), bot:GetNearbyTowers(1500, true)[1], nCastRange)
+			hEnemyHeroList, bot:GetNearbyTowers(1500, true)[1], nCastRange)
 		if pressureTarget and J.CanCastOnNonMagicImmune(pressureTarget) and J.CanCastOnTargetAdvanced(pressureTarget)
 			and not pressureTarget:HasModifier('modifier_warlock_shadow_word') then
 			return BOT_ACTION_DESIRE_HIGH, pressureTarget, true
+		end
+	end
+
+	if J.IsDefending(bot) and (not abilityR:IsFullyCastable()
+		or bot:GetMana() - abilityW:GetManaCost() >= abilityR:GetManaCost()) then
+		local tower = J.GetAssignedOuterTower(bot)
+		if tower then
+			for _, enemy in ipairs(hEnemyHeroList) do
+				if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and enemy:GetAttackTarget() == tower
+					and J.IsInRange(bot, enemy, nCastRange) and J.CanCastOnNonMagicImmune(enemy)
+					and J.CanCastOnTargetAdvanced(enemy) and not enemy:HasModifier('modifier_warlock_shadow_word') then
+					return BOT_ACTION_DESIRE_HIGH, enemy
+				end
+			end
 		end
 	end
 
@@ -519,50 +542,39 @@ function X.ConsiderQ()
 
 	if not abilityQ:IsFullyCastable() then return BOT_ACTION_DESIRE_NONE, nil end
 
-	local nCastRange = abilityQ:GetCastRange() + 50 + aetherRange
-	local nCastPoint = abilityQ:GetCastPoint()
+	local nCastRange = abilityQ:GetCastRange() + aetherRange
 	local manaCost = abilityQ:GetManaCost()
 	local nRadius = abilityQ:GetSpecialValueInt( "search_aoe" )
-	local nCount = abilityQ:GetSpecialValueInt( "count" )
-
-
-	if J.IsInTeamFight( bot, 1000 )
-	then
-		local locationAoE = bot:FindAoELocation( true, true, bot:GetLocation(), nCastRange, nRadius, 0, 0 )
-		if ( locationAoE.count >= 2 )
-		then
-			local nEnemyHeroes = J.GetNearbyHeroes(bot, nCastRange, true, BOT_MODE_NONE )
-			if J.IsValidHero( nEnemyHeroes[1] )
-				and J.CanCastOnNonMagicImmune( nEnemyHeroes[1] )
-				and J.CanCastOnTargetAdvanced( nEnemyHeroes[1] )
-			then
-				return  BOT_ACTION_DESIRE_HIGH, nEnemyHeroes[1]
+	local candidates = hEnemyHeroList or {}
+	if #candidates == 0 then return BOT_ACTION_DESIRE_NONE, nil end
+	if J.IsLaning(bot) then
+		if J.HasPendingLaningLastHit(bot) or bot:GetMana() - manaCost < abilityW:GetManaCost() then
+			return BOT_ACTION_DESIRE_NONE, nil
+		end
+		local press = J.GetSideLanePressureTarget(bot, candidates, bot:GetNearbyTowers(1500, true)[1], nCastRange)
+		candidates = press and {press} or {}
+	elseif not (J.IsDefending(bot) or J.IsInTeamFight(bot, 1200) or J.IsGoingOnSomeone(bot) or J.IsRetreating(bot)) then
+		return BOT_ACTION_DESIRE_NONE, nil
+	end
+	local best, bestScore, creeps = nil, 0, nil
+	for _, target in ipairs(candidates) do
+		if J.IsValidHero(target) and J.IsInRange(bot, target, nCastRange)
+			and not J.IsSuspiciousIllusion(target) and J.CanCastOnNonMagicImmune(target)
+			and J.CanCastOnTargetAdvanced(target) and not target:HasModifier('modifier_warlock_fatal_bonds') then
+			local heroes, units = 0, 0
+			for _, other in ipairs(hEnemyHeroList) do
+				if J.IsValidHero(other) and not J.IsSuspiciousIllusion(other) and J.CanCastOnNonMagicImmune(other)
+					and J.IsInRange(target, other, nRadius) then heroes = heroes + 1 end
 			end
-		end
-	end
-
-	if J.IsRetreating( bot )
-	then
-		local target = J.GetVulnerableWeakestUnit( bot, true, true, nCastRange - 100 )
-		if target ~= nil and J.GetUnitAllyCountAroundEnemyTarget( target, nRadius ) >= 3 then
-			return BOT_ACTION_DESIRE_HIGH, target
-		end
-	end
-
-	if J.IsGoingOnSomeone( bot )
-	then
-		local target = J.GetProperTarget( bot )
-		if J.IsValidHero( target )
-			and J.CanCastOnNonMagicImmune( target )
-			and J.CanCastOnTargetAdvanced( target )
-			and J.IsInRange( target, bot, nCastRange )
-		then
-			if J.GetAroundTargetEnemyUnitCount( target, nRadius ) >= 3 then
-				return BOT_ACTION_DESIRE_HIGH, target
+			creeps = creeps or GetUnitList(UNIT_LIST_ENEMY_CREEPS)
+			for _, creep in ipairs(creeps) do
+				if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsInRange(target, creep, nRadius) then units = units + 1 end
 			end
+			local score = heroes * 4 + math.min(3, units)
+			if (heroes >= 2 or units >= 2) and score > bestScore then best, bestScore = target, score end
 		end
 	end
-
+	if best then return BOT_ACTION_DESIRE_HIGH, best end
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 

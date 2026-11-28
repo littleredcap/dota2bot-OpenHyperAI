@@ -89,6 +89,7 @@ local function roam(opts)
         CanLeaveLane = function() return not opts.unsafeLane end,
         CanCastAbility = function(spell) return not not spell end, IsStunProjectileSpell = no,
         CanCommitToLaneTeleport = function() return not opts.unsafeLanding end,
+        CanStartTeleportHere = function() return not opts.unsafeOrigin end,
         GetLocationToLocationDistance = distance, GetLastSeenEnemiesNearLoc = empty,
         GetLocationTowardDistanceLocation = function(_, _, delta) return {x = delta} end,
         AdjustLocationWithOffsetTowardsFountain = function(loc, offset) return {x = loc.x - offset} end,
@@ -159,3 +160,9 @@ do
 end
 
 print('PASS: role assignment and live gank planning, departure safety, claim, cancel, and TP')
+do
+    local mode,bot,_,_,orders=roam({enemyX=4400,tp=true,unsafeOrigin=true})
+    assert(mode.GetDesire()==0.66)
+    mode.Think()
+    assert(#orders==0 and not bot.ohaLaneGank,'a safe landing does not excuse a vulnerable origin')
+end

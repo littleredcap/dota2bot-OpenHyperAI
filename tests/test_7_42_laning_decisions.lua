@@ -48,6 +48,7 @@ local function fixture(core, overridden, startMid)
     bot.GetLocation = function() return bot.x end
     bot.GetAttackRange = function() return 450 end
     bot.GetAttackDamage = function() return 50 end
+    bot.GetHealth = function() return state.hp * 1000 end
     bot.GetAttackCombatProficiency = function() return state.proficiency or 1 end
     bot.GetSecondsPerAttack = function() return 1.5 end
     bot.GetLastAttackTime = function() return state.previousShot or 0 end
@@ -148,6 +149,7 @@ local function fixture(core, overridden, startMid)
     }, {__index = _G})
     env.dofile = function(path) return setfenv(assert(loadfile(path .. '.lua')), env)() end
     setfenv(laneSafety, env)()
+    j.GetVisibleThreatAt = function() return state.incomingDamage or 0 end
     setfenv(assert(loadfile('bots/mode_laning_generic.lua')), env)()
     return state, env, creep, enemy, bot, tower
 end
@@ -1043,3 +1045,18 @@ do
     assert(not j.GetSideLanePressureStep(bot, {enemy}), 'do not take a one-against-three creep trade')
 end
 print('PASS: a covered support can contest a ranged attack on its core from a short step away')
+
+do
+    local state, mode, creep, enemy, bot = fixture(false, false)
+    state.partner, state.enemyWindup, state.allies = true, true, {creep,creep}
+    state.enemyCreep, state.creepHP = creep, 300
+    enemy.x, creep.x = 515, 485
+    enemy.GetAttackRange, bot.GetAttackRange = function() return 150 end, function() return 600 end
+    local other=setmetatable({x=1250}, {__index=enemy})
+    state.secondEnemy=other
+    assert(mode.J.GetSideLanePressureTarget(bot,{enemy,other},nil,600)==enemy,
+        'covered ranged support can hit a farming melee hero while a second defender is out of reach')
+    other.x=440
+    assert(not mode.J.GetSideLanePressureTarget(bot,{enemy,other},nil,600),
+        'a second defender in contact makes that same shot unsafe')
+end

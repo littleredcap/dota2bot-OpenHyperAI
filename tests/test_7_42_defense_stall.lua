@@ -80,9 +80,9 @@ do
         GetOpposingTeam=function() return 3 end, GetAncient=no, GetDroppedItemList=empty,
         GetUnitList=function() return {ward,tower} end, GetScriptDirectory=function() return 'bots' end,
         require=function(name) return name:find('jmz_func') and j or {} end,
-        BOT_MODE_DESIRE_VERYHIGH=0.9, BOT_MODE_DESIRE_NONE=0}, {__index=_G})
+        BOT_MODE_DESIRE_ABSOLUTE=1, BOT_MODE_DESIRE_VERYHIGH=0.9, BOT_MODE_DESIRE_NONE=0}, {__index=_G})
     setfenv(assert(loadfile('bots/mode_retreat_generic.lua')),env)()
-    assert(env.GetDesire()==0.9, 'visible tower and serpent wards focusing the same hero trigger withdrawal')
+    assert(env.GetDesire()==1, 'focused ward and tower damage overrides the 0.96 high-ground hold')
     tower.target=ward
     assert(env.GetDesire()==0, 'a tower shooting another unit does not add damage')
     tower.target, ward.visible = hero, false

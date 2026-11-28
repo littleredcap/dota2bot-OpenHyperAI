@@ -1,5 +1,6 @@
 local J = {}
 local LaneTeleportPolicy = require(GetScriptDirectory() .. '/FunLib/lane_teleport_policy')
+local VisibleThreat = require(GetScriptDirectory() .. '/FunLib/visible_threat')
 
 local bDebugMode = ( 1 == 10 )
 local tAllyIDList = GetTeamPlayers( GetTeam() )
@@ -1219,10 +1220,52 @@ function J.GetHeroesTargetingUnit(tUnits, hUnit)
     return tAttackingUnits
 end
 
+function J.GetVisibleThreatAt(bot, enemies, point, seconds, checkInterrupt)
+    return VisibleThreat.Evaluate(J, bot, enemies, point, seconds, checkInterrupt)
+end
+
+function J.CanStartTeleportHere(bot)
+    local projectile = J.IsStunProjectileIncoming(bot, 1600, bot:IsMagicImmune())
+    local enemies = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE)
+    if #enemies == 0 and not projectile then return true end
+    local damage, interrupt = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 3, true)
+    if not projectile and not interrupt and damage < bot:GetHealth() + 3 * bot:GetHealthRegen() then return true end
+    if J.Customize and J.Customize.TraceLaneDecisions and (bot.ohaTpDeniedLog or -100) + 2 <= DotaTime() then
+        bot.ohaTpDeniedLog = DotaTime()
+        local sources = {}
+        for _, enemy in ipairs(enemies) do
+            if enemy:CanBeSeen() then
+                sources[#sources + 1] = string.format('%s@%.0f/mp%.0f', enemy:GetUnitName(),
+                    GetUnitToUnitDistance(bot, enemy), enemy:GetMana())
+            end
+        end
+        print(string.format('[OHA tp] %.2f hero=%s denied=%s hp=%.0f incoming=%.0f enemies=%s',
+            DotaTime(), bot:GetUnitName(), projectile and 'projectile' or interrupt and 'control' or 'damage',
+            bot:GetHealth(), damage, table.concat(sources, ',')))
+    end
+    return false
+end
+
+function J.IsLethalChaseStep(bot, target)
+    if not J.IsValidHero(target) or target:GetTeam() == bot:GetTeam() or not target:CanBeSeen()
+        or not J.IsGoingOnSomeone(bot) or not J.IsChasingTarget(bot, target) then return false end
+    local gap = GetUnitToUnitDistance(bot, target) - bot:GetAttackRange()
+    if gap <= 100 then return false end
+    local point = J.VectorTowards(bot:GetLocation(), target:GetLocation(), math.min(500, gap))
+    local opponents = J.GetEnemiesNearLoc(point, 1400)
+    if #opponents < 2 then return false end
+    local damage = J.GetVisibleThreatAt(bot, opponents, point, 3)
+    return damage >= bot:GetHealth() + 3 * bot:GetHealthRegen()
+end
+
 function J.IsLaningUnderPressure(bot, enemies, tower)
     if J.IsValidBuilding(tower) and tower:GetAttackTarget() == bot then return true end
 
     local hp = J.GetHP(bot)
+    if hp < 0.55 and #enemies > 0 then
+        local damage = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 3)
+        if damage >= bot:GetHealth() then return true end
+    end
     local recentlyHit = bot:WasRecentlyDamagedByAnyHero(2)
     local attackers = 0
     for _, enemy in ipairs(J.GetHeroesTargetingUnit(enemies, bot)) do
@@ -1890,13 +1933,22 @@ local function HasCoveredSideLaneAngle(bot, core, enemy, enemies, wave)
     return false
 end
 
--- Trade from a range advantage while a lone opponent attacks the wave or our core.
-local function GetRangedLaneTrade(bot, enemies, tower, range, step)
-    if #enemies ~= 1 or J.GetHP(bot) < 0.75 or bot:WasRecentlyDamagedByAnyHero(2)
-        or bot:WasRecentlyDamagedByCreep(1.5) or J.IsRetreating(bot) then return nil end
-    local enemy = enemies[1]
+local function HasLaneTradeSpace(enemy, enemies, point)
+    for _, other in ipairs(enemies) do
+        if other ~= enemy and J.IsValidHero(other) and not J.IsSuspiciousIllusion(other)
+            and GetUnitToLocationDistance(other, point) <= math.max(600, other:GetAttackRange() + 175) then return false end
+    end
+    return true
+end
+
+local function LaneTradeAgainst(bot, enemy, enemies, tower, range, step)
     if not J.IsValidHero(enemy) or J.IsSuspiciousIllusion(enemy) or not J.CanBeAttacked(enemy)
-        or enemy:IsInvulnerable() or enemy:GetAttackRange() < 310 or not J.IsAttacking(enemy) then return nil end
+        or enemy:IsInvulnerable() or not J.IsAttacking(enemy) then return nil end
+    if enemy:GetAttackRange() < 310 or #enemies > 1 then
+        local core = J.GetLanePartner(bot)
+        if not J.IsValidHero(core) or not J.IsCore(core) or J.IsRetreating(core)
+            or not J.IsInRange(bot, core, 750) then return nil end
+    end
     local distance = GetUnitToUnitDistance(bot, enemy)
     if (distance > range) ~= step or distance > range + 200 then return nil end
     local victim = enemy:GetAttackTarget()
@@ -1910,7 +1962,9 @@ local function GetRangedLaneTrade(bot, enemies, tower, range, step)
     if GetUnitToLocationDistance(enemy, point) <= enemy:GetAttackRange() + 65
         or (step and not IsLocationPassable(point)) or GetHeightLevel(point) < GetHeightLevel(target)
         or (J.IsValidBuilding(tower) and (J.IsInRange(enemy, tower, 900) or GetUnitToLocationDistance(tower, point) <= 900))
-        or #J.GetLastSeenEnemiesNearLoc(target, 1000) > 1 then return nil end
+        or #J.GetLastSeenEnemiesNearLoc(target, 1000) > #enemies then return nil end
+    if not HasLaneTradeSpace(enemy, enemies, point) then return nil end
+    if #enemies > 1 and J.GetVisibleThreatAt(bot, enemies, point, 1.5) >= bot:GetHealth() * 0.30 then return nil end
     if step then
         local function countNearPoint(creeps)
             local count = 0
@@ -1922,6 +1976,15 @@ local function GetRangedLaneTrade(bot, enemies, tower, range, step)
         if countNearPoint(bot:GetNearbyLaneCreeps(750, false)) < math.max(2, countNearPoint(bot:GetNearbyLaneCreeps(750, true))) then return nil end
     end
     return step and point or enemy
+end
+
+local function GetRangedLaneTrade(bot, enemies, tower, range, step)
+    if #enemies > 2 or bot:GetAttackRange() < 400 or J.GetHP(bot) < 0.75 or bot:WasRecentlyDamagedByAnyHero(2)
+        or bot:WasRecentlyDamagedByCreep(1.5) or J.IsRetreating(bot) then return nil end
+    for _, enemy in ipairs(enemies) do
+        local trade = LaneTradeAgainst(bot, enemy, enemies, tower, range, step)
+        if trade then return trade end
+    end
 end
 
 -- Reapply safe pressure to an injured melee target or contest a real last hit.
@@ -1955,6 +2018,7 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
             and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310
             and J.IsInRange(bot, enemy, range)
+            and HasLaneTradeSpace(enemy, enemies, bot:GetLocation())
             and (HasCoveredSideLaneAngle(bot, ally, enemy, enemies, allyCreeps)
                 or evenWave and (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(ally) >= 0.70
                     and IsContestForLaneCreep(enemy, bot:GetTeam()))) and J.CanFollowLaneFight(ally, enemy))
@@ -2972,7 +3036,7 @@ end
 
 
 --将被眩晕的弹道
-function J.IsStunProjectileIncoming( bot, range )
+function J.IsStunProjectileIncoming( bot, range, requirePiercing )
 
 	local incProj = bot:GetIncomingTrackingProjectiles()
 	for _, p in pairs( incProj )
@@ -2980,6 +3044,7 @@ function J.IsStunProjectileIncoming( bot, range )
 		if not p.is_attack
 			and GetUnitToLocationDistance( bot, p.location ) < range
 			and p.ability ~= nil
+			and (not requirePiercing or J.Utils.AbilityBehaviorHasFlag(p.ability:GetTargetFlags(), ABILITY_TARGET_FLAG_MAGIC_IMMUNE_ENEMIES or 16))
 			and J.IsStunProjectileSpell( p.ability:GetName() )
 		then
 			return true
@@ -7405,6 +7470,22 @@ local function GetWaveClearScore(hero, travelTime)
 	return best, bestReach, bestDamage, bestImpact
 end
 
+-- A rear rally is a safe place to assemble. Once the visible wave hits a
+-- building, use a reachable firing position on our side of that wave.
+function J.GetSiegeFiringPosition(bot, tower, threat, stage)
+    local wave = threat and threat.clearAt
+    if not wave or not threat.underAttack or not IsLocationVisible(wave)
+        or J.GetHP(bot) < 0.55 or bot:WasRecentlyDamagedByAnyHero(2) then return nil end
+    local _, spellReach, damage = GetWaveClearScore(bot, 0)
+    local reach = math.max(bot:GetAttackRange(), damage > 0 and spellReach - 90 or 0)
+    if reach < 350 or J.GetLocationToLocationDistance(stage, wave) <= reach then return nil end
+    local point = J.AdjustLocationWithOffsetTowardsFountain(wave, math.max(250, reach - 45))
+    if GetUnitToLocationDistance(tower, point) > 1600 or not IsLocationVisible(point)
+        or not IsLocationPassable(point) or not J.CanCommitToLaneTeleport(bot, point, true, 650)
+        or J.GetLocationToLocationDistance(point, wave) > reach then return nil end
+    if J.GetHighGroundWalkPoint(bot, point) then return point end
+end
+
 -- Shared coverage for an open lane. Estimates use only live visible / previously
 -- sighted threats and the bounded public death-status estimate, never replay data.
 local function BuildDefenseLanePlan(team, demand, claimed, now)
@@ -7445,7 +7526,7 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 			incoming[tp.playerid] = tp
 		end
 	end
-	for _, ally in ipairs(not unsafe and J.GetAlliesNearLoc(hold, 24000) or {}) do
+	for _, ally in ipairs(J.GetAlliesNearLoc(hold, unsafe and 2000 or 24000)) do
 		if J.IsValidHero(ally) and ally:IsBot() and not ally:IsIllusion() and not claimed[ally:GetPlayerID()]
 			and J.GetHP(ally) >= 0.50 and not J.IsRetreating(ally) and not J.IsDisabled(ally) then
 			local tp = ally:HasModifier('modifier_teleporting') and incoming[ally:GetPlayerID()]
@@ -7455,12 +7536,21 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 				local speed = math.max(250, ally:GetCurrentMovementSpeed())
 				local walk = math.max(0, gap - 550) / speed * 1.25 + 0.6
 				local midpoint = J.VectorTowards(point, hold, gap / 2)
-				local safe = J.CanCommitToLaneTeleport(ally, hold, true, 700)
+				local safe = not unsafe and J.CanCommitToLaneTeleport(ally, hold, true, 700)
 					and (gap <= 1200 or J.CanCommitToLaneTeleport(ally, midpoint, true, 850))
 				local arrival, teleport = safe and walk or math.huge, nil
-				if tp then
+				local fireHere = false
+				if not tp and not demand.rear and sight.underAttack and sight.clearAt and gap <= 1800
+					and not ally:WasRecentlyDamagedByAnyHero(2) and J.CanCommitToLaneTeleport(ally, point, true, 650)
+					and #J.GetEnemiesNearLoc(point, 650) == 0 then
+					local _, range, damage, impact = GetWaveClearScore(ally, 0)
+					fireHere = damage > 0 and (impact or 0.35) <= deadline and GetUnitToLocationDistance(ally, sight.clearAt) <= range
+				end
+				if fireHere then
+					arrival = 0
+				elseif tp and not unsafe then
 					arrival = tp.time_remaining + math.max(0, J.GetLocationToLocationDistance(tp.location, hold) - 550) / speed * 1.25
-				elseif arrival > deadline and J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')) then
+				elseif not unsafe and arrival > deadline and J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')) then
 					local landing = J.GetHighGroundResponseTeleport(ally, hold, anchors)
 					if landing then
 						local tpETA = 4 + math.max(0, J.GetLocationToLocationDistance(landing, hold) - 550) / speed * 1.25
@@ -7473,9 +7563,9 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 						and (sight.waveSize or 0) <= 2 then
 						reach, damage, castLead = ally:GetAttackRange(), 1, 0.35
 					end
-					local onSite = not tp and gap <= 750 and J.GetHP(ally) >= 0.55
+					local onSite = fireHere or not tp and gap <= 750 and J.GetHP(ally) >= 0.55
 					castLead = castLead or 0.35
-					local clearStage = hold
+					local clearStage = fireHere and point or hold
 					local actionablePoint = not demand.rear and sight.clearAt or nil
 					if actionablePoint and J.GetLocationToLocationDistance(actionablePoint, hub) > 1280 then
 						-- An approaching wave will move; don't require a defender to chase its present position.
@@ -7483,7 +7573,7 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 					end
 					local impact = damage > 0 and arrival + castLead or math.huge
 					if damage > 0 and actionablePoint then
-						local shortfall = math.max(0, J.GetLocationToLocationDistance(hold, actionablePoint) - reach)
+						local shortfall = math.max(0, J.GetLocationToLocationDistance(clearStage, actionablePoint) - reach)
 						if shortfall > 0 then
 							local step = J.VectorTowards(hold, actionablePoint, math.min(500, shortfall))
 							local mayStep = shortfall <= 500 and J.CanCommitToLaneTeleport(ally, step, true, 650)
@@ -7495,7 +7585,7 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 						onSite = onSite and GetUnitToLocationDistance(ally, sight.clearAt) <= reach
 					end
 					local row = {hero=ally, id=ally:GetPlayerID(), walk=not tp and safe and walk or math.huge,
-						arrival=impact, coverArrival=arrival, teleport=teleport, reach=reach, canClear=damage > 0,
+						arrival=impact, coverArrival=fireHere and (safe and walk or math.huge) or arrival, teleport=teleport, reach=reach, canClear=damage > 0,
 						staging=clearStage ~= hold and clearStage or nil,
 						onStation=onSite and castLead <= 2 and impact <= deadline,
 						score=score - math.min(24, impact) * 34 - (J.GetPosition(ally) == 1 and 100 or 0)}
@@ -8520,11 +8610,15 @@ function J.GetAssignedOuterTower(bot)
 	if response and DotaTime() < response.expires and J.IsValidBuilding(response.tower)
 		and GetUnitToLocationDistance(bot, response.stage) <= 500 then return response.tower end
 	local guard = bot.ohaMidCover
-	if guard and not guard.cover and DotaTime() < guard.expires and J.IsValidBuilding(guard.tower) then return guard.tower end
+	if guard and DotaTime() < guard.expires and J.IsValidBuilding(guard.tower) then
+		if not guard.cover or (GetUnitToUnitDistance(bot, guard.tower) <= 1000
+			and J.GetOuterTowerThreat(guard.tower, guard.lane or LANE_MID).underAttack) then return guard.tower end
+	end
 	local state = bot._defend
-	if state and not state.waveClearCover and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then
+	if state and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime() then
 		local tower = state.waveClearRearTower or state.waveClearTower
-		if J.IsValidBuilding(tower) then return tower end
+		if J.IsValidBuilding(tower) and (not state.waveClearCover or state.waveClearLane
+			and GetUnitToUnitDistance(bot, tower) <= 1000 and J.GetOuterTowerThreat(tower, state.waveClearLane).underAttack) then return tower end
 	end
 end
 
