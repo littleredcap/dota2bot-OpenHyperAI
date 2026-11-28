@@ -276,6 +276,20 @@ do
     assert(not state.order, 'release the escape after two clear seconds')
     state.slowed, state.rooted = true, true
     assert(j.GetShrapnelEscapeLocation(bot) == nil, 'do not take a walking path while rooted')
+
+    state.slowed, state.rooted, state.time = false, false, 520
+    local watcherExit = pos(-700)
+    bot.ohaWatcherRecoveryUntil = 528
+    j.GetStalledWatcherExit = function() return not state.channeling and watcherExit or nil end
+    assert(env.GetDesire() == 0.86, 'the scripted move competes with the stalled native Watcher mode')
+    env.Think()
+    assert(state.order == watcherExit, 'the selected movement mode issues the validated order')
+    state.order, state.time = nil, 520.2
+    env.Think()
+    assert(not state.order, 'allow the walking order to run')
+    state.channeling, state.time = true, 522
+    env.Think()
+    assert(not state.order, 'the movement mode rechecks safety after selection')
 end
 
 print('PASS: stop unsafe fights and rescue orders, including before visible hostile teleports finish')

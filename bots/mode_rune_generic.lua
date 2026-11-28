@@ -61,9 +61,10 @@ local function IsBountySpot(rune)
 end
 
 local bountyInterval = GetGameMode() == GAMEMODE_TURBO and 180 or 240
+local bountyPreparationWindow = 25
 
 local function BountySpawnApproaching(now)
-	return now >= bountyInterval - 20 and now % bountyInterval >= bountyInterval - 20
+	return now >= bountyInterval - bountyPreparationWindow and now % bountyInterval >= bountyInterval - bountyPreparationWindow
 end
 
 local function BountyJustSpawned(now)
@@ -553,6 +554,19 @@ local function BountyTravelCost(member, spot, location, distance)
 	return distance / math.max(1, member:GetCurrentMovementSpeed()) + (core and 2 or 0) - kept
 end
 
+local function CanLeaveBountyWave(member, creeps)
+	if #creeps == 0 then return true end
+	if J.IsCore(member) or not J.IsInLaningPhase(member) then return false end
+	local partner = J.GetLanePartner(member)
+	if not J.IsValidHero(partner) or not J.IsCore(partner) or partner:GetAssignedLane() ~= member:GetAssignedLane()
+		or J.GetHP(partner) < 0.78 or J.IsRetreating(partner) or partner:IsChanneling()
+		or partner:WasRecentlyDamagedByAnyHero(3) or not J.IsInRange(member, partner, 950) then return false end
+	for _, creep in ipairs(creeps) do
+		if J.IsValid(creep) and not J.IsInRange(partner, creep, partner:GetAttackRange() + 125) then return false end
+	end
+	return true
+end
+
 function X.GetBountyAssignment()
 	local choices = {}
 	local now = DotaTime()
@@ -581,18 +595,19 @@ function X.GetBountyAssignment()
 					local scoutRange = 900
 					local support = not J.IsCore(member)
 						and (not member.ohaWaveClaim or member.ohaWaveClaim.expires <= DotaTime())
-						and #member:GetNearbyLaneCreeps(850, true) == 0
+					local creeps = member:GetNearbyLaneCreeps(850, true)
 					local localTrip = spot == ownSpot and (available and distance <= 3600
 						or not available and CanPrepareBounty(member, spot, distance, now))
 						and J.GetHP(member) >= 0.68 and not J.HasPendingLaningLastHit(member)
 						and (J.IsCore(member) or support and J.CanLeaveLane(member))
-						and #member:GetNearbyLaneCreeps(850, true) == 0
-					if not available and support and (BountySpawnApproaching(now) or BountyJustSpawned(now)) then
+						and CanLeaveBountyWave(member, creeps)
+					local freeSupport = support and #creeps == 0
+					if not available and freeSupport and (BountySpawnApproaching(now) or BountyJustSpawned(now)) then
 						scoutRange = BountyScoutRange(member)
-					elseif not available and support and now >= 14 * 60 then
+					elseif not available and freeSupport and now >= 14 * 60 then
 						scoutRange = math.min(1700, member:GetCurrentMovementSpeed() * 5)
 					end
-					if localTrip or (not awaitingSpawn or support) and distance <= (available and 2400 or scoutRange) then
+					if localTrip or (not awaitingSpawn or freeSupport) and distance <= (available and 2400 or scoutRange) then
 						local cost = BountyTravelCost(member, spot, location, distance)
 						if cost then candidates[#candidates + 1] = {member = member, spot = spot, distance = distance,
 							cost = cost, available = available, prepare = localTrip} end

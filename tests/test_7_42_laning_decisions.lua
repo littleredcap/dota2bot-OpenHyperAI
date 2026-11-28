@@ -324,13 +324,17 @@ do
     end
     j.CanTakePostFightTrip = yes
     bot.ohaWatcherRecoveryUntil, state.orders = 95, {}
-    assert(not j.TryLeaveStalledWatcher(bot), 'never replace a real cast with a Watcher recovery move')
+    assert(not j.GetStalledWatcherExit(bot), 'never replace a real cast with a Watcher recovery move')
     j.IsTryingtoUseAbility, env.IsLocationVisible = no, no
-    assert(not j.TryLeaveStalledWatcher(bot) and #state.orders == 0, 'a recovery step requires visible ground')
+    assert(not j.GetStalledWatcherExit(bot), 'a recovery step requires visible ground')
     env.IsLocationVisible, state.time = yes, 86
-    assert(j.TryLeaveStalledWatcher(bot) and state.orders[1][1] == 'move' and state.orders[1][2].x == -700,
-        'send an actual short movement order once the native interaction stalls')
-    assert(not j.TryLeaveStalledWatcher(bot) and #state.orders == 1, 'allow the movement order to run')
+    local exit = j.GetStalledWatcherExit(bot)
+    assert(exit and exit.x == -700 and #state.orders == 0, 'find a short safe exit without issuing orders from desire')
+    bot.GetActiveMode = function() return 8 end
+    bot.GetLocation = function() return point(-300) end
+    assert(j.GetStalledWatcherExit(bot, exit) == exit, 'maintain the destination when another mode takes over')
+    bot.GetLocation = function() return point(-620) end
+    assert(not j.GetStalledWatcherExit(bot, exit), 'return to normal mode selection after clearing the Watcher')
 end
 
 do

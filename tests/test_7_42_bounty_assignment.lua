@@ -22,7 +22,7 @@ local function fixture()
         hero.GetLevel = function(self) return self.level or 30 end
         hero.GetAttackRange = function() return 600 end
         hero.GetAssignedLane = function(self) return self.role == 2 and 2 or 3 end
-        hero.GetNearbyLaneCreeps = function(self) return self.wave and {{}} or {} end
+        hero.GetNearbyLaneCreeps = function(self) return self.creeps or (self.wave and {{}} or {}) end
         hero.FindItemSlot = function(self) return self.bottle and 0 or -1 end
         hero.IsInvulnerable, hero.IsChanneling, hero.HasModifier = no, no, no
         hero.WasRecentlyDamagedByAnyHero, hero.WasRecentlyDamagedByTower = no, no
@@ -47,6 +47,7 @@ local function fixture()
             return h.blocked or h:IsInvulnerable() and not allowInvulnerable
         end,
         IsValid=function(u) return u ~= nil end,
+        IsInRange=function(a,b,radius) return math.abs(a.x-b.x) <= radius end,
         GetDistance=function(a,b) return math.abs(a-b) end,
         Utils={IsTeamPushingSecondTierOrHighGround=no, CountEnemyHeroesNear=function() return state.defend and 2 or 0 end}}
     local modes = {}
@@ -197,6 +198,19 @@ do
     assert(m[2].GetDesire() == 0.86)
     m[2].Think()
     order(h[2], 'pick', bounty2)
+end
+
+do
+    local s, h, m, j = fixture()
+    s.time, s.spots[bounty2], s.status[bounty2] = 225, 4450, missing
+    h[1].role, h[1].x, h[2].x = 1, 300, 200
+    h[1].wave, h[2].creeps = true, {{x=420}}
+    j.GetLanePartner = function(member) return member == h[2] and h[1] or nil end
+    assert(m[2].GetDesire() == 0.76, 'prepare for the home bounty while a healthy same-lane core can already collect the wave')
+    h[2].creeps[1].x = 1080
+    assert(m[2].GetDesire() == 0, 'stay when the partner cannot reach the wave')
+    h[2].creeps[1].x, h[1].hp = 420, 0.60
+    assert(m[2].GetDesire() == 0, 'do not leave a core in need of cover')
 end
 
 do

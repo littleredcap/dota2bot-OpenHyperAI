@@ -11211,37 +11211,36 @@ function J.CheckBotIdleState()
 	return true
 end
 
-function J.TryLeaveStalledWatcher(bot)
+function J.GetStalledWatcherExit(bot, destination)
 	local now = DotaTime()
-	if (bot.ohaWatcherRecoveryUntil or 0) <= now or bot:GetActiveMode() ~= (BOT_MODE_WATCHER or 28)
-		or (bot.ohaNextWatcherExitAt or 0) > now or J.CanNotUseAction(bot, false, true)
-		or bot:IsChanneling() or bot:IsRooted() or J.IsTryingtoUseAbility(bot)
-		or bot:WasRecentlyDamagedByAnyHero(3) or (bot.ohaOuterTowerHoldUntil or 0) > now then return false end
+	if (bot.ohaWatcherRecoveryUntil or 0) <= now or J.CanNotUseAction(bot, false, true)
+		or bot:IsRooted() or J.IsTryingtoUseAbility(bot) or bot:HasModifier('modifier_teleporting')
+		or bot:WasRecentlyDamagedByAnyHero(3) or (bot.ohaOuterTowerHoldUntil or 0) > now then return nil end
+	if not destination and bot:GetActiveMode() ~= (BOT_MODE_WATCHER or 28) then return nil end
 	local origin = bot:GetLocation()
-	if #J.GetEnemiesNearLoc(origin, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(origin, 1300) > 0 then return false end
+	if #J.GetEnemiesNearLoc(origin, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(origin, 1300) > 0 then return nil end
+	local function SafeExit(point)
+		local distance = J.GetLocationToLocationDistance(origin, point)
+		if distance < 120 or distance > 850 then return false end
+		local middle = J.VectorTowards(origin, point, distance * 0.5)
+		return IsLocationVisible(point) and IsLocationVisible(middle) and IsLocationPassable(point) and IsLocationPassable(middle)
+			and #J.GetEnemiesNearLoc(point, 1300) == 0 and #J.GetLastSeenEnemiesNearLoc(point, 1250) == 0
+			and J.CanTakePostFightTrip(bot, point, false, true)
+	end
+	if destination then return SafeExit(destination) and destination or nil end
+
 	local ally = J.GetClosestAlly(bot, 3000, true)
-	local anchor = ally and GetUnitToUnitDistance(bot, ally) > 700 and ally:GetActiveMode() ~= (BOT_MODE_WATCHER or 28)
+	local anchor = ally and J.GetHP(bot) >= 0.55 and GetUnitToUnitDistance(bot, ally) > 700 and ally:GetActiveMode() ~= (BOT_MODE_WATCHER or 28)
 		and ally:GetLocation() or J.GetTeamFountain()
 	local distance = J.GetLocationToLocationDistance(origin, anchor)
-	if distance < 450 then return false end
-	bot.ohaNextWatcherExitAt = now + 0.8
+	if distance < 450 then return nil end
 	local ahead = J.VectorTowards(origin, anchor, math.min(distance, 700))
 	local dx, dy = ahead.x - origin.x, ahead.y - origin.y
 	for _, side in ipairs({0, 1, -1}) do
 		local point = side == 0 and ahead or Vector(origin.x + dx * 0.82 - dy * side * 0.58,
 			origin.y + dy * 0.82 + dx * side * 0.58, origin.z)
-		local middle = J.VectorTowards(origin, point, 340)
-		if IsLocationVisible(point) and IsLocationVisible(middle) and IsLocationPassable(point) and IsLocationPassable(middle)
-			and #J.GetEnemiesNearLoc(point, 1300) == 0 and #J.GetLastSeenEnemiesNearLoc(point, 1250) == 0
-			and J.CanTakePostFightTrip(bot, point, false, true) then
-			bot:Action_MoveToLocation(point)
-			if J.Customize and J.Customize.TraceLaneDecisions then
-				print('[OHA idle]', now, bot:GetUnitName(), 'watcher-exit', math.floor(point.x), math.floor(point.y))
-			end
-			return true
-		end
+		if SafeExit(point) then return point end
 	end
-	return false
 end
 
 function J.AreTreesBetween(bot, loc, r)

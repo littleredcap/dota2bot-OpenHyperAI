@@ -34,6 +34,7 @@ local nInRangeEnemy, nInRangeAlly, allyTowers, enemyTowers, trySeduce, shouldTem
 
 local tangoDesire, tangoTarget, tangoSlot
 local chronoAvoidanceLocation, shrapnelEscapeLocation
+local watcherExitLocation, nextWatcherMoveAt
 
 local laneAndT1s = {
 	{LANE_TOP, TOWER_TOP_1, TOWER_TOP_2},
@@ -57,6 +58,8 @@ function GetDesireHelper()
 	if chronoAvoidanceLocation ~= nil then return BOT_MODE_DESIRE_ABSOLUTE end
 	shrapnelEscapeLocation = J.GetShrapnelEscapeLocation(bot)
 	if shrapnelEscapeLocation ~= nil then return BOT_MODE_DESIRE_ABSOLUTE end
+	watcherExitLocation = bot.ohaWatcherRecoveryUntil and J.GetStalledWatcherExit(bot, watcherExitLocation) or nil
+	if watcherExitLocation ~= nil then return 0.86 end
 
 	trySeduce = false
 	shouldTempRetreat = false
@@ -137,6 +140,17 @@ function GetDesireHelper()
 end
 
 function Think()
+	if watcherExitLocation ~= nil and chronoAvoidanceLocation == nil and shrapnelEscapeLocation == nil then
+		local point = J.GetStalledWatcherExit(bot, watcherExitLocation)
+		if point ~= nil and DotaTime() >= (nextWatcherMoveAt or 0) then
+			nextWatcherMoveAt = DotaTime() + 1.1
+			if J.Customize and J.Customize.TraceLaneDecisions then
+				print('[OHA idle]', DotaTime(), bot:GetUnitName(), 'watcher-roam', math.floor(point.x), math.floor(point.y))
+			end
+			bot:Action_MoveToLocation(point)
+		end
+		return
+	end
     if J.CanNotUseAction(bot) then return end
 	if chronoAvoidanceLocation ~= nil then
 		local safe = J.GetChronosphereAvoidanceLocation(bot)
@@ -1111,6 +1125,7 @@ end
 function OnEnd()
 	EndLaneGank()
 	gankPlan = nil
+	watcherExitLocation, nextWatcherMoveAt = nil, nil
 	if shouldGoBackToFountain and IsInHealthyState() then
 		shouldGoBackToFountain = false
 	end
