@@ -253,7 +253,9 @@ do
     }, {__index = _G})
     local start = assert(source:find('function J.GetShrapnelEscapeLocation(', 1, true))
     local finish = assert(source:find('function J.GetChronosphereAvoidanceLocation(', start, true))
-    setfenv(assert(loadstring(source:sub(start, finish - 1))), env)()
+    local shrapnelStart = assert(source:find('local function IsVisibleEnemyShrapnel(', 1, true))
+    local shrapnelEnd = assert(source:find('local function IsStandingInShrapnel(', shrapnelStart, true))
+    setfenv(assert(loadstring(source:sub(shrapnelStart, shrapnelEnd - 1) .. source:sub(start, finish - 1))), env)()
     setfenv(assert(loadfile('bots/mode_roam_generic.lua')), env)()
     local hostile = {location = pos(780), radius = 400,
         caster = {IsNull = no, GetTeam = function() return 3 end},

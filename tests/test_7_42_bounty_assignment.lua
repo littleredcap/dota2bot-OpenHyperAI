@@ -17,6 +17,7 @@ local function fixture()
         hero.GetLocation = function(self) return self.x end
         hero.GetMostRecentPing = function(self) return self.ping end
         hero.GetCurrentMovementSpeed = function() return 300 end
+        hero.GetHealth = function() return 1100 end
         hero.GetCurrentActionType = function(self) return self.action end
         hero.GetActiveMode, hero.GetActiveModeDesire = function() return 0 end, function() return 0 end
         hero.GetLevel = function(self) return self.level or 30 end
@@ -65,6 +66,7 @@ local function fixture()
                 return state.spots[id]
             end,
             GetUnitToLocationDistance=distance, IsLocationPassable=function() return true end,
+            IsLocationVisible=function() return true end,
             Vector=function(x) return x end, Clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end,
             RemapValClamped=function(n,lo,hi,a,b) return a + (b-a)*math.max(0,math.min(1,(n-lo)/(hi-lo))) end,
             RUNE_BOUNTY_1=bounty1, RUNE_BOUNTY_2=bounty2, RUNE_POWERUP_1=power1, RUNE_POWERUP_2=power2,
@@ -355,6 +357,35 @@ do
     order(h[2], 'move', s.spots[bounty2])
     h[2].ohaWaveClaim = {expires = 1215}
     assert(m[2].GetDesire() == 0, 'a support already collecting a wave does not leave it to scout')
+end
+
+do
+    local s, h, m, j = fixture()
+    s.time, h[1].x, h[2].x = 708.73, s.spots[bounty2] - 435, -4500
+    local rival = {x=s.spots[bounty2]+940, GetPlayerID=function() return 8 end,
+        GetCurrentMovementSpeed=function() return 300 end}
+    j.GetEnemiesNearLoc = function(point, radius)
+        return distance(rival, point) <= radius and {rival} or {}
+    end
+    j.GetLastSeenEnemiesNearLoc = function(point, radius)
+        if s.otherRival then return {8, 9} end
+        return distance(rival, point) <= radius and {8} or {}
+    end
+    j.GetVisibleThreatAt = function() return s.damage or 40, s.control end
+    h[1].GetNearbyHeroes = function(_, _, hostile) return hostile and {rival} or {} end
+    assert(m[1].GetDesire() == 0.86, '11:48: a safe short walk beats the one approaching rival to the home rune')
+    m[1].Think()
+    order(h[1], 'move', s.spots[bounty2])
+    s.control = true
+    assert(m[1].GetDesire() == 0, 'reachable control can cancel a committed short pickup')
+    s.control, s.otherRival = false, true
+    assert(m[1].GetDesire() == 0, 'do not race a rival past another recently seen enemy')
+    s.otherRival, rival.x = false, s.spots[bounty2] + 180
+    assert(m[1].GetDesire() == 0, 'the faster rival is already close enough to win')
+    rival.x, h[1].x = s.spots[bounty2] + 840, s.spots[bounty2]
+    assert(m[1].GetDesire() == 0.86)
+    m[1].Think()
+    order(h[1], 'pick', bounty2)
 end
 
 do

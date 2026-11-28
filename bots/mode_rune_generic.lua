@@ -201,7 +201,7 @@ function GetDesire()
 		local nProximityRadius = 1600
 		local rune = bot.rune.normal
 
-		rune.location, rune.distance, rune.prepare = X.GetBestRune()
+		rune.location, rune.distance, rune.prepare, rune.quickPickup = X.GetBestRune()
 
 		if rune.location ~= -1 then
 			if DotaTime() > -10 and bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE
@@ -223,6 +223,7 @@ function GetDesire()
 			if IsBountySpot(rune.location) then
 				local now = DotaTime()
 				local trip = bot.ohaBountyTask
+				if rune.quickPickup then return 0.86 end
 				if rune.status == RUNE_STATUS_AVAILABLE and rune.distance <= 375 and botHP >= 0.55
 					and #nEnemyHeroes == 0 and not J.HasPendingLaningLastHit(bot) then return 0.86 end
 				if rune.status == RUNE_STATUS_AVAILABLE and trip and trip.spot == rune.location and trip.expires > now
@@ -401,7 +402,7 @@ function Think()
 	if bot.rune and bot.rune.normal then
 		local rune = bot.rune.normal
 		if IsBountySpot(rune.location) then
-			local assigned, distance, prepare = X.GetBountyAssignment()
+			local assigned, distance, prepare, quickPickup = X.GetBountyAssignment()
 			if not assigned then CancelBountyMove(); return end
 			if issuedBountySpot ~= nil and issuedBountySpot ~= assigned then CancelBountyMove(); picking = false end
 			rune.location, rune.distance = assigned, distance
@@ -410,7 +411,8 @@ function Think()
 			if J.Customize and J.Customize.TraceLaneDecisions and (issuedBountySpot ~= assigned
 				or bot.ohaLastBountyStatus ~= status) then
 				print('[OHA bounty]', now, bot:GetPlayerID(), assigned, status, math.floor(distance), location.x, location.y,
-					status == RUNE_STATUS_AVAILABLE and 'collect' or prepare and 'prepare' or 'scout')
+					quickPickup and 'local-collect' or status == RUNE_STATUS_AVAILABLE and 'collect'
+						or prepare and 'prepare' or 'scout')
 				bot.ohaLastBountyStatus = status
 			end
 			local trip = bot.ohaBountyTask
@@ -535,14 +537,36 @@ end
 --------------------------------------------------------------------
 -- Assign bounty spots from the same allied roster in every bot's VM.
 --------------------------------------------------------------------
-local function BountyTravelCost(member, spot, location, distance)
+local function CanFinishLocalBounty(member, location, distance, foes)
+	if distance > 625 or J.GetHP(member) < 0.68 or J.HasPendingLaningLastHit(member)
+		or not IsLocationVisible(location) or not IsLocationPassable(location) then return false end
+	local midpoint = distance > 0 and J.GetLocationTowardDistanceLocation(member, location, distance * 0.5)
+		or member:GetLocation()
+	if not IsLocationVisible(midpoint) or not IsLocationPassable(midpoint) then return false end
+	local rival = foes[1]
+	for _, id in ipairs(J.GetLastSeenEnemiesNearLoc(location, 1650)) do
+		if id ~= rival:GetPlayerID() then return false end
+	end
+	local eta = math.max(0, distance - 125) / math.max(1, member:GetCurrentMovementSpeed())
+	local rivalETA = math.max(0, GetUnitToLocationDistance(rival, location) - 125)
+		/ math.max(1, rival:GetCurrentMovementSpeed())
+	if eta + 0.65 >= rivalETA then return false end
+	-- Check the point of contact and the direct approach before spending the walk.
+	for _, point in ipairs({midpoint, location}) do
+		local damage, control = J.GetVisibleThreatAt(member, foes, point, eta + 0.8, true)
+		if control or damage >= member:GetHealth() * 0.18 then return false end
+	end
+	return true
+end
+
+local function BountyTravelCost(member, spot, location, distance, quickPickup)
 	if not member:IsBot() or J.GetHP(member) < 0.5 or member:IsChanneling()
 		or J.IsRetreating(member) or J.IsGoingOnSomeone(member) or member:WasRecentlyDamagedByAnyHero(3)
 		or J.IsDoingRoshan(member) or J.IsDoingTormentor(member)
 		or (member.ohaWisdomMoveUntil or 0) > DotaTime()
 		or (member.ohaOuterTowerHoldUntil or 0) > DotaTime()
 		or (J.IsDefending(member) and member:GetActiveModeDesire() >= BOT_MODE_DESIRE_HIGH)
-		or #member:GetNearbyHeroes(1000, true, BOT_MODE_NONE) > 0
+		or not quickPickup and #member:GetNearbyHeroes(1000, true, BOT_MODE_NONE) > 0
 		or not CanTakeRuneTrip(member, location, true) then return nil end
 	local core = J.IsCore(member)
 	if core or member:FindItemSlot('item_bottle') >= 0 then
@@ -603,8 +627,9 @@ function X.GetBountyAssignment()
 		local available = status == RUNE_STATUS_AVAILABLE
 		local awaitingSpawn = status == RUNE_STATUS_MISSING and BountySpawnApproaching(now)
 		if (available or (spot == ownSpot and (status == RUNE_STATUS_UNKNOWN or awaitingSpawn)))
-			and not IsHumanClaimingRune(spot) and not X.IsPingedByHumanPlayer(location, math.huge)
-			and #J.GetLastSeenEnemiesNearLoc(location, 1000) == 0 and #J.GetEnemiesNearLoc(location, 1000) == 0 then
+			and not IsHumanClaimingRune(spot) and not X.IsPingedByHumanPlayer(location, math.huge) then
+			local clear = #J.GetLastSeenEnemiesNearLoc(location, 1000) == 0 and #J.GetEnemiesNearLoc(location, 1000) == 0
+			local rivals = available and spot == ownSpot and J.GetEnemiesNearLoc(location, 1650)
 			for slot = 1, #GetTeamPlayers(GetTeam()) do
 				local member = GetTeamMember(slot)
 				if J.IsValidHero(member) then
@@ -633,10 +658,12 @@ function X.GetBountyAssignment()
 					elseif not available and freeSupport and now >= 14 * 60 then
 						scoutRange = math.min(1700, member:GetCurrentMovementSpeed() * 5)
 					end
-					if localTrip or (not awaitingSpawn or freeSupport) and distance <= (available and 2400 or scoutRange) then
-						local cost = BountyTravelCost(member, spot, location, distance)
+					local quickPickup = rivals and #rivals == 1 and CanFinishLocalBounty(member, location, distance, rivals)
+					if quickPickup or clear and (localTrip
+						or (not awaitingSpawn or freeSupport) and distance <= (available and 2400 or scoutRange)) then
+						local cost = BountyTravelCost(member, spot, location, distance, quickPickup)
 						if cost then candidates[#candidates + 1] = {member = member, spot = spot, distance = distance,
-							cost = cost, available = available, prepare = localTrip} end
+							cost = cost, available = available, prepare = localTrip, quickPickup = quickPickup} end
 					end
 				end
 			end
@@ -660,17 +687,19 @@ function X.GetBountyAssignment()
 			end
 		end
 	end
-	if mine then return mine.spot, mine.distance, mine.prepare end
+	if mine then return mine.spot, mine.distance, mine.prepare, mine.quickPickup end
 end
 
 function X.GetBestRune()
 	minute = math.floor(DotaTime() / 60)
 	second = DotaTime() % 60
-	local bounty, distance, prepare
+	local bounty, distance, prepare, quickPickup
 	if DotaTime() >= 0 then
-		bounty, distance, prepare = X.GetBountyAssignment()
+		bounty, distance, prepare, quickPickup = X.GetBountyAssignment()
 		local trip = bot.ohaBountyTask
-		if bounty and trip and trip.spot == bounty and trip.expires > DotaTime() then return bounty, distance, prepare end
+		if bounty and trip and trip.spot == bounty and trip.expires > DotaTime() then
+			return bounty, distance, prepare, quickPickup
+		end
 	end
 	if IsMidPowerRuneWindow() then
 		local confirmed, nearest = -1, 1800
@@ -685,7 +714,7 @@ function X.GetBestRune()
 		end
 		if confirmed ~= -1 then return confirmed, nearest end
 	end
-	if bounty then return bounty, distance, prepare end
+	if bounty then return bounty, distance, prepare, quickPickup end
 
 	local targetRune = -1
 	local targetRuneDistance = math.huge

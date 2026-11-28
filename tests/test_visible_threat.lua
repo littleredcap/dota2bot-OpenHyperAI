@@ -108,6 +108,26 @@ do
     bot.GetHealth, j.GetHP, bot.GetHealthRegen = currentHP, maxFraction, regen
     j.GetEnemiesNearLoc = function() return enemies end
 end
+do
+    local sniper = caster(10, 681, 0, 3000, 175, 'sniper_assassinate')
+    sniper.GetAttackRange, sniper.GetAttackDamage, sniper.GetSecondsPerAttack = value(550), value(100), value(1.2)
+    sniper.GetTeam, sniper.IsNull = value(3), no
+    local oldHealth, oldFraction, oldRegen, oldTeam = bot.GetHealth, j.GetHP, bot.GetHealthRegen, bot.GetTeam
+    bot.GetHealth, j.GetHP, bot.GetHealthRegen, bot.GetTeam = value(250), value(250 / 780), value(4), value(2)
+    bot.WasRecentlyDamagedByAnyHero = yes
+    j.GetEnemiesNearLoc = function() return {sniper} end
+    local zone = {location=210, radius=400, caster=sniper, ability={IsNull=no, GetName=value('sniper_shrapnel')}}
+    env.GetAvoidanceZones = function() return {zone} end
+    assert(not j.CanStartTeleportHere(bot), '5:15: a visible damaging zone and ranged pursuit make the channel lethal')
+    env.IsLocationVisible = function(point) return point ~= 210 end
+    assert(j.CanStartTeleportHere(bot), 'an unobserved new damage zone cannot change the decision')
+    env.IsLocationVisible, env.GetAvoidanceZones = yes, nil
+    bot.HasModifier = function(_, name) return name == 'modifier_sniper_shrapnel_slow' end
+    assert(not j.CanStartTeleportHere(bot), 'current damage still counts when the zone center is unobserved')
+    bot.HasModifier, bot.WasRecentlyDamagedByAnyHero, bot.ohaUnsafeChannel = no, no, nil
+    bot.GetHealth, j.GetHP, bot.GetHealthRegen, bot.GetTeam = oldHealth, oldFraction, oldRegen, oldTeam
+    j.GetEnemiesNearLoc = function() return enemies end
+end
 now=now+6;dk.IsUsingAbility=no
 local wl=caster(8,854,347,700,110,'warlock_shadow_word')
 dk.x,dk.magic,wl.magic=572,75,170

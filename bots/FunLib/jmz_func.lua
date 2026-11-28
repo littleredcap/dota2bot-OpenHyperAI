@@ -1263,6 +1263,22 @@ function J.CanLandByTeleport(bot, point)
     return damage < (bot:GetHealth() + 4 * bot:GetHealthRegen()) * 0.60
 end
 
+local function IsVisibleEnemyShrapnel(bot, zone)
+	return zone.location ~= nil and type(zone.radius) == 'number' and zone.radius > 0 and IsLocationVisible(zone.location)
+		and zone.ability ~= nil and not zone.ability:IsNull() and zone.ability:GetName() == 'sniper_shrapnel'
+		and zone.caster ~= nil and not zone.caster:IsNull() and zone.caster:GetTeam() ~= bot:GetTeam()
+end
+
+local function IsStandingInShrapnel(bot, point)
+	if bot:HasModifier('modifier_sniper_shrapnel_slow') then return true end
+	if type(GetAvoidanceZones) ~= 'function' then return false end
+	for _, zone in pairs(GetAvoidanceZones() or {}) do
+		if IsVisibleEnemyShrapnel(bot, zone)
+			and J.GetLocationToLocationDistance(point, zone.location) <= zone.radius then return true end
+	end
+	return false
+end
+
 local teleportPeriodicDamage = {
     modifier_item_urn_damage = 25,
     modifier_dragon_knight_corrosive_breath_dot = 24,
@@ -1292,6 +1308,11 @@ function J.CanStartTeleportHere(bot)
         focused = focused + GetNonHeroDamageAt(bot, GetUnitList(UNIT_LIST_ENEMY_CREEPS), location, channel, seen, false, true)
     end
     local ongoing = 0
+    local inShrapnel = not immune and IsStandingInShrapnel(bot, location)
+    if inShrapnel then
+        -- Shrapnel damage can arrive after the channel starts and between slow refreshes.
+        ongoing = bot:GetActualIncomingDamage(30 * math.floor(channel), DAMAGE_TYPE_MAGICAL)
+    end
     if not immune then
         for modifier, damage in pairs(teleportPeriodicDamage) do
             if bot:HasModifier(modifier) then
@@ -1309,10 +1330,10 @@ function J.CanStartTeleportHere(bot)
         and J.GetLocationToLocationDistance(location, denied.point) <= 475 then return false end
     local recentlyHit = bot:WasRecentlyDamagedByAnyHero(2)
     local lostContact = false
-    if #enemies == 0 and hp <= 0.25 and recentlyHit then
+    if #enemies == 0 and recentlyHit and (hp <= 0.25 or inShrapnel and hp <= 0.40) then
         -- With critical HP and damage still ticking, a pursuer can finish
         -- the channel from farther away than the normal melee chase radius.
-        local reach = hp <= 0.15 and ongoing > 0 and 1400 or 750
+        local reach = (hp <= 0.15 and ongoing > 0 or inShrapnel) and 1400 or 750
         lostContact = #J.GetLastSeenEnemiesNearLoc(location, reach) > 0
     end
     if #enemies == 0 and not lostContact and not projectile and inFlight == 0 and focused == 0 then return true end
@@ -1320,7 +1341,7 @@ function J.CanStartTeleportHere(bot)
     damage = damage + inFlight + focused
     local health = bot:GetHealth() + channel * bot:GetHealthRegen()
     -- Keep a margin for attack variance and damage already ticking in a contested lane.
-    if inGolemAura or (bot:HasModifier('modifier_warlock_fatal_bonds') and recentlyHit) then
+    if inGolemAura or recentlyHit and (bot:HasModifier('modifier_warlock_fatal_bonds') or inShrapnel and hp <= 0.40) then
         health = health * 0.80
     elseif contacts == 1 and hp <= 0.25 and recentlyHit then
         health = health * 0.80
@@ -10268,10 +10289,7 @@ function J.GetShrapnelEscapeLocation(bot)
 		local best, bestDistance = nil, math.huge
 		for _, zone in pairs(GetAvoidanceZones() or {}) do
 			local center, radius = zone.location, zone.radius
-			if center ~= nil and type(radius) == 'number' and radius > 0
-				and zone.ability ~= nil and not zone.ability:IsNull() and zone.ability:GetName() == 'sniper_shrapnel'
-				and zone.caster ~= nil and not zone.caster:IsNull() and zone.caster:GetTeam() ~= bot:GetTeam()
-				and IsLocationVisible(center) then
+			if IsVisibleEnemyShrapnel(bot, zone) then
 				local distance = J.GetLocationToLocationDistance(origin, center)
 				if distance > 1 and distance < radius + 30 then
 					local step = radius + 200 - distance

@@ -1122,7 +1122,9 @@ function ____exports.GetDefendDesireHelper(bot, lane)
                 if support then stage, duty = support, "support" end
             end
         end
-        bot.ohaHighGroundResponse = {lane = lane, tower = tower, stage = stage, rear = rear, reach = reach, cover = cover, duty = duty, expires = DotaTime() + 1}
+        local canCollectWave = not role and not assignedStage and duty == "reserve"
+        bot.ohaHighGroundResponse = {lane = lane, tower = tower, stage = stage, rear = rear, reach = reach,
+            cover = cover, duty = duty, canCollectWave = canCollectWave, expires = DotaTime() + 1}
         bot.laneToDefend = lane
         ds.defendLoc = stage
         return 0.96
@@ -1493,6 +1495,44 @@ local function AttackHighGroundWaveFromHere(bot, tower, rear)
     return jmz.IssueTowerDefenseAttack(bot, target)
 end
 
+local function TryCollectHighGroundReserveWave(bot, response)
+    local rear = response.rear
+    if not response.canCollectWave or not rear or bot:IsDisarmed() or jmz.GetHP(bot) < 0.60
+        or bot:WasRecentlyDamagedByAnyHero(2) then return false end
+    local depth = math.min(2100, GetUnitToLocationDistance(response.tower, rear))
+    if GetUnitToLocationDistance(bot, rear) > depth then return false end
+    local origin, range = bot:GetLocation(), bot:GetAttackRange()
+    local target, distance
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(math.min(650, range + 220), true)) do
+        if jmz.IsValid(creep) and creep:CanBeSeen() and jmz.CanBeAttacked(creep)
+            and GetUnitToLocationDistance(creep, rear) <= depth then
+            local gap = GetUnitToUnitDistance(bot, creep)
+            if (not distance or gap < distance)
+                and jmz.GetScheduledFarmWaveOwner(bot, creep:GetLocation()) == bot:GetPlayerID() then
+                target, distance = creep, gap
+            end
+        end
+    end
+    if not target then return false end
+    local location = target:GetLocation()
+    local advance = distance > range
+    local step = advance and jmz.VectorTowards(origin, location, distance - range + 16) or origin
+    if not jmz.CanTakePostFightTrip(bot, step, false, true) or not IsLocationVisible(step)
+        or jmz.GetHighGroundWalkPoint(bot, step) ~= step then return false end
+    local issued
+    if advance then
+        bot:Action_MoveToLocation(step)
+        issued = true
+    else
+        issued = jmz.IssueTowerDefenseAttack(bot, target)
+    end
+    if issued and Customize.TraceLaneDecisions and DotaTime() >= (bot.ohaNextReserveWaveTrace or 0) then
+        bot.ohaNextReserveWaveTrace = DotaTime() + 2
+        print('[OHA reserve-wave]', DotaTime(), bot:GetPlayerID(), math.floor(distance), advance and 'step' or 'attack')
+    end
+    return issued
+end
+
 function ____exports.DefendThink(bot, lane)
     local now = DotaTime()
     if now < 0 or jmz.CanNotUseAction(bot) then
@@ -1506,6 +1546,7 @@ function ____exports.DefendThink(bot, lane)
         if bot:HasModifier("modifier_teleporting") or bot:IsChanneling() or bot:IsCastingAbility()
             or bot:IsUsingAbility() then return end
         if AttackHighGroundWaveFromHere(bot, response.tower, response.rear) then return end
+        if TryCollectHighGroundReserveWave(bot, response) then return end
         if GetUnitToLocationDistance(bot, response.stage) > 350 then
             local point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear)
             if (not point or GetUnitToLocationDistance(bot, point) <= 180)

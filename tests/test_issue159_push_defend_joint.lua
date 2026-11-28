@@ -2192,6 +2192,56 @@ do
 end
 
 do
+    local _, defend, members, orders, lane, _, buildings, j = fixture({
+        direct=true, outerSiege=true, highDefend=true, captureTargets=true,
+    })
+    local bot, tower = members[3], buildings.outerTower
+    bot.x, bot.GetAttackRange = 1160, function() return 150 end
+    local wave = {x=1460, CanBeSeen=function() return true end, GetAttackTarget=function() end,
+        GetLocation=function(self) return {x=self.x,y=0} end}
+    local allowTrip, blocked, owned = true, false, true
+    bot.GetNearbyLaneCreeps = function(self, range, enemy)
+        return enemy and math.abs(self.x-wave.x) <= range and {wave} or {}
+    end
+    j.GetOuterTowerThreat = function(building)
+        return building == tower and {tower=tower,count=3,waveSize=3,eta=3,score=18,underAttack=true}
+            or {score=0}
+    end
+    j.GetPostFightDuty = function() end
+    j.GetOuterTowerResponse = function() return true,{} end
+    j.AdjustLocationWithOffsetTowardsFountain = function(point, offset) return {x=point.x-offset,y=0} end
+    j.VectorTowards = function(from, to, gap) return {x=from.x+(to.x>from.x and gap or -gap),y=0} end
+    j.CanTakePostFightTrip = function(_, _, teleport, localResource)
+        return allowTrip and not teleport and localResource
+    end
+    j.GetScheduledFarmWaveOwner = function() return (owned and bot or members[1]):GetPlayerID() end
+    j.GetHighGroundWalkPoint = function(_, point)
+        if not blocked or point == bot.ohaHighGroundResponse.stage then return point end
+    end
+    same(defend.GetDefendDesire(bot,lane.Mid),0.96,'keep watching the attacked high ground')
+    assert(bot.ohaHighGroundResponse.canCollectWave)
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders].x == 1326, 'step only as far as needed to reach the nearby reserved wave')
+    bot.x = 1326
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders] == wave, 'use the safe nearby wave before walking to the rally')
+    bot.x, blocked = 1160, true
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders] == bot.ohaHighGroundResponse.stage, 'the step cannot take a detour through danger')
+    blocked, owned = false, false
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders] == bot.ohaHighGroundResponse.stage, 'leave the scheduled wave to its owner')
+    owned, allowTrip = true, false
+    defend.DefendThink(bot,lane.Mid)
+    assert(orders[#orders] == bot.ohaHighGroundResponse.stage, 'an uncovered defense can veto even the short diversion')
+    j.GetPostFightDuty = function()
+        return 'cover', {lane=lane.Mid,building=tower,hold={x=tower.x-550,y=0}}
+    end
+    defend.GetDefendDesire(bot,lane.Mid)
+    assert(not bot.ohaHighGroundResponse.canCollectWave, 'the assigned screen stays with the clearer')
+end
+
+do
     local opts = {direct=true, outerSiege=true, safeSiege=true, captureTargets=true, x=4800,
         spellCooldown=30}
     local _, _, members, orders, lane, _, buildings, j = fixture(opts)
