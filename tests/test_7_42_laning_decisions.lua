@@ -692,6 +692,46 @@ for _, overridden in ipairs({false, true}) do
 end
 print('PASS: ranged mid takes the last hit first and harasses only within a safe opening')
 
+do
+    local state, mode, melee, _, bot = fixture(true, false)
+    local j = mode.J
+    local flagHP = 46
+    local flag = setmetatable({
+        x=420, GetHealth=function() return flagHP end,
+        GetUnitName=function() return 'npc_dota_creep_badguys_flagbearer' end,
+        GetBountyGoldMin=function() return 35 end, GetBountyGoldMax=function() return 39 end,
+    }, {__index=melee})
+    local ranged = setmetatable({
+        x=300, GetUnitName=function() return 'npc_dota_creep_badguys_ranged' end,
+        GetBountyGoldMin=function() return 47 end, GetBountyGoldMax=function() return 51 end,
+    }, {__index=melee})
+    assert(j.GetLaneCreepGoldValue(bot, flag) == 74, 'include the flagbearer bonus in the last hitter’s income')
+    state.partner = true
+    assert(j.GetLaneCreepGoldValue(bot, flag) == 111, 'account for a nearby teammate’s share')
+    assert(j.GetLaningLastHitTarget(bot, {melee, ranged, flag}, nil, 50, {}) == flag,
+        'take the richer shot when both windows will stay open')
+
+    local expires = {[ranged]=0.7}
+    local starts
+    j.GetTotalAttackWillRealDamage = function(creep, time)
+        if expires[creep] and time >= expires[creep] then return 100 end
+        if creep == flag and starts and time >= starts then return 35 end
+        return 0
+    end
+    assert(j.GetLaningLastHitTarget(bot, {flag, ranged}, nil, 50, {}) == ranged,
+        'take the ranged creep first when it will die before the next shot and the flagbearer can wait')
+    expires[flag] = 1.1
+    assert(j.GetLaningLastHitTarget(bot, {ranged, flag}, nil, 50, {}) == flag,
+        'take the flagbearer when the same shot must choose between two expiring kills')
+    flagHP, starts = 75, 0.65
+    local hit, approach, reserve = j.GetLaningLastHitTarget(bot, {ranged, flag}, nil, 50, {})
+    assert(hit == nil and not approach and reserve,
+        'hold briefly for a much richer creep that will become lethal and die during normal attack recovery')
+    expires[flag] = 2.1
+    assert(j.GetLaningLastHitTarget(bot, {ranged, flag}, nil, 50, {}) == ranged,
+        'take the available creep when the next swing can still reach the upcoming flagbearer')
+end
+
 for _, overridden in ipairs({false, true}) do
     local state, mode, creep, enemy, bot, tower = fixture(true, overridden)
     local ranged = setmetatable({x = 380, GetUnitName = function() return 'npc_dota_creep_badguys_ranged' end}, {__index = creep})

@@ -1890,22 +1890,46 @@ local function GetSupportLastHitStep(bot, creep, distance, tower, enemies)
     end
 end
 
+function J.GetLaneCreepGoldValue(bot, creep)
+    local name = creep:GetUnitName()
+    local flagbearer = name:find('_flagbearer', 1, true) ~= nil
+    local ranged = name:find('_ranged', 1, true) ~= nil
+    local siege = name:find('_siege', 1, true) ~= nil
+    local bounty = siege and 64 or ranged and 47 or 37
+    if creep.GetBountyGoldMin and creep.GetBountyGoldMax then
+        local minimum, maximum = creep:GetBountyGoldMin(), creep:GetBountyGoldMax()
+        if minimum and minimum > 0 and maximum and maximum >= minimum then
+            bounty = (minimum + maximum) * 0.5
+        end
+    end
+    if flagbearer then
+        local bonus = bounty
+        for _, ally in ipairs(J.GetAlliesNearLoc(creep:GetLocation(), 1500)) do
+            if ally ~= bot and J.IsValidHero(ally) and not J.IsSuspiciousIllusion(ally) then
+                bonus = bonus + bounty
+            end
+        end
+        bounty = bounty + bonus
+    end
+    return bounty, flagbearer or ranged or siege
+end
+
 function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, coveringLane, occupiedTime)
     if #creeps == 0 then return nil, false, false end
     local range = bot:GetAttackRange()
     local core = J.IsCore(bot)
     local attackers = GetLaneAttackers(bot, bot:GetNearbyTowers(1600, false)[1], enemies or {},
         bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE))
+    local attackInterval = bot:GetSecondsPerAttack()
     local holdsAttack, supportStep = false, nil
     local best, bestScore, approach, approachScore, urgentApproach = nil, -math.huge, nil, -math.huge, false
+    local bestValue, bestExpires, reserveValue = 0, false, 0
     for _, creep in ipairs(creeps) do
         if J.IsValid(creep) and J.CanBeAttacked(creep) and J.CanSupportTakeLaneLastHit(bot, creep) then
             local distance = GetUnitToUnitDistance(bot, creep)
             local inRange = distance <= range
-            local name = creep:GetUnitName()
-            local priority = (string.find(name, '_ranged', 1, true) or string.find(name, '_siege', 1, true)
-                or string.find(name, '_flagbearer', 1, true)) and 1 or 0
-            local approachRange = (core or coveringLane) and 425 or (priority > 0 and 240 or 120)
+            local value, valuable = J.GetLaneCreepGoldValue(bot, creep)
+            local approachRange = (core or coveringLane) and 425 or (valuable and 240 or 120)
             if inRange or (distance <= range + approachRange
                 and not (J.IsValidBuilding(tower) and J.IsInRange(creep, tower, 825))) then
                 local delay, _, wait = J.GetAttackProDelayTime(bot, creep)
@@ -1913,31 +1937,41 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
                 local remaining = GetLaneCreepHealthAt(creep, delay, attackers)
                 local damage = LaneAttackDamage(bot, creep, attackDamage)
                 if remaining > 0 then
-                    local score = priority + (damage - remaining) / math.max(1, damage) - distance / 2000
+                    local score = (damage - remaining) / math.max(1, damage) - distance / 2000
                     if inRange and remaining <= damage then
                         if (wait or 0) <= 0.17 then
-                            -- Take a shot that is about to be lost to another hit before a stable one.
-                            if GetLaneCreepHealthAt(creep, delay + 0.18, attackers) <= 0 then score = score + 2 end
-                            if score > bestScore then best, bestScore = creep, score end
+                            -- Use the next swing on an expiring window first when both can be collected.
+                            local later = GetLaneCreepHealthAt(creep, delay + attackInterval, attackers)
+                            local expires = later <= 0 or later > damage
+                            if best == nil or expires and not bestExpires or expires == bestExpires
+                                and (value > bestValue or value == bestValue and score > bestScore) then
+                                best, bestScore, bestValue, bestExpires = creep, score, value, expires
+                            end
                         elseif wait <= math.max(0.48, occupiedTime or 0) then
                             holdsAttack = true
                         end
-                    elseif (inRange or occupiedTime and core) and not holdsAttack
+                    elseif (inRange or occupiedTime and core) and (not holdsAttack or inRange and valuable and value > reserveValue)
                         and (not occupiedTime or (wait or 0) < math.max(0.65, occupiedTime))
                         and remaining > damage and remaining <= damage * 2.5 then
-                        holdsAttack = CanReserveLaneCreepShot(creep, damage, delay,
-                            delay + math.max(occupiedTime or 0, math.min(0.55, bot:GetSecondsPerAttack() * 0.5)), attackers)
+                        local soon = delay + math.max(occupiedTime or 0, math.min(0.55, attackInterval * 0.5))
+                        if CanReserveLaneCreepShot(creep, damage, delay, soon, attackers) then
+                            holdsAttack = true
+                            if inRange and valuable and GetLaneCreepHealthAt(creep, delay + attackInterval, attackers) <= 0 then
+                                reserveValue = math.max(reserveValue, value)
+                            end
+                        end
                     end
                     local lethalOnArrival = remaining <= damage
+                    local approachPriority = value / 35 + score
                     if not inRange and remaining <= damage * 1.45
                         and (approach == nil or lethalOnArrival and not urgentApproach
-                            or lethalOnArrival == urgentApproach and score > approachScore) then
+                            or lethalOnArrival == urgentApproach and approachPriority > approachScore) then
                         local step
-                        if not core and not coveringLane and (lethalOnArrival or priority > 0) then
+                        if not core and not coveringLane and (lethalOnArrival or valuable) then
                             step = GetSupportLastHitStep(bot, creep, distance, tower, enemies)
                         end
                         if core or coveringLane or step then
-                            approach, approachScore, supportStep = creep, score, step
+                            approach, approachScore, supportStep = creep, approachPriority, step
                             urgentApproach = lethalOnArrival
                         end
                     end
@@ -1945,6 +1979,7 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
             end
         end
     end
+    if reserveValue > bestValue then return nil, false, true end
     if best ~= nil then return best, false end
     return approach, approach ~= nil, holdsAttack, urgentApproach, supportStep
 end
@@ -2014,7 +2049,8 @@ function J.CanSpendLaneTradeTime(bot, tower, enemies, seconds)
     if reserve or hit and (not approach or urgent) then return false end
     local valuable = {}
     for _, creep in ipairs(bot:GetNearbyLaneCreeps(bot:GetAttackRange() + 50, false)) do
-        if J.IsValid(creep) and (J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep)) then
+        if J.IsValid(creep) and (J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep)
+            or J.IsKeyWordUnit('_flagbearer', creep)) then
             valuable[#valuable + 1] = creep
         end
     end
@@ -2271,7 +2307,8 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
             local delay, _, wait = J.GetAttackProDelayTime(bot, creep)
             local remaining = GetLaneCreepHealthAt(creep, delay, attackers)
             local actual = LaneAttackDamage(bot, creep, damage)
-            local priority = (J.IsKeyWordUnit('ranged', creep) or J.IsKeyWordUnit('siege', creep)) and 1 or 0
+            local priority = J.IsKeyWordUnit('_flagbearer', creep) and 1.5
+                or (J.IsKeyWordUnit('ranged', creep) or J.IsKeyWordUnit('siege', creep)) and 1 or 0
             local candidate = priority - remaining / math.max(1, actual)
             if remaining > 0 and remaining <= actual then
                 if (wait or 0) <= 0.17 then

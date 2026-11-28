@@ -369,6 +369,8 @@ local function fixture(opts)
             GetCurrentMovementSpeed = function() return 300 end,
             GetUnitName = function() return 'npc_dota_creep_badguys_melee' end,
             GetLocation = function() return laneCreepPoint end}
+        local flagbearer = setmetatable({GetUnitName = function() return 'npc_dota_creep_badguys_flagbearer' end},
+            {__index = laneCreep})
         local distantCreeps = {}
         if opts.distantWave then
             for i = 1, 3 do
@@ -383,9 +385,11 @@ local function fixture(opts)
             GetHealth = function() return opts.neutralHP or 300 end}
         local midas = {}
         bot.GetNearbyLaneCreeps = function()
+            if opts.supportWave and opts.preferFlagbearer then return {laneCreep, flagbearer, laneCreep} end
             if opts.supportWave then return {laneCreep, laneCreep, laneCreep} end
             return (not opts.route or opts.farmWave) and {laneCreep} or {}
         end
+        bot.GetAttackTarget = bot.GetAttackTarget or function() end
         bot.HasModifier, bot.IsChanneling = no, no
         bot.GetAssignedLane = function() return opts.farmAssignedLane or Lan.Mid end
         bot.WasRecentlyDamagedByAnyHero = function(_, seconds) return opts.carryHarass and seconds >= 5 end
@@ -447,6 +451,9 @@ local function fixture(opts)
         jmz.GetLocationToLocationDistance = distance
         jmz.IsRoshan = no
         jmz.GetLaningAttackDamage = bot.GetAttackDamage
+        jmz.IsFinishingLaningAttack = no
+        jmz.GetNearbyHeroes = jmz.GetNearbyHeroes or empty
+        jmz.GetLaningLastHitTarget = function() return opts.preferFlagbearer and flagbearer or nil end
         jmz.GetTeamFightLocation = function() end
         jmz.GetAllyCount, jmz.GetNumOfTeamTotalKills = function() return 1 end, function() return 0 end
         jmz.GetLastSeenEnemiesNearLoc = function(point)
@@ -1039,8 +1046,11 @@ do
     members[2].IsChanneling = function() return false end
     members[2].ohaOuterTowerHoldUntil = 610
     same(farm.GetDesire(), 0.49, 'a core assigned to defend elsewhere cannot reserve a support wave')
+    opts.preferFlagbearer, opts.captureTargets = true, true
     farm.Think()
-    assert(orders[1] == 'attack', 'the support follows through and attacks the released wave')
+    assert(orders[1] and orders[1]:GetUnitName() == 'npc_dota_creep_badguys_flagbearer',
+        'the support takes the richer available last hit on a wave it can collect')
+    opts.preferFlagbearer, opts.captureTargets = false, false
     members[2].ohaOuterTowerHoldUntil = nil
     farm.Think()
     assert(orders[2] == 'cancel' and not members[1].ohaWaveClaim, 'give the wave back when the carry is available again')

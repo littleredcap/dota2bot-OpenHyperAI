@@ -321,15 +321,20 @@ function X.ConsiderQ()
 		local canSpareStun = bot:GetMana() >= nManaCost * 2
 			or (#nEnemysHerosInView == 0 and nMP >= 0.65)
 		if not laneShot and not J.IsRetreating(bot) and canSpareStun then
+			local target, bestValue = nil, 0
 			for _, creep in ipairs(bot:GetNearbyLaneCreeps(abilityQ:GetCastRange(), true)) do
-				if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsKeyWordUnit('ranged', creep)
+				if J.IsValid(creep) and J.CanBeAttacked(creep)
 					and J.IsInRange(bot, creep, abilityQ:GetCastRange())
-					and not J.IsInRange(bot, creep, bot:GetAttackRange())
-					and J.WillKillTarget(creep, nDamage, nDamageType,
-						nCastPoint + GetUnitToUnitDistance(bot, creep) / blastSpeed) then
-					return BOT_ACTION_DESIRE_HIGH, creep
+					and not J.IsInRange(bot, creep, bot:GetAttackRange()) then
+					local value, valuable = J.GetLaneCreepGoldValue(bot, creep)
+					local eta = nCastPoint + GetUnitToUnitDistance(bot, creep) / blastSpeed
+					if valuable and value > bestValue
+						and J.CanSecureLaneCreepWithSpell(bot, creep, nDamage, nDamageType, eta, nEnemysHerosInRange) then
+						target, bestValue = creep, value
+					end
 				end
 			end
+			if target then return BOT_ACTION_DESIRE_HIGH, target end
 		end
 		if laneShot and not J.IsRetreating(bot) then return BOT_ACTION_DESIRE_NONE end
 		if canSpareStun and #nEnemysHerosInView > 0 and not J.IsRetreating(bot) then

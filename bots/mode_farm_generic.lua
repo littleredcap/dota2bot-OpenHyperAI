@@ -1538,6 +1538,13 @@ function Think()
 					end
 				end
 
+				if #hLaneCreepList > 1 and not J.IsFinishingLaningAttack(bot, bot:GetAttackTarget()) then
+					local enemies = J.GetNearbyHeroes(bot, 1200, true, BOT_MODE_NONE)
+					local hit, approach = J.GetLaningLastHitTarget(bot, hLaneCreepList, nEnemyTowers[1],
+						J.GetLaningAttackDamage(bot), enemies)
+					if hit and not approach and IsFarmWaveAvailable(hit:GetLocation()) then farmTarget = hit end
+				end
+
 				local nFarmRange = math.max(nEffectiveRange, bot:GetAttackRange())
 				if GetUnitToUnitDistance(bot, farmTarget) > nFarmRange then
 					MoveToFarm(farmTarget:GetLocation())

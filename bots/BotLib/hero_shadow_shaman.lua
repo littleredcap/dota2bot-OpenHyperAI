@@ -402,15 +402,19 @@ function X.ConsiderQ()
 		local canSecure = not J.HasPendingLaningLastHit(bot) and not J.IsLaningUnderPressure(bot, nInBonusEnemyList, tower)
 			and bot:GetMana() - nManaCost >= reserve
 		if canSecure then
+			local target, bestValue = nil, 0
 			for _, creep in ipairs(bot:GetNearbyLaneCreeps(spellReach, true)) do
 				if J.IsValid(creep) and J.CanBeAttacked(creep) and not creep:HasModifier('modifier_fountain_glyph')
-					and (J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep))
 					and J.IsInRange(bot, creep, spellReach)
-					and J.GetAttackProDelayTime(bot, creep) > nCastPoint + 0.12
-					and J.CanSecureLaneCreepWithSpell(bot, creep, nDamage, nDamageType, nCastPoint, nInBonusEnemyList) then
-					return BOT_ACTION_DESIRE_HIGH, creep, 'Q-LaneSecure'
+					and J.GetAttackProDelayTime(bot, creep) > nCastPoint + 0.12 then
+					local value, valuable = J.GetLaneCreepGoldValue(bot, creep)
+					if valuable and value > bestValue
+						and J.CanSecureLaneCreepWithSpell(bot, creep, nDamage, nDamageType, nCastPoint, nInBonusEnemyList) then
+						target, bestValue = creep, value
+					end
 				end
 			end
+			if target then return BOT_ACTION_DESIRE_HIGH, target, 'Q-LaneSecure' end
 		end
 
 		if nMP > 0.5 and bot:GetMana() - nManaCost >= reserve then
@@ -429,7 +433,7 @@ function X.ConsiderQ()
 		if canSecure and #nInRangeEnemyList == 0 then
 			for _, creep in ipairs(bot:GetNearbyLaneCreeps(spellReach, true)) do
 				if J.IsValid(creep) and J.CanBeAttacked(creep) and not creep:HasModifier('modifier_fountain_glyph')
-					and (J.IsKeyWordUnit('_melee', creep) or J.IsKeyWordUnit('_flagbearer', creep))
+					and J.IsKeyWordUnit('_melee', creep)
 					and J.IsInRange(bot, creep, spellReach) and J.GetAttackProDelayTime(bot, creep) > nCastPoint + 0.12
 					and J.GetAroundTargetEnemyUnitCount(creep, 280) >= 2
 					and J.CanSecureLaneCreepWithSpell(bot, creep, nDamage, nDamageType, nCastPoint, nInBonusEnemyList) then

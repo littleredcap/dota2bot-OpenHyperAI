@@ -426,24 +426,21 @@ function X.ConsiderBreatheFire()
 	end
 
 	if J.IsLaning(bot) and fManaAfter > fManaThreshold2 then
+		local target, bestValue = nil, 0
 		for _, creep in ipairs(nEnemyCreeps) do
-			if  J.IsValid(creep)
-			and J.CanBeAttacked(creep)
-			and J.IsInRange(bot, creep, nCastRange)
-			and (string.find(creep:GetUnitName(), 'range') or string.find(creep:GetUnitName(), 'flagbearer') or string.find(creep:GetUnitName(), 'siege'))
-			then
+			if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsInRange(bot, creep, nCastRange) then
+				local value, valuable = J.GetLaneCreepGoldValue(bot, creep)
 				local eta = (GetUnitToUnitDistance(bot, creep) / nSpeed) + nCastPoint
-				if J.WillKillTarget(creep, nDamage, DAMAGE_TYPE_MAGICAL, eta) then
-					if not J.IsInRange(bot, creep, bot:GetAttackRange())
+				if valuable and value > bestValue
+					and (not J.IsInRange(bot, creep, bot:GetAttackRange())
 					or (J.IsValidHero(nEnemyHeroes[1]) and J.IsInRange(nEnemyHeroes[1], creep, nRadius) and not J.IsSuspiciousIllusion(nEnemyHeroes[1]))
-					or J.IsUnitTargetedByTower(creep, false)
-					then
-						return BOT_ACTION_DESIRE_HIGH, creep:GetLocation()
-					end
+					or J.IsUnitTargetedByTower(creep, false))
+					and J.CanSecureLaneCreepWithSpell(bot, creep, nDamage, DAMAGE_TYPE_MAGICAL, eta, nEnemyHeroes) then
+					target, bestValue = creep, value
 				end
 			end
 		end
-
+		if target then return BOT_ACTION_DESIRE_HIGH, target:GetLocation() end
 	end
 
 	if #nEnemyHeroes > 0 and fManaAfter > fManaThreshold2 and J.IsInLaningPhase(bot) and not J.IsDefending(bot) then

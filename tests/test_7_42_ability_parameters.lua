@@ -948,6 +948,8 @@ end
 do
     local canClaim, pressure, pending, mana, attackETA = true, false, false, 290, 0.68
     local target = {HasModifier=no}
+    local flag = {HasModifier=no}
+    local includeFlag = false
     local shock, shackle = ability({damage=140}), ability({})
     shock.GetCastRange, shock.GetLevel, shock.GetManaCost = function() return 600 end, function() return 1 end, function() return 100 end
     shackle.GetManaCost = function() return 120 end
@@ -955,7 +957,7 @@ do
     local caster = {GetLocation=empty, GetNearbyTowers=empty, GetLevel=function() return 3 end, IsInvisible=no,
         GetMana=function() return mana end, GetMaxMana=function() return 300 end,
         GetHealth=function() return 560 end, GetMaxHealth=function() return 700 end,
-        GetNearbyLaneCreeps=function() return {target} end,
+        GetNearbyLaneCreeps=function() return includeFlag and {target,flag} or {target} end,
         ActionQueue_UseAbilityOnEntity=function(_, spell, creep) order={spell,creep} end}
     local j = {
         CanNotUseAbility=no, GetProperTarget=no, GetAlliesNearLoc=function() return {caster,{}} end,
@@ -966,8 +968,9 @@ do
         HasPendingLaningLastHit=function() return pending end, IsLaningUnderPressure=function() return pressure end,
         CanBeAttacked=yes, IsKeyWordUnit=function(key) return key=='_ranged' end, IsInRange=yes,
         GetAttackProDelayTime=function() return attackETA end,
+        GetLaneCreepGoldValue=function(_,creep) return creep==flag and 100 or 48, true end,
         CanSecureLaneCreepWithSpell=function(_,creep,damage,kind,delay)
-            assert(creep==target and damage==140 and kind==MAGICAL and delay==0.3)
+            assert((creep==target or creep==flag) and damage==140 and kind==MAGICAL and delay==0.3)
             return canClaim
         end,
         IsCore=no, IsPushing=no, IsFarming=no, IsDoingRoshan=no, IsDoingTormentor=no,
@@ -978,6 +981,10 @@ do
         function() return NONE end, function() return NONE end
     shaman.SkillsComplement()
     assert(order and order[1]==shock and order[2]==target,'secure the unclaimed ranged creep even with the lane partner nearby')
+    order, includeFlag = nil, true
+    shaman.SkillsComplement()
+    assert(order and order[2]==flag,'secure the richer flagbearer when both valuable creeps are unclaimed')
+    includeFlag = false
     order, canClaim = nil, false
     shaman.SkillsComplement()
     assert(not order,'preserve the core last hit')
@@ -1037,6 +1044,8 @@ do
         IsValidBuilding = function(unit) return unit == tower end, IsValidHero = no,
         IsInRange = function(a,b,r) return math.abs(a.x-b.x) <= r end, GetProperCastRange = properRange,
         GetManaAfter = function() return 0.85 end, GetManaThreshold = function() return 0.2 end,
+        GetLaneCreepGoldValue = function() return 48, true end,
+        CanSecureLaneCreepWithSpell = function(_, unit, damage) return unit == shot and damage == 100 end,
         WillKillTarget = function(unit, damage) return unit == shot and damage == 100 end,
         SetQueuePtToINT = no}
     local dk = loadHero('dragon_knight', {dragon_knight_breathe_fire = breath, dragon_knight_elder_dragon_form = form},
@@ -1120,7 +1129,8 @@ do
         end,
         IsGoingOnSomeone = no, IsInTeamFight = no, IsValid = yes, CanBeAttacked = yes, IsKeyWordUnit = yes,
         IsInRange = function(a,b,r) return math.abs(a.x-b.x) <= r end, SetQueuePtToINT = no,
-        WillKillTarget = function(unit, damage, _, delay)
+        GetLaneCreepGoldValue = function() return 48, true end,
+        CanSecureLaneCreepWithSpell = function(_, unit, damage, _, delay)
             assert(unit == creep and damage == 80 and math.abs(delay - (0.3 + 400 / 1200)) < 0.001)
             return unit.hp <= damage
         end,
