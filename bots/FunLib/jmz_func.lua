@@ -1475,7 +1475,7 @@ end
 
 function J.GetLaningHoldTower(bot)
     local delivery = bot.ohaLaneSupply
-    if delivery and delivery.waitUntil > DotaTime() and (bot.ohaCourierUnsafeUntil or 0) <= DotaTime()
+    if delivery and not delivery.proactive and delivery.waitUntil > DotaTime() and (bot.ohaCourierUnsafeUntil or 0) <= DotaTime()
         and bot.theCourier and not bot.theCourier:IsNull() and bot.theCourier:IsAlive() then
         local tower = J.GetSafeLaneSupplyTower(bot)
         if tower then return tower end
@@ -1826,20 +1826,41 @@ function J.CanSpendLaneTradeTime(bot, tower, enemies, seconds)
     return not reserve and (not hit or approach and not urgent)
 end
 
--- A real clash near a living tower offers a short trade and a short way out.
-function J.GetTowerCoveredLaneClash(bot)
-    local lane = bot:GetAssignedLane()
-    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or not J.IsInLaningPhase(bot) then return nil end
-    local team = bot:GetTeam()
-    local tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
-    if not J.IsValidBuilding(tower) then
-        tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_2 or TOWER_BOT_2)
+-- Use visible, usable inventory only. The values weight the next exchange,
+-- with a discount for healing that takes time or is interrupted by damage.
+local function GetLaneRecoveryBudget(unit)
+    if not unit.CanBeSeen or not unit:CanBeSeen() then return 0, false end
+    local breakable = unit:HasModifier('modifier_flask_healing') or unit:HasModifier('modifier_bottle_regeneration')
+    local budget = unit:HasModifier('modifier_tango_heal') and 35 or 0
+    for slot = 0, 5 do
+        local item = unit:GetItemInSlot(slot)
+        if item and not item:IsNull() and item:IsFullyCastable() then
+            local name, charges = item:GetName(), item:GetCurrentCharges()
+            if name == 'item_magic_stick' or name == 'item_magic_wand' then
+                budget = budget + charges * item:GetSpecialValueInt('restore_per_charge')
+            elseif name == 'item_faerie_fire' then
+                budget = budget + 65
+            elseif (name == 'item_tango' or name == 'item_tango_single') and charges > 0 then
+                budget = budget + math.min(2, charges) * 40
+            elseif (name == 'item_flask' or name == 'item_bottle') and charges > 0 then
+                budget = budget + 45
+            end
+        end
     end
-    if not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 1050) then return nil end
+    return math.min(180, budget), breakable
+end
+
+local function LaneHarassSupplyScore(bot, enemy)
+    local ours = GetLaneRecoveryBudget(bot)
+    local theirs, breakable = GetLaneRecoveryBudget(enemy)
+    return (ours - theirs) / 300 + (breakable and 0.9 or 0), breakable
+end
+
+local function GetVisibleLaneClash(bot, tower)
     local allies = bot:GetNearbyLaneCreeps(1100, false)
     local clash, closest = nil, math.huge
     for _, enemy in ipairs(bot:GetNearbyLaneCreeps(1100, true)) do
-        if J.IsValid(enemy) and J.IsInRange(enemy, tower, 1100) then
+        if J.IsValid(enemy) and (not tower or J.IsInRange(enemy, tower, 1100)) then
             local distance = GetUnitToUnitDistance(bot, enemy)
             if distance < closest then
                 for _, ally in ipairs(allies) do
@@ -1851,7 +1872,20 @@ function J.GetTowerCoveredLaneClash(bot)
             end
         end
     end
-    return tower, clash
+    return clash
+end
+
+-- A real clash near a living tower offers a short trade and a short way out.
+function J.GetTowerCoveredLaneClash(bot)
+    local lane = bot:GetAssignedLane()
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or not J.IsInLaningPhase(bot) then return nil end
+    local team = bot:GetTeam()
+    local tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+    if not J.IsValidBuilding(tower) then
+        tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_2 or TOWER_BOT_2)
+    end
+    if not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 1050) then return nil end
+    return tower, GetVisibleLaneClash(bot, tower)
 end
 
 function J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, actionTime, drawsCreeps)
@@ -1871,7 +1905,9 @@ function J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, ac
             harm = harm + LaneAttackDamage(creep, bot, creep:GetAttackDamage())
         end
     end
-    return harm < bot:GetHealth() * 0.35
+    local recovery = GetLaneRecoveryBudget(bot)
+    local reserve = recovery < 40 and J.GetHP(bot) < 0.76 and 0.26 or 0.35
+    return harm < bot:GetHealth() * reserve
 end
 
 function J.GetTowerLaneHarassTarget(bot, enemies, enemyTower, range, castPoint)
@@ -1887,8 +1923,12 @@ function J.GetTowerLaneHarassTarget(bot, enemies, enemyTower, range, castPoint)
             local target = enemy:GetAttackTarget()
             local distracted = J.IsValid(target) and target:IsCreep() and J.IsAttacking(enemy)
             local rangeAdvantage = GetUnitToUnitDistance(bot, enemy) > enemy:GetAttackRange() + 65
-            if castPoint or distracted or rangeAdvantage then
-                local priority = (distracted and 1 or 0) + (rangeAdvantage and 0.5 or 0) - J.GetHP(enemy)
+            local supplies, breakable = LaneHarassSupplyScore(bot, enemy)
+            if castPoint or distracted or rangeAdvantage or breakable then
+                local priority = (distracted and 1 or 0) + (rangeAdvantage and 0.5 or 0) - J.GetHP(enemy) + supplies
+                -- Keep spending mana for a meaningful window. A free right
+                -- click can still take HP or force the opponent to use an item.
+                if castPoint and supplies < -0.30 and not distracted then priority = -math.huge end
                 if priority > score then best, score = enemy, priority end
             end
         end
@@ -1898,6 +1938,26 @@ function J.GetTowerLaneHarassTarget(bot, enemies, enemyTower, range, castPoint)
     local occupiedTime = castPoint or math.max(actionTime, bot:GetSecondsPerAttack())
     if J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, actionTime, not castPoint)
         and J.CanSpendLaneTradeTime(bot, enemyTower, enemies, occupiedTime) then return best, clash end
+end
+
+-- Ranged supports and ranged cores may take a free shot during an actual
+-- clash. Leave movement with the farm planner and reassess after one attack.
+function J.GetCoveredRangedLaneShot(bot, enemies, tower)
+    local range, lane = bot:GetAttackRange(), bot:GetAssignedLane()
+    if range < 350 or lane ~= LANE_TOP and lane ~= LANE_BOT or not J.IsInLaningPhase(bot)
+        or #enemies == 0 or #enemies > 2 or J.GetHP(bot) < 0.68 or J.IsRetreating(bot)
+        or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
+    local clash = GetVisibleLaneClash(bot)
+    if not clash or GetUnitToLocationDistance(bot, clash) > 650
+        or #J.GetLastSeenEnemiesNearLoc(clash, 900) > #enemies then return nil end
+    local target = J.GetLaningHarassTarget(bot, enemies, tower, #bot:GetNearbyLaneCreeps(600, true))
+    if not target or GetUnitToLocationDistance(target, clash) > 600
+        or GetUnitToUnitDistance(bot, target) <= target:GetAttackRange() + 65 then return nil end
+    local recovery = GetLaneRecoveryBudget(bot)
+    local fraction = recovery < 40 and 0.18 or 0.25
+    if J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 1.4)
+        + J.GetCreepAttackProjectileWillRealDamage(bot, 1.4, true) >= bot:GetHealth() * fraction then return nil end
+    if J.CanSpendLaneTradeTime(bot, tower, enemies, bot:GetSecondsPerAttack()) then return target, clash end
 end
 
 -- Drag nearby enemy melee creeps backwards with an attack order that never
@@ -2052,6 +2112,7 @@ function J.GetSideLaneSpellTradeTarget(bot, enemies, tower, range, disableCastPo
                 local valuable = contest and (J.IsKeyWordUnit('_ranged', victim)
                     or J.IsKeyWordUnit('_siege', victim) or J.IsKeyWordUnit('_flagbearer', victim))
                 local priority = (hitsCore and 2 or 0) + (valuable and 1 or 0) - J.GetHP(enemy)
+                    + LaneHarassSupplyScore(bot, enemy)
                 if priority > score then best, score = enemy, priority end
             end
         end
@@ -2189,7 +2250,7 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
                 if J.IsValid(creep) and J.IsInRange(creep, enemy, 375) then onWave = true; break end
             end
             if onWave and #J.GetEnemiesNearLoc(enemy:GetLocation(), 900) <= 2 then
-                local priority = J.GetHP(enemy) - (contest and 1 or 0)
+                local priority = J.GetHP(enemy) - (contest and 1 or 0) - LaneHarassSupplyScore(bot, enemy)
                 if priority < score then best, score = enemy, priority end
             end
         end
@@ -2329,6 +2390,7 @@ function J.GetLaningHarassTarget(bot, enemies, tower, enemyCreepCount)
                 end
                 local score = peel + ((freeTrade or not side and onCreep) and 2 or 0)
                     + (reachAdvantage and 1 or 0) - J.GetHP(enemy)
+                    + (side and LaneHarassSupplyScore(bot, enemy) or 0)
                 if score > bestScore then best, bestScore = enemy, score end
             end
         end

@@ -1145,3 +1145,34 @@ do
     assert(not j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450), 'the extra trade is tied to a close living tower')
 end
 print('PASS: take a safe tower-side hit, preserve the farm shot, and cancel the attack outside the tether')
+
+do
+    local state, mode, creep, enemy, bot = fixture(false, false)
+    local j = mode.J
+    mode.GetTower().x = -720
+    state.creepHP, state.allies, state.enemy, state.hp = 320, {creep, creep}, true, 0.73
+    enemy.x, enemy.GetAttackRange = 415, function() return 150 end
+    creep.GetAttackDamage, creep.GetAttackTarget = function() return 0 end, function() return bot end
+    state.creepProjectiles = 170
+    bot.CanBeSeen, enemy.CanBeSeen = yes, yes
+    local us, them = nil, nil
+    bot.GetItemInSlot = function(_, slot) return slot == 0 and us or nil end
+    enemy.GetItemInSlot = function(_, slot) return slot == 0 and them or nil end
+    local function supplies(name, charges)
+        return {IsNull=no, IsFullyCastable=yes, GetName=function() return name end,
+            GetCurrentCharges=function() return charges end, GetSpecialValueInt=function() return 15 end}
+    end
+    assert(j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450) == enemy, 'safe shot while low on supplies')
+    state.creepProjectiles = 202
+    assert(not j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450), 'reduce the exchange budget when low HP and empty')
+    us = supplies('item_tango', 1)
+    assert(j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450) == enemy, 'on-hand regen can support the same nonlethal trade')
+    state.creepProjectiles, us, them = 0, nil, supplies('item_magic_wand', 12)
+    assert(not j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450, 0.2), 'save optional mana against visibly stocked sustain')
+    enemy.HasModifier = function(_, name) return name == 'modifier_flask_healing' end
+    assert(j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450, 0.2) == enemy, 'a safe hit can interrupt active recovery')
+    mode.GetTower().x = -1700
+    assert(j.GetCoveredRangedLaneShot(bot, {enemy}, nil) == enemy, 'a free ranged hit at a real clash also works outside tower cover')
+    enemy.x = 490
+    assert(not j.GetCoveredRangedLaneShot(bot, {enemy}, nil), 'do not walk into range for the optional hit')
+end

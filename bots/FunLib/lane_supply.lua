@@ -30,6 +30,23 @@ local function usableSlot(bot)
     return branch
 end
 
+local function almostOutOfTangos(bot, held)
+    if held and held ~= 'item_tango' and held ~= 'item_tango_single' then return false end
+    local charges = 0
+    for slot = 0, 8 do
+        local item = bot:GetItemInSlot(slot)
+        if item and not item:IsNull() then
+            local name = item:GetName()
+            if name == 'item_tango' then charges = charges + item:GetCurrentCharges() end
+            if item:GetCurrentCharges() > 0 and (both[name] or name == 'item_flask' or name == 'item_tango_single'
+                or (name == 'item_magic_stick' or name == 'item_magic_wand') and J.CanRecoverWithLaneStick(bot, item, true)) then
+                return false
+            end
+        end
+    end
+    return charges == 1 or charges == 0 and bot:HasModifier('modifier_tango_heal')
+end
+
 local function deliveryTime(bot, courier, aboard, tower)
     if not courier or courier:IsNull() or not courier:IsAlive() or J.GetHP(courier) < 0.9
         or (bot.ohaCourierUnsafeUntil or 0) > DotaTime() or bot.SShopUser then return nil end
@@ -125,7 +142,15 @@ function Supply.Update(bot)
         return
     end
     local health = needsHealth(bot)
+    local held, slot = findRegen(bot, bot, 0, 8, true)
+    local pendingRefill = order and order.proactive and now <= order.deadline
+    local proactive = J.GetHP(bot) >= 0.60 and J.GetHP(bot) <= 0.82
+        and (pendingRefill or bot:WasRecentlyDamagedByAnyHero(8))
+        and almostOutOfTangos(bot, held)
+        and not bot:HasModifier('modifier_flask_healing') and not bot:HasModifier('modifier_bottle_regeneration')
     local lowMana = bot:GetMaxMana() > 0 and J.GetMP(bot) < 0.40 and not bot:HasModifier('modifier_clarity_potion')
+    if proactive and not health and lowMana and J.GetLaningManaShortfall(bot, 5) then proactive = false end
+    health = health or proactive
     local stableHealth = health and J.GetHP(bot) > 0.48 and not bot:WasRecentlyDamagedByAnyHero(10)
         and #bot:GetNearbyHeroes(1400, true, BOT_MODE_NONE) == 0 and not J.IsRetreating(bot)
     if stableHealth and lowMana and J.GetLaningManaShortfall(bot, 5) then health = false end
@@ -135,18 +160,19 @@ function Supply.Update(bot)
     end
     local tower = J.GetSafeLaneSupplyTower(bot)
     if not tower then return end
-    local held, slot = findRegen(bot, bot, 0, 8, health)
+    if not health then held, slot = findRegen(bot, bot, 0, 8, false) end
     local main = usableSlot(bot)
-    if held then
+    if held and not proactive then
         bot.ohaLaneShareSince = nil
         if slot >= 6 and main ~= nil then bot:ActionImmediate_SwapItems(slot, main) end
-        if order and held == order.item and now <= order.deadline and (slot <= 5 or main ~= nil) then
+        if order and not order.proactive and held == order.item and now <= order.deadline and (slot <= 5 or main ~= nil) then
             order.waitUntil = math.min(order.deadline, now + 2.5)
         else
             bot.ohaLaneSupply = nil
         end
         return
     end
+    if proactive and held and slot >= 6 and main ~= nil then bot:ActionImmediate_SwapItems(slot, main) end
     if main == nil or Item.GetEmptyInventoryAmount(bot) == 0 then return end
     local courier = bot.theCourier
     local aboard = findRegen(bot, courier, 0, 5, health)
@@ -156,22 +182,24 @@ function Supply.Update(bot)
     local reset, walking, scrollValue = fountainTime(bot)
     if eta + 4 >= reset then return end
     local projectedHP = (bot:OriginalGetHealth() + bot:GetHealthRegen() * eta) / math.max(1, bot:OriginalGetMaxHealth())
-    if (health and projectedHP >= 0.72) or (not health and not J.GetLaningManaShortfall(bot, eta)) then return end
+    local projectedLimit = proactive and 0.80 or 0.72
+    if (health and projectedHP >= projectedLimit) or (not health and not J.GetLaningManaShortfall(bot, eta)) then return end
 
     if health and projectedHP < 0.5 and J.GetMP(bot) < 0.2 and J.GetLaningManaShortfall(bot, eta)
         and not findRegen(bot, bot, 0, 14, false) and not findRegen(bot, courier, 0, 5, false) then return end
     if cargo then
         bot.ohaLaneShareSince = nil
         if not order or order.item ~= cargo then
-            order = {item=cargo, deadline=now + eta + 10}
+            order = {item=cargo, deadline=now + eta + 10, proactive=proactive}
             bot.ohaLaneSupply = order
         end
+        order.proactive = proactive
         order.waitUntil = math.min(order.deadline, now + 2.5)
         return
     end
     bot.ohaLaneSupply = nil
     if now < (bot.ohaNextLaneSupplyBuy or 0) then return end
-    if health and (1 - projectedHP) * bot:OriginalGetMaxHealth() < 200 then return end
+    if health and (1 - projectedHP) * bot:OriginalGetMaxHealth() < (proactive and 155 or 200) then return end
     if health and stableHealth then return end
     if not health and (bot:WasRecentlyDamagedByAnyHero(4) or #bot:GetNearbyHeroes(800, true, BOT_MODE_NONE) > 0) then return end
     if lanePartnerCanShare(bot, health) then
@@ -187,7 +215,7 @@ function Supply.Update(bot)
     local candidates
     if health then
         local quiet = not bot:WasRecentlyDamagedByAnyHero(3) and #bot:GetNearbyHeroes(900, true, BOT_MODE_NONE) == 0
-        candidates = projectedHP < 0.53 and quiet and {'item_flask', 'item_tango'} or {'item_tango'}
+        candidates = not proactive and projectedHP < 0.53 and quiet and {'item_flask', 'item_tango'} or {'item_tango'}
     else
         candidates = {'item_clarity'}
     end
@@ -196,8 +224,8 @@ function Supply.Update(bot)
             and GetItemStockCount(name) ~= 0 and Item.CanBuyOptionalConsumable(bot, name, nextItem) then
             bot.ohaNextLaneSupplyBuy = now + 4
             if bot:ActionImmediate_PurchaseItem(name) == PURCHASE_ITEM_SUCCESS then
-                bot.ohaLaneSupply = {item=name, deadline=now + eta + 10, waitUntil=0}
-                bot.ohaNextLaneSupplyBuy = now + 45
+                bot.ohaLaneSupply = {item=name, deadline=now + eta + 10, waitUntil=0, proactive=proactive}
+                bot.ohaNextLaneSupplyBuy = now + (proactive and 75 or 45)
                 return true
             end
             return
@@ -211,7 +239,15 @@ function Supply.CourierAction(bot, courier, state)
     local order, now = bot.ohaLaneSupply, DotaTime()
     if not order or now > order.deadline or not bot:IsAlive() or bot.SShopUser then return nil end
     local aboard = courier:FindItemSlot(order.item) >= 0
-    if not aboard and (bot:FindItemSlot(order.item) < 9 or bot.SecretShop or state == COURIER_STATE_DELIVERING_ITEMS) then return nil end
+    if not aboard then
+        if bot.SecretShop or state == COURIER_STATE_DELIVERING_ITEMS then return nil end
+        local inStash = false
+        for slot = 9, 14 do
+            local item = bot:GetItemInSlot(slot)
+            if item and not item:IsNull() and item:GetName() == order.item then inStash = true; break end
+        end
+        if not inStash then return nil end
+    end
     if state == COURIER_STATE_MOVING or state == COURIER_STATE_DEAD then return nil end
     local tower = J.GetSafeLaneSupplyTower(bot)
     if not tower or Item.GetEmptyInventoryAmount(bot) == 0 or not deliveryTime(bot, courier, aboard, tower) then

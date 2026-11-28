@@ -424,6 +424,35 @@ expectPurchase({hp = 0.80, mana = 40, spell = true, mpRegen = 4}, nil, 'natural 
 expectPurchase({mana = 25, spell = true}, nil, 'buying a salve alone would still require a reset')
 
 do
+    local opts = {hp = 0.67, hitAgo = 5}
+    local s = laneFixture(opts)
+    s.slots[0] = item('item_tango', 1)
+    s.tick()
+    assert(#s.orders == 1 and s.orders[1][2] == 'item_tango' and s.bot.ohaLaneSupply.proactive,
+        'one remaining Tango in an active lane can justify one affordable pack')
+    s.slots[9] = item('item_tango', 3)
+    s.tick()
+    assert(s.j.GetLaningHoldTower(s.bot) == nil, 'the courier can come without forcing the hero off the wave')
+    s.env.CourierUsageThink()
+    assert(s.commands[1] == s.env.COURIER_ACTION_TAKE_STASH_ITEMS,
+        'identify stash Tango even when an item with the same name is still in the active inventory')
+    opts.hitAgo = 15
+    s.advance(6)
+    s.tick()
+    assert(#s.orders == 1 and s.bot.ohaLaneSupply.proactive,
+        'finish safe replenishment after the last attack ages out without buying another pack')
+    s.slots[9], s.slots[0] = nil, item('item_tango', 4)
+    s.tick()
+    assert(s.bot.ohaLaneSupply == nil and #s.orders == 1, 'clear the order after replenishment merges into the old stack')
+    for _, options in ipairs({{hp=0.67, hitAgo=5, creeps=1}, {hp=0.67}, {hp=0.67, hitAgo=5, gold=485}}) do
+        local blocked = laneFixture(options, options.gold and {'item_boots'} or nil)
+        blocked.slots[0] = item('item_tango', 1)
+        blocked.tick()
+        assert(#blocked.orders == 0, 'wait when the wave cannot cover cost, pressure is quiet, or boots are imminent')
+    end
+end
+
+do
     local s = laneFixture({hp = 0.78, hitAgo = 1})
     local env, j = s.env, s.j
     env.aetherRange, env.nMode, env.BOT_MODE_LANING = 0, 1, 1

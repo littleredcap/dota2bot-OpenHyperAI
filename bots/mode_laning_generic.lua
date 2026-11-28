@@ -23,7 +23,7 @@ local nH, enemyBots = J.Utils.NumHumanBotPlayersInTeam(GetOpposingTeam())
 local teamHumans, teamBots = J.Utils.NumHumanBotPlayersInTeam(GetTeam())
 local firstWaveReached = false
 local campPlan
-local towerLaneShot
+local laneShot
 local nextLaneTrace, lastLaneTrace = -math.huge, nil
 local function TraceLaneDecision(kind, target)
 	if not J.Customize or not J.Customize.TraceLaneDecisions then return end
@@ -35,12 +35,17 @@ local function TraceLaneDecision(kind, target)
 end
 local laneTierOne = {[LANE_TOP] = TOWER_TOP_1, [LANE_MID] = TOWER_MID_1, [LANE_BOT] = TOWER_BOT_1}
 
-local function ShootFromTowerCover(enemies, enemyTower)
-	local target = J.GetTowerLaneHarassTarget(bot, enemies, enemyTower, bot:GetAttackRange())
+local function ShootAtLaneClash(enemies, enemyTower, nearbyTower)
+	local target, clash
+	if nearbyTower then
+		target, clash = J.GetTowerLaneHarassTarget(bot, enemies, enemyTower, bot:GetAttackRange())
+	else
+		target, clash = J.GetCoveredRangedLaneShot(bot, enemies, enemyTower)
+	end
 	if not target then return false end
 	if target ~= bot:GetAttackTarget() or not J.IsFinishingLaningAttack(bot, target) then
-		TraceLaneDecision('tower-lane-trade', target)
-		towerLaneShot = {target = target, previous = bot:GetLastAttackTime()}
+		TraceLaneDecision(nearbyTower and 'tower-lane-trade' or 'ranged-lane-trade', target)
+		laneShot = {target = target, previous = bot:GetLastAttackTime(), clash = clash, fromTower = nearbyTower ~= nil}
 		bot:Action_AttackUnit(target, true)
 	end
 	return true
@@ -176,6 +181,7 @@ function GetDesire()
 		elseif not local_mode_laning_generic then
 			if J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.71 end
 			if J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.68 end
+			if not deny and not reserveDeny and J.GetCoveredRangedLaneShot(bot, nInRangeEnemy, enemyTower) then return 0.66 end
 		end
 		if deny ~= nil or reserveDeny then return 0.7 end
 		if botAssignedLane == LANE_MID and J.IsCore(bot) and (reserve or moveToCreep) then
@@ -222,12 +228,13 @@ local function ThinkLane()
 		or bot:IsUsingAbility() or bot:IsChanneling() then return end
 	nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
 	local nearbyTower, clash = J.GetTowerCoveredLaneClash(bot)
-	if towerLaneShot then
-		local target = towerLaneShot.target
-		local released = bot:GetLastAttackTime() ~= towerLaneShot.previous
+	if laneShot then
+		local target = laneShot.target
+		local released = bot:GetLastAttackTime() ~= laneShot.previous
+		if not laneShot.fromTower then clash = laneShot.clash end
 		if released or not clash or not J.IsValidHero(target) or not J.IsInRange(bot, target, bot:GetAttackRange())
 			or GetUnitToLocationDistance(target, clash) > 650 or GetUnitToLocationDistance(bot, clash) > 720 then
-			towerLaneShot = nil
+			laneShot = nil
 			if not released and bot:GetAttackTarget() == target then
 				bot:Action_ClearActions(true)
 				return
@@ -286,7 +293,7 @@ local function ThinkLane()
 			end
 		end
 		local enemyTower = bot:GetNearbyTowers(1500, true)[1]
-		if nearbyTower and ShootFromTowerCover(nInRangeEnemy, enemyTower) then return end
+		if nearbyTower and ShootAtLaneClash(nInRangeEnemy, enemyTower, nearbyTower) then return end
 		local press = not nearbyTower and J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
 		if press and J.IsInRange(bot, press, botAttackRange) then
 			if bot:GetAttackTarget() ~= press then bot:Action_AttackUnit(press, true) end
@@ -416,7 +423,7 @@ local function ThinkLane()
 	end
 
 	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
-	if nearbyTower and ShootFromTowerCover(nInRangeEnemy, enemyTower) then return end
+	if ShootAtLaneClash(nInRangeEnemy, enemyTower, nearbyTower) then return end
 	local harassTarget = not nearbyTower and J.GetLaningHarassTarget(bot, nInRangeEnemy, enemyTower, #bot:GetNearbyLaneCreeps(600, true))
 	if harassTarget then
 		bot:Action_AttackUnit(harassTarget, true)
@@ -442,7 +449,7 @@ end
 if not engineMid then Think = ThinkLane end
 
 function OnEnd()
-	towerLaneShot = nil
+	laneShot = nil
 	if bot.ohaCreepDrag then
 		bot.ohaCreepDrag = nil
 		if not bot:IsUsingAbility() and not bot:IsChanneling() then bot:Action_ClearActions(true) end
