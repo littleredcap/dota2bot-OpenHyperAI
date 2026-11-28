@@ -63,7 +63,7 @@ end
 local bountyInterval = GetGameMode() == GAMEMODE_TURBO and 180 or 240
 
 local function BountySpawnApproaching(now)
-	return now >= bountyInterval - 10 and now % bountyInterval >= bountyInterval - 10
+	return now >= bountyInterval - 20 and now % bountyInterval >= bountyInterval - 20
 end
 
 local function BountyJustSpawned(now)
@@ -72,6 +72,15 @@ end
 
 local function BountyScoutRange(member)
 	return math.min(2300, member:GetCurrentMovementSpeed() * 8)
+end
+
+local function CanPrepareBounty(member, spot, distance, now)
+	if not BountySpawnApproaching(now) or distance > 5200 then return false end
+	local remaining = bountyInterval - now % bountyInterval
+	local travel = math.max(0, distance - 140) * 1.12 / math.max(1, member:GetCurrentMovementSpeed())
+	local trip = member.ohaBountyTask
+	return travel <= remaining + 1.25 and (travel + 4.5 >= remaining
+		or trip and trip.spot == spot and trip.expires > now)
 end
 
 local function CanTakeRuneTrip(member, point, localResource)
@@ -189,7 +198,7 @@ function GetDesire()
 		local nProximityRadius = 1600
 		local rune = bot.rune.normal
 
-		rune.location, rune.distance = X.GetBestRune()
+		rune.location, rune.distance, rune.prepare = X.GetBestRune()
 
 		if rune.location ~= -1 then
 			if DotaTime() > -10 and bot:GetCurrentActionType() == BOT_ACTION_TYPE_IDLE
@@ -220,6 +229,7 @@ function GetDesire()
 					if rune.status ~= RUNE_STATUS_AVAILABLE and rune.distance <= BountyScoutRange(bot)
 						and (BountySpawnApproaching(now) or BountyJustSpawned(now)) then return 0.70 end
 				end
+				if rune.prepare and botHP >= 0.68 and not J.HasPendingLaningLastHit(bot) then return 0.76 end
 				local priority = rune.status == RUNE_STATUS_AVAILABLE and BOT_MODE_DESIRE_HIGH or BOT_MODE_DESIRE_MODERATE
 				return X.GetScaledDesire(priority, rune.distance, 3000)
 			else
@@ -382,7 +392,7 @@ function Think()
 	if bot.rune and bot.rune.normal then
 		local rune = bot.rune.normal
 		if IsBountySpot(rune.location) then
-			local assigned, distance = X.GetBountyAssignment()
+			local assigned, distance, prepare = X.GetBountyAssignment()
 			if not assigned then CancelBountyMove(); return end
 			if issuedBountySpot ~= nil and issuedBountySpot ~= assigned then CancelBountyMove(); picking = false end
 			rune.location, rune.distance = assigned, distance
@@ -390,7 +400,8 @@ function Think()
 			local status = GetRuneStatus(assigned)
 			if J.Customize and J.Customize.TraceLaneDecisions and (issuedBountySpot ~= assigned
 				or bot.ohaLastBountyStatus ~= status) then
-				print('[OHA bounty]', now, bot:GetPlayerID(), assigned, status, math.floor(distance), location.x, location.y)
+				print('[OHA bounty]', now, bot:GetPlayerID(), assigned, status, math.floor(distance), location.x, location.y,
+					status == RUNE_STATUS_AVAILABLE and 'collect' or prepare and 'prepare' or 'scout')
 				bot.ohaLastBountyStatus = status
 			end
 			if issuedBountySpot ~= assigned or bot.ohaBountyTask == nil then
@@ -527,8 +538,11 @@ local function BountyTravelCost(member, spot, location, distance)
 		end
 		if J.IsPushing(member) and J.IsValidBuilding(member:GetNearbyTowers(1600, true)[1]) then return nil end
 		if distance > 1000 then
-			local halfway = J.GetLocationTowardDistanceLocation(member, location, distance / 2)
-			if #J.GetLastSeenEnemiesNearLoc(halfway, 850) > 0 then return nil end
+			for _, fraction in ipairs(distance > 2400 and {0.25, 0.5, 0.75} or {0.5}) do
+				local point = J.GetLocationTowardDistanceLocation(member, location, distance * fraction)
+				if not IsLocationPassable(point) or #J.GetLastSeenEnemiesNearLoc(point, 850) > 0
+					or #J.GetEnemiesNearLoc(point, 850) > 0 then return nil end
+			end
 		end
 	end
 	local trip = member.ohaBountyTask
@@ -557,7 +571,7 @@ function X.GetBountyAssignment()
 				if J.IsValidHero(member) then
 					local distance = GetUnitToLocationDistance(member, location)
 					local checked = member.ohaBountyChecked
-					if not available and not awaitingSpawn and checked and checked.spot == spot and now - checked.time < 30 then
+					if not available and not BountySpawnApproaching(now) and checked and checked.spot == spot and now - checked.time < 30 then
 						choices[spot] = {false}
 						break
 					end
@@ -565,15 +579,20 @@ function X.GetBountyAssignment()
 					local support = not J.IsCore(member)
 						and (not member.ohaWaveClaim or member.ohaWaveClaim.expires <= DotaTime())
 						and #member:GetNearbyLaneCreeps(850, true) == 0
+					local localTrip = spot == ownSpot and (available and distance <= 3600
+						or not available and CanPrepareBounty(member, spot, distance, now))
+						and J.GetHP(member) >= 0.68 and not J.HasPendingLaningLastHit(member)
+						and (J.IsCore(member) or support and J.CanLeaveLane(member))
+						and #member:GetNearbyLaneCreeps(850, true) == 0
 					if not available and support and (BountySpawnApproaching(now) or BountyJustSpawned(now)) then
 						scoutRange = BountyScoutRange(member)
 					elseif not available and support and now >= 14 * 60 then
 						scoutRange = math.min(1700, member:GetCurrentMovementSpeed() * 5)
 					end
-					if (not awaitingSpawn or support) and distance <= (available and 2400 or scoutRange) then
+					if localTrip or (not awaitingSpawn or support) and distance <= (available and 2400 or scoutRange) then
 						local cost = BountyTravelCost(member, spot, location, distance)
 						if cost then candidates[#candidates + 1] = {member = member, spot = spot, distance = distance,
-							cost = cost, available = available} end
+							cost = cost, available = available, prepare = localTrip} end
 					end
 				end
 			end
@@ -597,7 +616,7 @@ function X.GetBountyAssignment()
 			end
 		end
 	end
-	if mine then return mine.spot, mine.distance end
+	if mine then return mine.spot, mine.distance, mine.prepare end
 end
 
 function X.GetBestRune()
@@ -617,8 +636,8 @@ function X.GetBestRune()
 		if confirmed ~= -1 then return confirmed, nearest end
 	end
 	if DotaTime() >= 0 then
-		local bounty, distance = X.GetBountyAssignment()
-		if bounty then return bounty, distance end
+		local bounty, distance, prepare = X.GetBountyAssignment()
+		if bounty then return bounty, distance, prepare end
 	end
 
 	local targetRune = -1

@@ -258,6 +258,15 @@ local function laneFixture(o, plan)
     env.GetLaneFrontLocation = creep.GetLocation
     env.GetUnitToLocationDistance = function(unit, x) return math.abs(unit:GetLocation() - x) end
     env.GetUnitToUnitDistance = function(a, b) return math.abs(a:GetLocation() - b:GetLocation()) end
+    env.PointToLineDistance = function(a, b, x)
+        return {within = x >= math.min(a, b) and x <= math.max(a, b), distance = 0}
+    end
+    env.GetOpposingTeam, env.GetTeamPlayers, env.IsHeroAlive = function() return 3 end, function() return {7} end, yes
+    env.GetHeroLastSeenInfo = function()
+        local point = o.routeThreatAt or (o.routeThreat and 3000)
+        return point and {{location=point,time_since_seen=1}} or {}
+    end
+    j.GetLocationToLocationDistance = function(a, b) return math.abs(a - b) end
     j.IsInRange = function(a, b, radius) return env.GetUnitToUnitDistance(a, b) <= radius end
     j.IsRetreating, j.GetAlliesNearLoc, j.GetHeroesTargetingUnit = no, empty, empty
     j.IsCore = function(unit) return unit ~= bot or not o.support end
@@ -317,6 +326,7 @@ local function laneFixture(o, plan)
     courier.GetHealth, courier.GetMaxHealth = function() return 100 end, function() return 100 end
     courier.IsAlive = function() return not o.dead end
     courier.GetLocation = function() return o.courierAt or 0 end
+    courier.GetExtrapolatedLocation = function() return o.courierNext or o.courierAt or 0 end
     courier.DistanceFromFountain = courier.GetLocation
     courier.GetCurrentMovementSpeed = function() return o.speed or 300 end
     courier.FindItemSlot = function(_, name)
@@ -351,6 +361,16 @@ do
     s.advance(6)
     s.env.CourierUsageThink()
     assert(#s.commands == 1, 'leave an ordinary delivery going once the route is clear')
+end
+
+do
+    local o = {routeThreatAt = 1100, distance = 6200}
+    local s = laneFixture(o)
+    o.state = s.env.COURIER_STATE_DELIVERING_ITEMS
+    s.bot.ohaLaneSupply = {item='item_flask', waitUntil=180, deadline=185}
+    s.env.CourierUsageThink()
+    assert(s.commands[1] == s.env.COURIER_ACTION_RETURN_STASH_ITEMS,
+        'an active supply order still respects a threat between delivery samples')
 end
 
 -- Drive the normal purchase, courier and item-use callbacks through one lane reset decision.

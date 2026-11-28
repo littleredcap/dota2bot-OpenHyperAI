@@ -181,6 +181,25 @@ do
 end
 
 do
+    local s, h, m = fixture()
+    s.time, s.spots[bounty2], s.status[bounty2], h[1].wave = 217, 4450, missing, true
+    assert(m[2].GetDesire() == 0, 'no long pre-position before it would help')
+    s.time, s.stayOnLane = 222, h[2]
+    assert(m[2].GetDesire() == 0, 'a core still needing help vetoes the longer departure')
+    s.stayOnLane, s.threat = nil, 2225
+    assert(m[2].GetDesire() == 0, 'a longer departure respects known enemies on the way')
+    s.threat = nil
+    assert(m[2].GetDesire() == 0.76 and m[1].GetDesire() == 0,
+        'an unoccupied support can leave early if the trip fits the real spawn')
+    m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    h[2].x, s.time, s.status[bounty2] = 4350, 241, available
+    assert(m[2].GetDesire() == 0.86)
+    m[2].Think()
+    order(h[2], 'pick', bounty2)
+end
+
+do
     local s, h, m, j = fixture()
     s.time, s.status[bounty2], h[1].x, h[1].level = 1265, missing, -6800, 17
     assert(m[1].GetDesire() > 0.8)

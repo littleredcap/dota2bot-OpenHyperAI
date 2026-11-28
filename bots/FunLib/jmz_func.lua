@@ -1265,6 +1265,8 @@ function J.CanStartTeleportHere(bot)
     -- Include a small margin for the next order to reach the engine, and use
     -- team vision for long-range interrupts rather than the nearby-hero cap.
     local channel = 3.2
+    local wraith = 'modifier_skeleton_king_reincarnation_scepter_active'
+    if bot:HasModifier(wraith) and J.GetModifierTime(bot, wraith) <= channel then return false end
     local location = bot:GetLocation()
     local immune = bot:IsMagicImmune()
     local projectile = J.IsStunProjectileIncoming(bot, 3400, immune)
@@ -9653,14 +9655,18 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 			end
 		end
 	end
-	local losingGank = false
-	if (isolatedLaner or exposedRangedHero) and (closing > 0 or underFire) then
+	local losingGank, keepLeaving = false, false
+	local advancing = closing > 0 or underFire
+	local exposureUntil = bot.ohaExposureRetreatUntil or 0
+	if (isolatedLaner or exposedRangedHero) and (advancing or exposureUntil > now) then
 		local window = isolatedLaner and 5.0 or 4.5
 		local damage, control, contacts = J.GetVisibleThreatAt(bot, enemies, location, window, true)
 		local health = bot:GetHealth() + window * bot:GetHealthRegen()
 		-- Leave a margin for follow-up attacks while a reachable disable prevents escape.
-		losingGank = contacts >= 2 and (exposedRangedHero or control)
+		losingGank = advancing and contacts >= 2 and (exposedRangedHero or control)
 			and damage >= health * (control and 0.80 or 1)
+		keepLeaving = exposureUntil > now and backup == 0 and control and contacts >= 2 and damage >= health * 0.60
+		if losingGank then bot.ohaExposureRetreatUntil = now + 4.0 end
 		if losingGank and J.Customize and J.Customize.TraceLaneDecisions
 			and now - (bot.ohaReinforcementRetreatAt or -math.huge) > 1.25 then
 			print(string.format('[OHA retreat-exposure] %.2f player=%d health=%.0f damage=%.0f control=%s allies=%d',
@@ -9694,7 +9700,7 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	-- contact may re-engage when the arrival is no longer an overload.
 	if incoming == 0 and not underFire and backup > 0 and total <= backup + 1
 		and J.GetHP(bot) >= 0.60 then return false end
-	return started ~= nil and now >= started and now - started < 1.25
+	return keepLeaving or started ~= nil and now >= started and now - started < 1.25
 end
 
 function J.IsCreepBetweenMeAndTarget(hSource, hTarget, vLoc, nRadius)
@@ -11116,7 +11122,14 @@ function J.CheckBotIdleState()
 	bot.ohaIdleRecoveryUntil = now + 15
 	bot.ohaIdleRecoveryOrigin = location
 	if J.Customize and J.Customize.TraceLaneDecisions then
-		print('[OHA idle]', now, bot:GetUnitName(), 'mode', bot:GetActiveMode(), 'action', bot:GetCurrentActionType(),
+		local mode, name = bot:GetActiveMode(), nil
+		for key, value in pairs(_G) do
+			if type(key) == 'string' and key:find('^BOT_MODE_') and not key:find('^BOT_MODE_DESIRE_') and value == mode then
+				name = key
+				break
+			end
+		end
+		print('[OHA idle]', now, bot:GetUnitName(), 'mode', name or mode, 'action', bot:GetCurrentActionType(),
 			'stationary', now - sample.time, 'lastAttack', attack)
 	end
 	return true

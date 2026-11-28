@@ -29,6 +29,7 @@ local ShouldAttackSpecialUnit = false
 local rescueAlly, rescueEnemy, issuedRescueTarget
 local nearbyAllies, nearbyEnemies
 local focusEnemy, issuedFocusTarget
+local laneCourier, issuedLaneCourier
 
 -- Pickup / swap timers
 local PickedItem = nil
@@ -75,6 +76,25 @@ local function CapForLanePush(desire)
     return desire
 end
 
+local function CanShootLaneCourier(courier, enemies)
+    if not J.IsValid(courier) or not courier:IsCourier() or courier:IsAttackImmune() or courier:IsInvulnerable()
+        or X.CanNotUseAttack(bot) or J.IsRetreating(bot) or J.IsDefending(bot) or J.IsPushing(bot)
+        or J.GetHP(bot) < 0.55 or not J.IsInRange(bot, courier, bot:GetAttackRange()) then return false end
+    local _, release, wait = J.GetAttackProDelayTime(bot, courier)
+    if release > 0.55 or wait > 0.16 or GetUnitToLocationDistance(bot, courier:GetExtrapolatedLocation(release + 0.12))
+        > bot:GetAttackRange() then return false end
+    local tower = bot:GetNearbyTowers(1200, true)[1]
+    return J.CanSpendLaneTradeTime(bot, tower, enemies, release + 0.18)
+        and J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), release + 0.8) < bot:GetHealth() * 0.16
+end
+
+local function CancelLaneCourierOrder()
+    if issuedLaneCourier and bot:GetAttackTarget() == issuedLaneCourier and not J.CanNotUseAction(bot) then
+        bot:Action_ClearActions(true)
+    end
+    issuedLaneCourier = nil
+end
+
 function GetDesire()
     -- local cacheKey = 'GetTeamRoamDesire'..tostring(bot:GetPlayerID())
     -- local cachedVar = J.Utils.GetCachedVars(cacheKey, 0.2 * (1 + Customize.ThinkLess))
@@ -87,6 +107,7 @@ function GetDesire()
     return res
 end
 function GetDesireHelper()
+    laneCourier = nil
     rescueAlly, rescueEnemy = nil, nil
     focusEnemy = nil
     hTargetCreep, ShouldAttackSpecialUnit = nil, false
@@ -168,6 +189,15 @@ function GetDesireHelper()
     focusEnemy = J.GetSupportedFightTarget(bot, nearbyEnemies, nearbyAllies)
     if IsSupport and not CanSupportCommitToTarget(focusEnemy) then focusEnemy = nil end
     if focusEnemy ~= nil then return 0.86 end
+
+    if J.IsInLaningPhase(bot) and J.GetHP(bot) >= 0.55
+        and not J.IsRetreating(bot) and not J.IsDefending(bot) and not J.IsPushing(bot) then
+        local courier = X.GetEnemyCourier(bot, bot:GetAttackRange())
+        if CanShootLaneCourier(courier, nearbyEnemies) then
+            laneCourier = courier
+            return 0.75
+        end
+    end
 
     if not J.IsFarming(bot) and not J.IsPushing(bot) and not J.IsDefending(bot)
     and not J.IsDoingRoshan(bot) and not J.IsDoingTormentor(bot)
@@ -321,6 +351,7 @@ end
 function OnEnd()
     CancelRescueOrder()
     CancelFocusOrder()
+    CancelLaneCourierOrder()
     rescueAlly, rescueEnemy = nil, nil
     towerTime = 0
     towerCreepMode = false
@@ -335,11 +366,13 @@ function Think()
     if J.ShouldRetreatFromEnemyReinforcements(bot) then
         CancelRescueOrder()
         CancelFocusOrder()
+        CancelLaneCourierOrder()
         return
     end
 	-- diabled think less to avoid failing to last hit
     -- if J.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "team_roam") then return end
 
+    if laneCourier == nil or issuedLaneCourier ~= laneCourier then CancelLaneCourierOrder() end
     if focusEnemy ~= nil then
         local location = bot:GetLocation()
         local liveEnemies, liveAllies = J.GetEnemiesNearLoc(location, 1600), J.GetAlliesNearLoc(location, 1600)
@@ -380,6 +413,20 @@ function Think()
         return
     end
     CancelRescueOrder()
+
+	if laneCourier then
+		local enemies = J.GetEnemiesNearLoc(bot:GetLocation(), 1600)
+		if not CanShootLaneCourier(laneCourier, enemies) then
+			CancelLaneCourierOrder()
+		elseif bot:GetAttackTarget() ~= laneCourier then
+			bot:Action_AttackUnit(laneCourier, true)
+			issuedLaneCourier = laneCourier
+			if J.Customize and J.Customize.TraceLaneDecisions then
+				print('[OHA courier]', DotaTime(), bot:GetPlayerID(), 'one-shot')
+			end
+		end
+		return
+	end
 
 	if J.IsValid(hTargetCreep) and not IsSideLaneMicroTarget(hTargetCreep) and J.CanSupportTakeLaneLastHit(bot, hTargetCreep) then
 		bot:Action_AttackUnit(hTargetCreep, true)
@@ -975,23 +1022,25 @@ function X.CanBeAttacked(unit)
             and unit:GetHealth()/unit:GetMaxHealth() < 0.5))
 end
 
--- Courier scan (unchanged)
-local courierFindCD, lastFindTime = 0.1, -90
+-- Reuse the visible target between scans so attack windup can finish.
+local courierFindCD, lastFindTime, foundCourier = 0.18, -90, nil
 function X.GetEnemyCourier(b, nRadius)
     if GetGameMode() == 23 then return nil end
     if J.GetDistanceFromEnemyFountain(b) < 1400 then return nil end
     if DotaTime() > lastFindTime + courierFindCD then
         lastFindTime = DotaTime()
+        foundCourier = nil
         for _,u in pairs(GetUnitList(UNIT_LIST_ENEMIES)) do
-            if u and u:IsCourier() and u:IsAlive()
+            if J.IsValid(u) and u:IsCourier()
             and GetUnitToUnitDistance(b, u) <= nRadius
             and not u:IsInvulnerable() and not u:IsAttackImmune()
             and not u:HasModifier('modifier_fountain_aura') then
-                return u
+                foundCourier = u
+                break
             end
         end
     end
-    return nil
+    if J.IsValid(foundCourier) and J.IsInRange(b, foundCourier, nRadius) then return foundCourier end
 end
 
 function X.WeakestUnitExceptRangeCanBeAttacked(bHero, bEnemy, nRange, nRadius, bot)

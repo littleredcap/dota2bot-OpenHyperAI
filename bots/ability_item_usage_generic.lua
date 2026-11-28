@@ -553,7 +553,6 @@ local function CourierUsageComplement()
 
 	if DotaTime() < -56
 		or bot:HasModifier( "modifier_arc_warden_tempest_double" )
-		or nCourierReturnTime + 5.0 > DotaTime()
 	then
 		return
 	end
@@ -579,29 +578,26 @@ local function CourierUsageComplement()
 	if nCourierState == COURIER_STATE_DEAD then return	end
 
 	local supply = require(GetScriptDirectory() .. '/FunLib/lane_supply')
-	if X.IsCourierTargetedByUnit( npcCourier )
-		or nCourierState == COURIER_STATE_DELIVERING_ITEMS and (not bAliveBot
+	local exposed = npcCourier:DistanceFromFountain() > 900
+		and (supply.IsCourierExposed(npcCourier) or X.IsCourierTargetedByUnit(npcCourier))
+	local unsafeDelivery = nCourierState == COURIER_STATE_DELIVERING_ITEMS and (not bAliveBot
 			or bot:HasModifier('modifier_teleporting')
-			or not bot.ohaLaneSupply and not supply.CanDeliverCourier(bot, npcCourier, false))
-	then
+			or not supply.CanDeliverCourier(bot, npcCourier, false))
+	if exposed or unsafeDelivery then
 		bot.ohaCourierUnsafeUntil = currentTime + protectCourierCD
-		if currentTime > nCourierReturnTime + protectCourierCD
-		then
+		if nCourierState ~= COURIER_STATE_RETURNING_TO_BASE and currentTime > nCourierReturnTime + 1.0 then
 			nCourierReturnTime = currentTime
-
 			J.SetReportMotive( bDebugCourier, "信使可能会被攻击" )
-
 			bot:ActionImmediate_Courier( npcCourier, COURIER_ACTION_RETURN_STASH_ITEMS )
-
-			local abilityBurst = npcCourier:GetAbilityByName( 'courier_burst' )
-			if abilityBurst and abilityBurst:IsFullyCastable()
-			then
-				bot:ActionImmediate_Courier( npcCourier, COURIER_ACTION_BURST )
+			if J.Customize and J.Customize.TraceLaneDecisions then
+				print('[OHA courier]', currentTime, bot:GetPlayerID(), exposed and 'exposed' or 'route-blocked')
 			end
-
 		end
+		local burst = exposed and npcCourier:GetAbilityByName('courier_burst')
+		if burst and burst:IsFullyCastable() then bot:ActionImmediate_Courier(npcCourier, COURIER_ACTION_BURST) end
 		return
 	end
+	if nCourierReturnTime + protectCourierCD > currentTime then return end
 
 	if bot.SShopUser
 		and ( not bAliveBot or bot:GetActiveMode() == BOT_MODE_SECRET_SHOP or not bot.SecretShop )
@@ -791,74 +787,12 @@ function X.IsCourierTargetedByUnit( courier )
 		end
 	end
 
-	for i, id in pairs( GetTeamPlayers( GetOpposingTeam() ) )
-	do
-		if IsHeroAlive( id )
-		then
-			local info = GetHeroLastSeenInfo( id )
-			if info ~= nil
-			then
-				local dInfo = info[1]
-				if dInfo ~= nil
-					and GetUnitToLocationDistance( courier, dInfo.location ) <= 800
-					and dInfo.time_since_seen < 1.8
-				then
-					return true
-				end
-			end
-		end
-	end
-
-	local nEnemysHeroesCanSeen = GetUnitList( UNIT_LIST_ENEMY_HEROES )
-	for _, enemy in pairs( nEnemysHeroesCanSeen )
-	do
-		if GetUnitToUnitDistance( enemy, courier ) <= 700 + botLV * 15
-		then
-			local nNearCourierAllyList = J.GetAlliesNearLoc( enemy:GetLocation(), 600 )
-			if #nNearCourierAllyList == 0
-				or enemy:GetAttackTarget() == courier
-			then
-				return true
-			end
-		end
-
-		if enemy:GetUnitName() == 'npc_dota_hero_sniper'
-			and GetUnitToUnitDistance( enemy, courier ) <= 1100 + botLV * 30
-		then
-			return true
-		end
-
-		if GetUnitToUnitDistance( enemy, courier ) <= enemy:GetAttackRange() + 88
-		then
-			return true
-		end
-	end
-
-	local nEnemysHeroes = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE )
-	for _, enemy in pairs( nEnemysHeroes )
-	do
-		if enemy ~= nil and J.IsValidHero( enemy ) and GetUnitToUnitDistance( enemy, courier ) <= 700 + botLV * 15
-		then
-			local nNearCourierAllyList = J.GetAlliesNearLoc( enemy:GetLocation(), 800 )
-			if #nNearCourierAllyList == 0
-				or enemy:GetAttackTarget() == courier
-			then
-				return true
-			end
-		end
-
-		if enemy ~= nil and J.IsValidHero( enemy ) and GetUnitToUnitDistance( enemy, courier ) <= enemy:GetAttackRange() + 100
-		then
-			return true
-		end
-	end
-
 	local nAllEnemyCreeps = GetUnitList( UNIT_LIST_ENEMY_CREEPS )
 	local nNearCourierAllyList = J.GetAlliesNearLoc( courier:GetLocation(), 1500 )
 	local nNearCourierAllyCount = #nNearCourierAllyList
 	for _, creep in pairs( nAllEnemyCreeps )
 	do
-		if GetUnitToUnitDistance( courier, creep ) <= 800
+		if J.IsValid(creep) and GetUnitToUnitDistance( courier, creep ) <= 800
 			and ( creep:GetAttackTarget() == courier or botLV > 10 )
 			and ( nNearCourierAllyCount == 0 or creep:GetAttackTarget() == courier )
 		then

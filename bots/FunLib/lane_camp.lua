@@ -200,8 +200,9 @@ local function PlanPullProbe(bot, camp, lane, crossing, distance)
     if not eta then return nil, 'wave-not-found' end
 
     local speed = math.max(1, bot:GetCurrentMovementSpeed())
+    local neutralSpeed = type(camp.speed) == 'number' and camp.speed or 300
     local aggroTravel = J.GetLocationToLocationDistance(camp.location, crossing)
-        / math.max(150, math.min(speed, camp.speed or 300))
+        / math.max(150, math.min(speed, neutralSpeed))
     local estimate = math.max(0, distance - bot:GetAttackRange()) / speed + aggroTravel + 0.45
     if eta < estimate - 0.4 or eta > estimate + 4.5 then return nil, 'probe-window' end
 
@@ -288,10 +289,15 @@ function Camp.Plan(bot, lane)
     if work ~= nil then Camp.Cancel(bot); return end
     local best, bestScore, probe, probeDistance, rejection
     local safeLane = bot:GetTeam() == TEAM_RADIANT and LANE_BOT or LANE_TOP
+    local trace = Customize.TraceLanePull and now >= (bot.ohaNextPullTrace or 0)
+    local nearestCamp, nearestDistance
     for _, camp in pairs(GetNeutralSpawners()) do
         local distance = GetUnitToLocationDistance(bot, camp.location)
         local ownCamp = camp.team == bot:GetTeam()
         local offlaneCamp = lane ~= safeLane and not J.Site.IsSmallCamp(camp) and not J.Site.IsAncientCamp(camp)
+        if trace and (ownCamp or offlaneCamp) and (not nearestDistance or distance < nearestDistance) then
+            nearestCamp, nearestDistance = camp, distance
+        end
         local eligible = (ownCamp or offlaneCamp) and distance <= 1770
         local visible = eligible and IsLocationVisible(camp.location)
         if eligible and (not visible or distance <= 1530)
@@ -327,9 +333,14 @@ function Camp.Plan(bot, lane)
         end
     end
     if probe and not best then return probe end
-    if not best and Customize.TraceLanePull and now >= (bot.ohaNextPullTrace or 0) then
+    if not best and trace then
         bot.ohaNextPullTrace = now + 15
-        TracePull(bot, {kind = 'pull', lane = lane}, 'rejected', rejection or 'no-safe-visible-camp')
+        local reason = rejection or 'no-safe-visible-camp'
+        if nearestCamp then
+            reason = string.format('%s nearest=%.0f type=%s loc=%.0f,%.0f', reason, nearestDistance,
+                tostring(nearestCamp.type), nearestCamp.location.x, nearestCamp.location.y)
+        end
+        TracePull(bot, {kind = 'pull', lane = lane}, 'rejected', reason)
     end
     return best
 end

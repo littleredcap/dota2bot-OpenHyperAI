@@ -31,7 +31,7 @@ local function fixture(rescue)
         unit.IsAlive = function(self) return self.alive ~= false end
         unit.CanBeSeen = function(self) return self.visible ~= false end
         unit.IsInvulnerable, unit.IsAttackImmune, unit.IsNull, unit.IsIllusion = no, no, no, no
-        unit.IsHero = yes
+        unit.IsHero, unit.IsCourier = yes, no
         unit.HasModifier, unit.GetNearbyTowers, unit.GetNearbyLaneCreeps = no, empty, empty
         unit.GetHealth = function() return 1000 end
         unit.GetHealthRegen = function() return 0 end
@@ -83,6 +83,7 @@ local function fixture(rescue)
         GetTeamFightLocation = function() return pos(650) end,
         GetDistance = distance, WeAreStronger = no, IsInLaningPhase = no, IsInTeamFight = yes,
         GetTeamFountain = function() return pos(-6000) end,
+        GetDistanceFromEnemyFountain = function() return 7300 end,
         IsEarlyGame = no, IsMidGame = no, IsChasingTarget = no,
         GetSpecialModeAllies = empty, GetTotalEstimatedDamageToTarget = function() return 50 end,
         GetMostPushLaneDesire = function() return 2 end, GetMostDefendLaneDesire = function() return 2 end,
@@ -102,6 +103,7 @@ local function fixture(rescue)
     local env = setmetatable({
         J = j, GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,
         GetTeam = function() return 2 end, GetOpposingTeam = function() return 3 end,
+        GetGameMode = function() return 1 end,
         GetTeamForPlayer = function(id) return id <= 4 and 2 or 3 end,
         GetAncient = function() return state.ancient end,
         GetHeightLevel = function(point) return point.x > 1000 and 2 or 1 end,
@@ -109,11 +111,14 @@ local function fixture(rescue)
         IsLocationVisible = function(location) return not location.hidden end,
         Vector = pos, IsLocationPassable = yes,
         GetTeamPlayers = function() return {1, 2, 3, 4} end, GetTeamMember = function(i) return members[i] end,
-        GetUnitList = function(kind) return kind == 1 and members or opponents end,
+        GetUnitList = function(kind)
+            if kind == 3 then return state.courier and {state.courier} or {} end
+            return kind == 1 and members or opponents
+        end,
         require = function(name) return assert(modules[name], name) end,
         DotaTime = function() return state.time end, GetDroppedItemList = empty,
         GetUnitToUnitDistance = distance, GetUnitToLocationDistance = distance, RemapValClamped = remap,
-        UNIT_LIST_ALLIED_HEROES = 1, UNIT_LIST_ENEMY_HEROES = 2,
+        UNIT_LIST_ALLIED_HEROES = 1, UNIT_LIST_ENEMY_HEROES = 2, UNIT_LIST_ENEMIES = 3,
         BOT_MODE_NONE = 0, BOT_MODE_DESIRE_NONE = 0, BOT_MODE_DESIRE_VERYHIGH = 0.9,
         BOT_MODE_DESIRE_MODERATE = 0.5, BOT_MODE_DESIRE_ABSOLUTE = 1, BOT_ACTION_DESIRE_NONE = 0,
         BOT_ACTION_DESIRE_VERYHIGH = 0.9,
@@ -306,7 +311,9 @@ do
     setfenv(assert(loadfile('bots/mode_retreat_generic.lua')), mode)()
     assert(mode.GetDesire() > mode.BOT_MODE_DESIRE_ABSOLUTE,
         'an isolated ranged core withdraws before taking damage from two closing threats')
-    state.time, control = state.time + 2, false
+    state.time, damage = state.time + 2, 700
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'continue withdrawing while the same control remains reachable')
+    control = false
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'nonlethal damage without control leaves an escape margin')
     damage = 1060
     assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'two opponents can also threaten lethal damage without control')
@@ -343,7 +350,7 @@ do
 end
 
 do
-    local _, mode, bot, core, _, enemy, _, j = fixture(true)
+    local state, mode, bot, core, _, enemy, _, j = fixture(true)
     bot.core = true
     mode.LANE_MID = 2
     bot.GetAssignedLane = function() return mode.LANE_MID end
@@ -355,6 +362,23 @@ do
     assert(mode.GetDesire() == 0, 'the mid laner keeps control of the current wave')
     core.retreating, enemy.target = true, core
     assert(mode.GetDesire() > 0, 'an urgent rescue can still interrupt farming')
+    core.retreating, enemy.target = false, nil
+    bot.IsCastingAbility, bot.IsUsingAbility, bot.IsInvisible = no, no, no
+    j.HasQueuedAction = no
+    j.GetAttackProDelayTime = function() return 0.45, 0.28, 0.05 end
+    local reserveWave = true
+    j.CanSpendLaneTradeTime = function() return not reserveWave end
+    state.courier = setmetatable({x=530, IsCourier=yes, IsHero=no}, {__index=enemy})
+    state.time = state.time + 1
+    assert(mode.GetDesire() == 0, 'a safe courier stays secondary to a timed last hit')
+    reserveWave = false
+    assert(mode.GetDesire() == 0.75, 'a confirmed in-range courier can use a real gap in the wave')
+    bot.Action_AttackUnit = function(_, target, once)
+        assert(target == state.courier and once, 'issue one attack without giving a chase order')
+        state.orders[#state.orders+1] = target
+    end
+    mode.Think()
+    assert(state.orders[1] == state.courier)
 end
 
 do

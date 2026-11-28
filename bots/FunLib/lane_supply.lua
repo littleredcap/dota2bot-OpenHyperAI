@@ -47,21 +47,34 @@ local function almostOutOfTangos(bot, held)
     return charges == 1 or charges == 0 and bot:HasModifier('modifier_tango_heal')
 end
 
-local function safeCourierPoint(point)
-    if #J.GetLastSeenEnemiesNearLoc(point, 850) > 0 then return false end
-    for _, enemy in ipairs(J.GetEnemiesNearLoc(point, 1650)) do
-        local reach = math.max(850, enemy:GetAttackRange() + enemy:GetCurrentMovementSpeed() * 1.2 + 100)
-        if GetUnitToLocationDistance(enemy, point) <= reach then return false end
+local function isNearCourierLeg(point, start, finish, length, reach)
+    if J.GetLocationToLocationDistance(point, start) <= reach
+        or J.GetLocationToLocationDistance(point, finish) <= reach then return true end
+    if length <= 1 then return false end
+    local projection = PointToLineDistance(start, finish, point)
+    return projection and projection.within and projection.distance <= reach
+end
+
+local function safeCourierLeg(start, finish)
+    local length = J.GetLocationToLocationDistance(start, finish)
+    for _, enemy in ipairs(J.GetEnemiesNearLoc(start, length + 2050)) do
+        local reach = math.max(850, enemy:GetAttackRange() + enemy:GetCurrentMovementSpeed() * 1.5 + 115)
+        if isNearCourierLeg(enemy:GetLocation(), start, finish, length, reach) then return false end
+    end
+    for _, player in ipairs(GetTeamPlayers(GetOpposingTeam())) do
+        if IsHeroAlive(player) then
+            local info = GetHeroLastSeenInfo(player)
+            local seen = info and info[1]
+            if seen and seen.time_since_seen < 5
+                and isNearCourierLeg(seen.location, start, finish, length, 850) then return false end
+        end
     end
     return true
 end
 
-local function safeCourierLeg(start, finish)
-    for _, part in ipairs({0.25, 0.5, 0.75}) do
-        local point = (start * (1 - part)) + (finish * part)
-        if not safeCourierPoint(point) then return false end
-    end
-    return true
+function Supply.IsCourierExposed(courier)
+    local origin = courier:GetLocation()
+    return not safeCourierLeg(origin, courier:GetExtrapolatedLocation(0.9))
 end
 
 function Supply.CanDeliverCourier(bot, courier, collectStash)
@@ -71,7 +84,7 @@ function Supply.CanDeliverCourier(bot, courier, collectStash)
         if courier:DistanceFromFountain() > 800 and not safeCourierLeg(start, fountain) then return false end
         start = fountain
     end
-    return safeCourierPoint(destination) and safeCourierLeg(start, destination)
+    return safeCourierLeg(start, destination)
 end
 
 local function deliveryTime(bot, courier, aboard, tower)

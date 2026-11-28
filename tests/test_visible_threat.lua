@@ -50,6 +50,7 @@ setfenv(assert(loadstring(src:sub(c,d-1))),env)()
 j.GetEnemiesNearLoc=function() return enemies end
 j.GetCreepAttackProjectileWillRealDamage=value(0)
 j.GetHP=value(0.6)
+j.GetModifierTime=function(unit) return unit.modifierTime or 0 end
 j.IsInRange=function(a,b,gap) return math.abs(a.x-b.x)<=gap end
 j.IsStunProjectileIncoming=no
 assert(not j.CanStartTeleportHere(bot),'4:37: a nonlethal melee stun can arrive during the scroll')
@@ -117,12 +118,20 @@ do
     assert(j.CanStartTeleportHere(bot),'allow a cleared escape point after brief lost contact')
     enemies={dk}
     dk.x, dk.GetAttackDamage = 140, value(94)
-    bot.WasRecentlyDamagedByAnyHero, bot.HasModifier = yes, yes
+    bot.WasRecentlyDamagedByAnyHero = yes
+    bot.HasModifier = function(_, name) return name == 'modifier_warlock_fatal_bonds' end
     assert(not j.CanStartTeleportHere(bot),'reserve health for ongoing shared damage even when the enemy is out of mana')
     bot.HasModifier = no
     assert(j.CanStartTeleportHere(bot),'allow the same nonlethal channel after the link wears off')
     bot.WasRecentlyDamagedByAnyHero = no
     enemies={}
+    now = now + 2
+    bot.HasModifier = function(_, name) return name == 'modifier_skeleton_king_reincarnation_scepter_active' end
+    bot.modifierTime = 1.87
+    assert(not j.CanStartTeleportHere(bot),'the wraith form ends before the scroll can finish')
+    bot.modifierTime = 4.0
+    assert(j.CanStartTeleportHere(bot),'a long enough wraith window still permits a safe channel')
+    bot.HasModifier = no
     local golem={x=140,CanBeSeen=yes,IsAlive=yes,IsDisarmed=no,GetAttackTarget=value(bot),
         GetAttackRange=value(150),GetSecondsPerAttack=value(1.4),GetAttackProjectileSpeed=value(0),
         GetLastAttackTime=value(now-1),GetAttackDamage=value(120),GetCurrentMovementSpeed=value(310),
