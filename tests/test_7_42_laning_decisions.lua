@@ -933,6 +933,11 @@ do
     target.x, sniper.windup = 400, true
     impact, release = j.GetAttackProDelayTime(sniper, target)
     assert(math.abs(release - 0.1) < 0.0001 and impact > release, 'finish the current shot without adding a second windup')
+    sniper.GetAnimCycle = function() return 0.40 end
+    sniper.GetLastAttackTime = function() return 99.8 end
+    local _, nextRelease, nextWait = j.GetAttackProDelayTime(sniper, target)
+    assert(nextWait > 0.9 and nextRelease > 1.1, 'a shot in backswing still has attack recovery')
+    assert(j.GetAttackProDelayTime(sniper, target, true) == 0, 'the same released shot is already in the projectile pass')
 end
 
 do

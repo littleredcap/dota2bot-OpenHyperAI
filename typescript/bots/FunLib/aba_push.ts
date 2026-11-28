@@ -341,15 +341,16 @@ export function GetPushDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
             return 0.88 as BotModeDesire;
         }
     }
-    const earlyMidChip = lane === Lane.Mid && currentTime >= 240 && currentTime <= 780
-        && bot.GetAssignedLane() === Lane.Mid && bot.GetAttackRange() >= 550;
-    if ((earlyMidChip || nH === 0 || currentTime > StartToPushTime) && !outsideCoreLane && !recentDefendPing
+    const earlyChip = currentTime >= (lane === Lane.Mid ? 240 : 300) && currentTime <= 780
+        && bot.GetAssignedLane() === lane && bot.GetAttackRange() >= (lane === Lane.Mid ? 550 : 350);
+    if ((earlyChip || nH === 0 || currentTime > StartToPushTime) && !outsideCoreLane && !recentDefendPing
         && !criticalBaseCreeps && !baseDefenseLimited && !activeDefense) {
         const opportunity = GetOuterTowerOpportunity(bot, lane, gameState);
-        if (opportunity && (opportunity.earlyMidChip || nH === 0 || currentTime > StartToPushTime)) {
+        if (opportunity && (opportunity.earlyChip || nH === 0 || currentTime > StartToPushTime)) {
             const tower = opportunity.tower;
-            (bot as any).ohaOuterTowerPush = { lane, tower, earlyMidChip: opportunity.earlyMidChip };
+            (bot as any).ohaOuterTowerPush = { lane, tower, earlyChip: opportunity.earlyChip };
             (bot as any).laneToPush = lane;
+            if (opportunity.earlyChip && lane !== Lane.Mid) return 0.83 as BotModeDesire;
             return (GetUnitToUnitDistance(bot, tower) <= 1600 ? 0.8 : 0.76) as BotModeDesire;
         }
     }
@@ -601,7 +602,7 @@ function GetOuterTowerTarget(bot: Unit, lane: Lane, enemyTeam: Team, maxDistance
     return tower;
 }
 
-type OuterTowerPlan = { tower: Unit; staging?: Vector; waveFront?: Vector; lane?: Lane; earlyMidChip?: boolean };
+type OuterTowerPlan = { tower: Unit; staging?: Vector; waveFront?: Vector; lane?: Lane; earlyChip?: boolean };
 
 function GetLaneStaging(location: Vector, lane: Lane, offset: number): Vector | undefined {
     const amount = GetAmountAlongLane(lane, location).amount;
@@ -666,17 +667,19 @@ function CanEscortOuterWave(bot: Unit, tower: Unit, lane: Lane, travel: number):
     return true;
 }
 
-function GetEarlyMidTowerChip(bot: Unit, lane: Lane, gameState: ReturnType<typeof getGlobalGameState>): OuterTowerPlan | undefined {
+function GetEarlyTowerChip(bot: Unit, lane: Lane, gameState: ReturnType<typeof getGlobalGameState>): OuterTowerPlan | undefined {
     const now = gameState.currentTime;
-    if (lane !== Lane.Mid || now < 240 || now > 960 || bot.GetAssignedLane() !== Lane.Mid
-        || bot.GetAttackRange() < 550 || !jmz.IsCore(bot) || jmz.GetHP(bot) < 0.65 || bot.IsDisarmed()
+    const mid = lane === Lane.Mid;
+    if (now < (mid ? 240 : 300) || now > (mid ? 960 : 780) || bot.GetAssignedLane() !== lane
+        || bot.GetAttackRange() < (mid ? 550 : 350) || (mid && !jmz.IsCore(bot)) || jmz.GetHP(bot) < 0.65 || bot.IsDisarmed()
         || jmz.IsRetreating(bot) || bot.WasRecentlyDamagedByAnyHero(2) || bot.WasRecentlyDamagedByTower(2)) return;
-    const tower = GetTower(gameState.enemyTeam, Tower.Mid1);
+    const tower = GetTower(gameState.enemyTeam, mid ? Tower.Mid1 : lane === Lane.Top ? Tower.Top1 : Tower.Bot1);
     if (!tower || !jmz.IsValidBuilding(tower) || !tower.CanBeSeen()
         || tower.HasModifier("modifier_fountain_glyph") || HasBackdoorProtect(tower)
         || ((bot as any).ohaLaningAttackTarget && jmz.HasPendingLaningLastHit(bot))) return;
     const gap = GetUnitToUnitDistance(bot, tower) - bot.GetAttackRange();
-    if (gap > 260 || (now > 780 && gap > 0)) return;
+    if (gap > (mid ? 260 : 360) || (now > 780 && gap > 0)) return;
+    if (!mid && bot.GetNearbyLaneCreeps(1000, true).length > 0) return;
     const tank = tower.GetAttackTarget();
     if (!tank || !jmz.IsValid(tank) || tank.GetTeam() !== bot.GetTeam() || !jmz.IsKeyWordUnit("npc_dota_creep_", tank)
         || tank.GetHealth() <= Math.max(100, tower.GetAttackDamage())) return;
@@ -688,27 +691,28 @@ function GetEarlyMidTowerChip(bot: Unit, lane: Lane, gameState: ReturnType<typeo
             siege = siege || jmz.IsKeyWordUnit("_siege", creep);
         }
     }
-    if (count < 2 || jmz.GetLastSeenEnemiesNearLoc(tower.GetLocation(), 1200).length > 1) return;
+    if (count < 2 || jmz.GetLastSeenEnemiesNearLoc(tower.GetLocation(), 1200).length > (mid ? 1 : 0)) return;
     for (const enemy of jmz.GetEnemiesNearLoc(tower.GetLocation(), 1650)) {
-        if (jmz.IsInRange(bot, enemy, Math.max(725, enemy.GetAttackRange() + 150))) return;
+        if (!mid || jmz.IsInRange(bot, enemy, Math.max(725, enemy.GetAttackRange() + 150))) return;
     }
     if (gap > 0) {
-        if (!siege || tank.GetHealth() <= 2 * Math.max(100, tower.GetAttackDamage())
+        if (bot.IsRooted() || (mid ? !siege : count < 3) || tank.GetHealth() <= 2 * Math.max(100, tower.GetAttackDamage())
             || bot.GetNearbyLaneCreeps(1000, true).length > 0) return;
         const origin = bot.GetLocation();
         const staging = jmz.VectorTowards(origin, tower.GetLocation(), gap + 25);
         const halfway = jmz.VectorTowards(origin, tower.GetLocation(), (gap + 25) / 2);
         if (!IsLocationPassable(staging) || !IsLocationVisible(staging)
+            || !IsLocationPassable(halfway) || !IsLocationVisible(halfway)
             || !jmz.CanCommitToLaneTeleport(bot, tower.GetLocation(), true, 1650)
             || !jmz.CanCommitToLaneTeleport(bot, staging, true, 1400)
             || !jmz.CanCommitToLaneTeleport(bot, halfway, true, 1200)) return;
-        return { tower, staging, earlyMidChip: true };
+        return { tower, staging, earlyChip: true };
     }
-    return { tower, earlyMidChip: true };
+    return { tower, earlyChip: true };
 }
 
 function GetOuterTowerOpportunity(bot: Unit, lane: Lane, gameState: ReturnType<typeof getGlobalGameState>): OuterTowerPlan | undefined {
-    const chip = GetEarlyMidTowerChip(bot, lane, gameState);
+    const chip = GetEarlyTowerChip(bot, lane, gameState);
     if (chip) return chip;
     if (jmz.GetHP(bot) < 0.6 || jmz.IsRetreating(bot) || jmz.IsDoingTormentor(bot) || jmz.IsDoingRoshan(bot)
         || bot.IsDisarmed() || bot.WasRecentlyDamagedByTower(2) || bot.WasRecentlyDamagedByAnyHero(2)
@@ -1384,11 +1388,11 @@ export function PushThink(bot: Unit, lane: Lane): void {
         }
         const opportunity = !criticalBaseCreeps && ((bot as any).ohaOuterTowerHoldUntil ?? 0) <= now
             ? GetOuterTowerOpportunity(bot, lane, gameState) : undefined;
-        if (!opportunity || opportunity.tower !== plan.tower || (plan.earlyMidChip && !opportunity.earlyMidChip)) {
+        if (!opportunity || opportunity.tower !== plan.tower || (plan.earlyChip && !opportunity.earlyChip)) {
             CancelPushOrder(bot, lane);
             return;
         }
-        if (opportunity.earlyMidChip) {
+        if (opportunity.earlyChip) {
             (bot as any)._ohaIssuedPushOrder = true;
             if (opportunity.staging) bot.Action_MoveToLocation(opportunity.staging);
             else if (bot.GetAttackTarget() !== opportunity.tower) bot.Action_AttackUnit(opportunity.tower, true);

@@ -310,6 +310,12 @@ do
     assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'two opponents can also threaten lethal damage without control')
     state.time, core.retreating = state.time + 2, false
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'available backup prevents the isolated-core rule')
+    state.hp, core.x = 0.55, 100
+    core.GetAttackRange = function() return 150 end
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'a nearby melee partner outside contact cannot cover a vulnerable ranged core')
+    state.time, core.x = state.time + 2, 670
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'a partner already in contact can cover the ranged core')
+    state.time = state.time + 2
     core.retreating, reinforcement.visible = true, false
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'do not use the second opponent through fog')
 end

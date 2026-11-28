@@ -974,7 +974,7 @@ do
     jmz.IsKeyWordUnit = function(key, unit) return key == 'npc_dota_creep_' and unit == tank end
     opts.towerTarget = tank
     same(push.GetPushDesire(bot, lane.Mid), 0.8, 'ranged mid can take one covered early shot')
-    assert(bot.ohaOuterTowerPush and bot.ohaOuterTowerPush.earlyMidChip)
+    assert(bot.ohaOuterTowerPush and bot.ohaOuterTowerPush.earlyChip)
     push.PushThink(bot, lane.Mid)
     assert(orders[#orders] == tower)
     hp = 40
@@ -994,6 +994,26 @@ do
     assert(orders[#orders] == 'cancel', 'stop the approach when the next enemy wave needs attention')
     opts.contestedLastHit, opts.hiddenStep = false, true
     assert(push.GetPushDesire(bot, lane.Mid) ~= 0.8, 'no step to a fogged position')
+
+    local env, originalGetTower = getfenv(push.PushThink), getfenv(push.PushThink).GetTower
+    env.GetTower = function(team, id)
+        if team == 3 and id == 10 then return tower end
+        return originalGetTower(team, id)
+    end
+    bot.GetAssignedLane = function() return lane.Top end
+    bot.GetAttackRange = function() return 600 end
+    jmz.IsCore = function(unit) return unit ~= bot end
+    opts.hiddenStep, bot.x = false, tower.x - 950
+    bot.GetNearbyLaneCreeps = function(_, _, enemy) return enemy and {} or {tank, tank2, siege} end
+    same(push.GetPushDesire(bot, lane.Top), 0.83, 'a ranged support can take a local side tower window with three creeps')
+    push.PushThink(bot, lane.Top)
+    assert(orders[#orders].x == tower.x - 575, 'step only into range of the side tower')
+    bot.x = tower.x - 575
+    push.PushThink(bot, lane.Top)
+    assert(orders[#orders] == tower and opts.lastAttackOnce, 'take one shot and recheck the wave')
+    opts.visibleDefenders = 1
+    push.PushThink(bot, lane.Top)
+    assert(orders[#orders] == 'cancel', 'cancel a side tower chip when a defender appears')
 end
 
 do

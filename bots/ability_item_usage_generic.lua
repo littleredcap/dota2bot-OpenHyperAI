@@ -5111,8 +5111,11 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	if postFightDuty and nEnemyCount == 0 then
 		local assignment = postFightDuty == 'clear' and postFightPlan.primary or postFightPlan.backup
 		if assignment and assignment.teleport and not J.ShouldKeepLaningWave(bot, postFightPlan.lane)
-			and J.CanCommitToLaneTeleport(bot, assignment.teleport, true, 1050) then
-			return BOT_ACTION_DESIRE_ABSOLUTE, assignment.teleport, sCastType, 'post-fight-cover'
+			and J.CanCommitToLaneTeleport(bot, assignment.teleport, true, 1050)
+			and (not laning or J.CanTakeLaneDefenseTeleport(bot, postFightPlan.lane, assignment.teleport,
+				postFightPlan.building, nil, true, assignment.reach)) then
+			return BOT_ACTION_DESIRE_ABSOLUTE, assignment.teleport, sCastType, 'post-fight-cover',
+				RememberDefense(postFightPlan.lane)
 		end
 	end
 

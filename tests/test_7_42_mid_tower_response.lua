@@ -34,7 +34,7 @@ local j={
     GetEnemyReinforcementWindow=function() return reinforcement end,
     GetLocationToLocationDistance=function(a,b) return math.abs(a-b) end,
     VectorTowards=function(a,b,d) return a + (b >= a and d or -d) end,
-    GetItem2=function() end, CanCastAbility=no, ShouldKeepLaningWave=no,
+    GetItem2=function() end, CanCastAbility=no, ShouldKeepLaningWave=no, IsInLaningPhase=no,
     GetLastSeenEnemiesNearLoc=function() return {} end,
     Utils={GetCachedVars=function() end, SetCachedVars=no},
 }
@@ -146,6 +146,13 @@ do
     j.ShouldKeepLaningWave=yes
     assert(not j.GetPostFightCoverage(2).primary,'do not assume a remote defender will abandon a protected lane wave')
     j.ShouldKeepLaningWave=no
+    j.IsInLaningPhase=yes
+    j.CanTakeLaneDefenseTeleport=function(_, lane, _, b, _, planned, _, observed)
+        assert(lane == env.LANE_MID and b == tower and planned and observed == wave)
+        return false
+    end
+    assert(not j.GetPostFightCoverage(2).primary, 'early shared defense cannot plan a scroll denied by lane travel policy')
+    j.IsInLaningPhase=no
     local oldSeen=j.GetLastSeenEnemiesNearLoc
     j.GetLastSeenEnemiesNearLoc=function(point, radius) return point<=-5000 and radius==1600 and {foe.id} or {} end
     assert(not j.GetPostFightCoverage(2).primary,'do not plan a channel with recently seen enemies at the departure')

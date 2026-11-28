@@ -1784,7 +1784,7 @@ local function GetLaneCreepHealthAt(creep, delay, attackers, exclude)
     local remaining = creep:GetHealth() + creep:GetHealthRegen() * delay - J.GetTotalAttackWillRealDamage(creep, delay, true)
     for _, attacker in ipairs(attackers) do
         if attacker ~= exclude and attacker:GetAttackTarget() == creep and J.IsAttacking(attacker) then
-            local impact, release = J.GetAttackProDelayTime(attacker, creep)
+			local impact, release = J.GetAttackProDelayTime(attacker, creep, true)
             if release > 0 and impact < delay - 0.033 then
                 remaining = remaining - LaneAttackDamage(attacker, creep, attacker:GetAttackDamage())
             end
@@ -2227,7 +2227,7 @@ local function IsContestForLaneCreep(bot, enemy, enemies)
     if not J.IsValid(target) or not target:IsCreep() or not J.IsAttacking(enemy)
         or not (J.IsKeyWordUnit('npc_dota_creep_', target) or J.IsKeyWordUnit('_siege', target))
         or not J.IsInRange(enemy, target, enemy:GetAttackRange() + 40) then return false end
-    local impact, release = J.GetAttackProDelayTime(enemy, target)
+	local impact, release = J.GetAttackProDelayTime(enemy, target, true)
     if release <= 0 then return false end -- a projectile already in flight cannot be interrupted
     local denying = target:GetTeam() == enemy:GetTeam()
     if denying and J.GetHP(target) >= 0.5 then return false end
@@ -3628,7 +3628,7 @@ local function GetAttackSpeedMultiplier(unit)
 	return math.max(0.1, speed)
 end
 
-function J.GetAttackProDelayTime(bot, target)
+function J.GetAttackProDelayTime(bot, target, currentAttackOnly)
     if target == nil then return 0, 0, 0 end
 	local speed = GetAttackSpeedMultiplier(bot)
 	local attackPoint = bot:GetAttackPoint()
@@ -3643,9 +3643,12 @@ function J.GetAttackProDelayTime(bot, target)
     local wait = math.max(approach, recovery)
     local release = wait + windup
 
-	if approach == 0 and bot:GetAttackTarget() == target and J.IsAttacking(bot) then
-		release = math.max(0, attackPoint - bot:GetAnimCycle()) / speed
-        wait = 0
+	local windupLeft = approach == 0 and bot:GetAttackTarget() == target and J.IsAttacking(bot)
+		and (attackPoint - bot:GetAnimCycle()) / speed or 0
+	if windupLeft > 0 then
+		release, wait = windupLeft, 0
+	elseif currentAttackOnly then
+		return 0, 0, 0
     elseif approach == 0 and type(bot.IsFacingLocation) == 'function'
         and not bot:IsFacingLocation(target:GetLocation(), 45) then
         wait = math.max(wait, 0.08)
@@ -3674,7 +3677,7 @@ function J.GetCreepAttackActivityWillRealDamage( nUnit, nTime, laneTiming )
 	do
 		if laneTiming then
             if creep:CanBeSeen() and creep:GetAttackTarget() == nUnit and J.IsAttacking(creep) then
-                local impact, release = J.GetAttackProDelayTime(creep, nUnit)
+                local impact, release = J.GetAttackProDelayTime(creep, nUnit, true)
                 if release > 0 and impact < nTime - 0.033 then
                     nDamage = nDamage + LaneAttackDamage(creep, nUnit, creep:GetAttackDamage())
                 end
@@ -7147,7 +7150,7 @@ function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, 
 		return true
 	end
 	if not J.IsValidBuilding(tower) or landing == nil then return false end
-	local threat = J.GetOuterTowerThreat(tower, lane)
+	local threat = observed or J.GetOuterTowerThreat(tower, lane)
 	local home = J.GetTeleportHomeLane(bot)
 	local hub = tower:GetLocation()
 	local speed = math.max(bot:GetCurrentMovementSpeed(), 250)
@@ -7169,6 +7172,7 @@ function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, 
 	local incoming, covered = {}, 0
 	local limit = planned and threat.count >= 3 and 2 or 1
 	if planned and threat.middleGroup and threat.eta <= 8 then pressure, urgent = true, true end
+	if not pressure then return false, 'no-live-pressure' end
 	for _, tp in ipairs(GetIncomingTeleports()) do
 		if tp.playerid ~= nil and tp.playerid ~= bot:GetPlayerID() and tp.location ~= nil
 			and tp.time_remaining ~= nil and tp.time_remaining >= 0 and tp.time_remaining <= 5
@@ -8134,7 +8138,10 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 					local landing = J.GetHighGroundResponseTeleport(ally, hold, anchors)
 					if landing then
 						local tpETA = 4 + math.max(0, J.GetLocationToLocationDistance(landing, hold) - 550) / speed * 1.25
-						if tpETA < arrival and tpETA < deadline then arrival, teleport = tpETA, landing end
+						if tpETA < arrival and tpETA < deadline and (not J.IsInLaningPhase(ally)
+							or J.CanTakeLaneDefenseTeleport(ally, lane, landing, building, nil, true, nil, sight)) then
+							arrival, teleport = tpETA, landing
+						end
 					end
 				end
 				if arrival < 24 and (not demand.watch or safe and not tp and gap <= 750
@@ -9431,6 +9438,17 @@ function J.ShouldDisengageAtLostTower(bot, now)
 	return false
 end
 
+local function HasImmediateFightCover(bot, location, enemies)
+	for _, ally in ipairs(J.GetAlliesNearLoc(location, 1400)) do
+		if ally ~= bot and CanProvideFightContact(ally) then
+			for _, enemy in ipairs(enemies) do
+				if HasFightContact(ally, enemy, 120) then return true end
+			end
+		end
+	end
+	return false
+end
+
 function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local now = DotaTime()
 	if now < 0 or not bot:IsAlive() or bot:HasModifier('modifier_fountain_invulnerability') then return false end
@@ -9502,10 +9520,13 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	end
 	local losingDuel = empoweredAttacker ~= nil and backup == 0 and J.GetHP(bot) <= 0.8
 		and (J.GetHP(bot) < 0.5 or J.GetHP(empoweredAttacker) > 0.35)
-	local exposedRangedCore = now >= 8 * 60 and backup == 0 and total == 2 and #enemies == 2
+	local exposedRangedCore = now >= 8 * 60 and total == 2 and #enemies == 2
 		and J.IsCore(bot) and bot:GetAttackRange() >= 400
+		and (backup == 0 or J.GetHP(bot) <= 0.70
+			and not J.IsValidBuilding(bot:GetNearbyTowers(850, false)[1])
+			and not HasImmediateFightCover(bot, location, enemies))
 	local closing = 0
-	if now >= 8 * 60 and backup == 0 and close > 0 and (exposedRangedCore or (total >= 3 and close < 3)) then
+	if now >= 8 * 60 and close > 0 and (exposedRangedCore or backup == 0 and total >= 3 and close < 3) then
 		for _, enemy in ipairs(enemies) do
 			local distance = GetUnitToUnitDistance(bot, enemy)
 			if J.GetLocationToLocationDistance(enemy:GetExtrapolatedLocation(0.8), location) < distance - 90 then
@@ -9520,6 +9541,11 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 		local health = bot:GetHealth() + window * bot:GetHealthRegen()
 		-- Leave a margin for follow-up attacks while a reachable disable prevents escape.
 		losingGank = contacts >= 2 and damage >= health * (control and 0.80 or 1)
+		if losingGank and J.Customize and J.Customize.TraceLaneDecisions
+			and now - (bot.ohaReinforcementRetreatAt or -math.huge) > 1.25 then
+			print(string.format('[OHA retreat-exposure] %.2f player=%d health=%.0f damage=%.0f control=%s allies=%d',
+				now, bot:GetPlayerID(), health, damage, tostring(control), backup))
+		end
 	end
 	local isolated = now >= 8 * 60 and close >= 2 and total >= backup + 2
 		and (backup == 0 or J.GetHP(bot) < 0.7)
