@@ -98,6 +98,50 @@ local function PullWaveETA(bot, lane, location)
     return eta
 end
 
+local function WaveTravelTime(creep, lane, point, direction)
+    local position = creep:GetLocation()
+    local track = GetAmountAlongLane(lane, position)
+    if track.distance >= 250 then return nil end
+    local along = (GetAmountAlongLane(lane, point).amount - track.amount) * direction
+    return GetUnitToLocationDistance(creep, point) / math.max(250, creep:GetCurrentMovementSpeed())
+        * (along > 0 and 1 or -1)
+end
+
+local function PullWaveTail(bot, lane, point)
+    local direction = bot:GetTeam() == TEAM_RADIANT and 1 or -1
+    local wave = {}
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(1600, false)) do
+        if J.IsValid(creep) and creep:GetAttackTarget() == nil then
+            local eta = WaveTravelTime(creep, lane, point, direction)
+            if eta and eta > 0 and eta <= 6 then wave[#wave + 1] = {unit=creep, eta=eta} end
+        end
+    end
+    if #wave < 4 then return nil, false end
+    if #wave ~= 4 then return nil, true end -- do not drag a weak camp into a double wave
+    table.sort(wave, function(a, b) return a.eta < b.eta end)
+    if wave[3].eta - wave[2].eta < 0.55 or wave[4].eta - wave[3].eta > 0.70
+        or not (J.IsKeyWordUnit('_ranged', wave[3].unit) or J.IsKeyWordUnit('_ranged', wave[4].unit)) then
+        return nil, true
+    end
+    return wave, true
+end
+
+local function TailStillReachable(bot, plan, intercept)
+    local direction = bot:GetTeam() == TEAM_RADIANT and 1 or -1
+    for i, row in ipairs(plan.half) do
+        local creep = row.unit
+        if J.IsValid(creep) then
+            local eta = WaveTravelTime(creep, plan.lane, plan.goal, direction)
+            if i <= 2 then
+                if eta and eta > intercept - 0.45 then return false end
+            elseif not eta or creep:GetAttackTarget() ~= nil or eta < intercept - 0.35 or eta > intercept + 0.9 then
+                return false
+            end
+        elseif i >= 3 then return false end
+    end
+    return true
+end
+
 local function CanPullLane(bot, lane, tower, point)
     if not J.IsValidBuilding(tower) or #J.GetEnemiesNearLoc(tower:GetLocation(), 1250) >= 2
         or #J.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 1250) >= 2 then return false end
@@ -105,6 +149,11 @@ local function CanPullLane(bot, lane, tower, point)
     if not J.IsValidHero(ally) or not J.IsCore(ally) or ally:GetAssignedLane() ~= lane
         or J.GetHP(ally) < 0.62 or J.IsRetreating(ally) or ally:WasRecentlyDamagedByAnyHero(3)
         or GetUnitToLocationDistance(ally, point) > 3200 then return false end
+    local nearTower = 0
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(1600, true)) do
+        if J.IsValid(creep) and J.IsInRange(creep, tower, 1250) then nearTower = nearTower + 1 end
+    end
+    if nearTower >= 3 then return false end
     if J.CanLeaveLane(bot) then return true end
     -- A short pull is not a long roam. When the pushed-out front is occupied,
     -- leave only if the core has no visible or recently seen enemy on top of it.
@@ -114,7 +163,7 @@ local function CanPullLane(bot, lane, tower, point)
         and #J.GetLastSeenEnemiesNearLoc(anchor, 1150) == 0
 end
 
-local function PlanPull(bot, camp, lane, lanePoint, neutral)
+local function PlanPull(bot, camp, lane, lanePoint, neutral, campCreeps)
     local team = bot:GetTeam()
     local safeLane = team == TEAM_RADIANT and LANE_BOT or LANE_TOP
     local cross = J.GetLocationToLocationDistance(camp.location, lanePoint)
@@ -134,12 +183,18 @@ local function PlanPull(bot, camp, lane, lanePoint, neutral)
     local eta = PullWaveETA(bot, lane, lanePoint)
     local impact, travel = PullIntercept(bot, neutral, lanePoint)
     local intercept = impact + travel
+    local half, observed
+    if #campCreeps <= 3 then
+        half, observed = PullWaveTail(bot, lane, lanePoint)
+        if observed and not half then return end
+        if half then eta = half[3].eta end
+    end
     if eta and eta >= intercept - 0.9 and eta <= intercept + 2.4 then
         local _, release = J.GetAttackProDelayTime(bot, neutral)
         local approach = math.max(0, GetUnitToUnitDistance(bot, neutral) - bot:GetAttackRange())
             / math.max(1, bot:GetCurrentMovementSpeed())
         return {kind = 'pull', camp = camp, goal = lanePoint, lane = lane, tower = tower,
-            target = neutral, expires = DotaTime() + eta + 4,
+            target = neutral, half = half, expires = DotaTime() + eta + 4,
             impact = math.max(0.25, impact - (release or 0)),
             attackAt = DotaTime() + math.max(0, eta - (impact - approach) - travel - 0.1)}
     end
@@ -199,7 +254,7 @@ function Camp.Plan(bot, lane)
                     if dist < nearest and J.CanBeAttacked(creep) then neutral, nearest = creep, dist end
                 end
                 if neutral then
-                    local plan = PlanPull(bot, camp, lane, point, neutral)
+                    local plan = PlanPull(bot, camp, lane, point, neutral, creeps)
                     if not plan and J.CanLeaveLane(bot) then plan = PlanStack(bot, camp, point, distance) end
                     local score = distance - (plan and plan.kind == 'pull' and 500 or 0)
                     if plan and (bestScore == nil or score < bestScore) then
@@ -239,13 +294,22 @@ function Camp.Think(bot, plan)
             bot:Action_MoveToLocation(plan.camp.location)
         elseif plan.attackAt == nil or now >= plan.attackAt then
             if plan.kind == 'pull' then
-                local eta = PullWaveETA(bot, plan.lane, plan.goal)
                 local impact, travel = PullIntercept(bot, target, plan.goal)
-                if not eta or eta < impact + travel - 0.9 or eta > impact + travel + 2.4 then
-                    Camp.Cancel(bot, 'intercept-window')
-                    return false
+                local intercept = impact + travel
+                if plan.half then
+                    if not TailStillReachable(bot, plan, intercept) then
+                        Camp.Cancel(bot, 'half-pull-window')
+                        return false
+                    end
+                    TracePull(bot, plan, 'attack-order', string.format('half intercept=%.2f', intercept))
+                else
+                    local eta = PullWaveETA(bot, plan.lane, plan.goal)
+                    if not eta or eta < intercept - 0.9 or eta > intercept + 2.4 then
+                        Camp.Cancel(bot, 'intercept-window')
+                        return false
+                    end
+                    TracePull(bot, plan, 'attack-order', string.format('eta=%.2f intercept=%.2f', eta, intercept))
                 end
-                TracePull(bot, plan, 'attack-order', string.format('eta=%.2f intercept=%.2f', eta, impact + travel))
             end
             local _, release = J.GetAttackProDelayTime(bot, target)
             plan.attackTime, plan.drawAt = bot:GetLastAttackTime(), now + math.min(1, (release or 0.3) + 0.25)
@@ -271,19 +335,26 @@ function Camp.Think(bot, plan)
         TracePull(bot, plan, 'aggro')
     end
     if plan.kind == 'pull' then
-        local count = 0
+        local count, caughtTail = 0, 0
         for _, laneCreep in ipairs(bot:GetNearbyLaneCreeps(1600, false)) do
             if J.IsValid(laneCreep) and laneCreep:GetTeam() == bot:GetTeam()
                 and GetUnitToLocationDistance(laneCreep, plan.goal) <= 650 then
                 for _, creep in ipairs(plan.creeps) do
                     if J.IsValid(creep) and (creep:GetAttackTarget() == laneCreep
-                        or laneCreep:GetAttackTarget() == creep) then count = count + 1; break end
+                        or laneCreep:GetAttackTarget() == creep) then
+                        count = count + 1
+                        if plan.half and (laneCreep == plan.half[3].unit or laneCreep == plan.half[4].unit) then
+                            caughtTail = caughtTail + 1
+                        end
+                        break
+                    end
                 end
             end
         end
         if count >= 2 then
-            bot.ohaLastConfirmedPull = {time = now, lane = plan.lane, caught = count}
-            TracePull(bot, plan, 'confirmed', 'caught=' .. count)
+            local half = count == 2 and caughtTail == 2
+            bot.ohaLastConfirmedPull = {time = now, lane = plan.lane, caught = count, half = half}
+            TracePull(bot, plan, 'confirmed', string.format('caught=%d tail=%d', count, caughtTail))
             Camp.Cancel(bot, 'confirmed')
             bot.ohaNextCampWork = now + 25
             return false

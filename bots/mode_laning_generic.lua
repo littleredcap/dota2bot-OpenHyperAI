@@ -81,6 +81,7 @@ end
 
 function GetDesire()
 	campPlan = nil
+	J.ObserveSideLaneCreepDrag(bot)
 	PickOneAnnouncer()
 	AnnounceMessages()
 

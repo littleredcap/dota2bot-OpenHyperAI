@@ -11,6 +11,7 @@ local function fixture(stack, mirrored)
     local function unit(x, y, team)
         return {x = x, y = y, IsCreep = yes, IsAlive = yes,
             GetLocation = function(self) return self end, GetTeam = function() return team end,
+            GetUnitName = function(self) return self.name or '' end,
             GetCurrentMovementSpeed = function() return 300 end,
             GetAttackTarget = function(self) return self.target end}
     end
@@ -32,7 +33,11 @@ local function fixture(stack, mirrored)
     support.GetAttackRange = function() return 450 end
     support.WasRecentlyDamagedByAnyHero = no
     support.GetNearbyNeutralCreeps = function() return state.neutrals end
-    support.GetNearbyLaneCreeps = function(_, _, hostile) return not stack and not hostile and state.wave or {} end
+    support.GetNearbyLaneCreeps = function(_, _, hostile)
+        if hostile then return state.enemyWave or {} end
+        return not stack and state.wave or {}
+    end
+    state.laneUnit = function(x, enemy) return unit(sign * x, 0, enemy and foe or own) end
     support.GetLastAttackTime = function() return state.lastShot end
     support.Action_AttackUnit = function(_, target) state.orders[#state.orders + 1] = {attack = target} end
     support.Action_MoveToLocation = function(_, loc) state.orders[#state.orders + 1] = {move = loc} end
@@ -40,7 +45,8 @@ local function fixture(stack, mirrored)
     local j = {
         GetPosition = function(unit) return unit == support and 5 or 1 end,
         IsCore = function(unit) return unit == carry end, GetHP = function() return 0.9 end,
-        IsRetreating = no, IsGoingOnSomeone = no, IsKeyWordUnit = no, CanBeAttacked = yes,
+        IsRetreating = no, IsGoingOnSomeone = no, CanBeAttacked = yes,
+        IsKeyWordUnit = function(word, creep) return creep:GetUnitName():find(word, 1, true) ~= nil end,
         IsValid = function(unit) return unit ~= nil and not unit.dead end,
         IsValidBuilding = function(unit) return unit == tower end,
         HasItem = function(_, name) return not state.noFarmer and name == 'item_maelstrom' end,
@@ -178,3 +184,30 @@ do
 end
 
 print('PASS: lane pull interception, camp claims, attack windup, stack confirmation and farm owner')
+
+for _, mirrored in ipairs({false, true}) do
+    local state, support, _, neutral, _, mode = fixture(false, mirrored)
+    local lane, direction = mirrored and 1 or 3, mirrored and -1 or 1
+    state.wave = {state.laneUnit(410), state.laneUnit(380), state.laneUnit(170), state.laneUnit(110)}
+    state.wave[4].name = 'npc_dota_creep_ranged'
+    state.enemyWave = {state.laneUnit(1000, true), state.laneUnit(1050, true), state.laneUnit(1120, true)}
+    assert(not mode.Plan(support, lane), 'keep the support with a sizeable incoming enemy wave')
+    state.enemyWave = {}
+    local plan = assert(mode.Plan(support, lane))
+    assert(plan.half and plan.half[4].unit == state.wave[4], 'aim for only the tail of a full wave with an ordinary small camp')
+    local travel = 300 * (plan.attackAt - state.now)
+    for _, creep in ipairs(state.wave) do creep.x = creep.x + direction * travel end
+    state.now = plan.attackAt
+    assert(mode.Think(support, plan) and state.orders[1].attack == neutral, 'launch on the trailing pair')
+    neutral.target = support
+    state.wave[3].x, state.wave[4].x = direction * 780, direction * 750
+    state.wave[3].target, state.wave[4].target = neutral, neutral
+    assert(not mode.Think(support, plan) and support.ohaLastConfirmedPull.half, 'verify the actual lane-creep contact')
+end
+
+do
+    local state, support, _, _, _, mode = fixture(false)
+    state.wave = {state.laneUnit(200), state.laneUnit(190), state.laneUnit(180), state.laneUnit(170)}
+    state.wave[4].name = 'npc_dota_creep_ranged'
+    assert(not mode.Plan(support, 3), 'an unseparated full wave would feed an ordinary small camp surviving creeps')
+end

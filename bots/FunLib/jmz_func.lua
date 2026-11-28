@@ -1823,7 +1823,16 @@ function J.CanSpendLaneTradeTime(bot, tower, enemies, seconds)
     local reach = math.min(1600, bot:GetAttackRange() + (J.IsCore(bot) and 425 or 120))
     local hit, approach, reserve, urgent = J.GetLaningLastHitTarget(bot,
         bot:GetNearbyLaneCreeps(reach, true), tower, J.GetLaningAttackDamage(bot), enemies, false, seconds + 0.12)
-    return not reserve and (not hit or approach and not urgent)
+    if reserve or hit and (not approach or urgent) then return false end
+    local valuable = {}
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(bot:GetAttackRange() + 50, false)) do
+        if J.IsValid(creep) and (J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep)) then
+            valuable[#valuable + 1] = creep
+        end
+    end
+    if #valuable == 0 then return true end
+    local deny, soon = J.GetLaningDenyTarget(bot, valuable, tower, enemies)
+    return deny == nil and not soon
 end
 
 -- Use visible, usable inventory only. The values weight the next exchange,
@@ -1888,6 +1897,17 @@ function J.GetTowerCoveredLaneClash(bot)
     return tower, GetVisibleLaneClash(bot, tower)
 end
 
+local function LaneTradeCreepHarm(bot, seconds, drawsCreeps)
+    local harm = J.GetCreepAttackProjectileWillRealDamage(bot, seconds, true)
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(650, true)) do
+        if J.IsValid(creep) and (creep:GetAttackTarget() == bot
+            or drawsCreeps and J.IsInRange(bot, creep, J.IsKeyWordUnit('_ranged', creep) and 600 or 500)) then
+            harm = harm + LaneAttackDamage(creep, bot, creep:GetAttackDamage())
+        end
+    end
+    return harm
+end
+
 function J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, actionTime, drawsCreeps)
     if J.GetHP(bot) < 0.60 or J.IsRetreating(bot) or #enemies > 2
         or GetUnitToLocationDistance(bot, clash) > 720
@@ -1899,12 +1919,7 @@ function J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, ac
     local exitTime = math.max(0, GetUnitToUnitDistance(bot, tower) - 500) / math.max(1, bot:GetCurrentMovementSpeed())
     local seconds = math.min(3.0, 0.8 + actionTime + exitTime)
     local harm = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), seconds)
-        + J.GetCreepAttackProjectileWillRealDamage(bot, seconds, true)
-    for _, creep in ipairs(bot:GetNearbyLaneCreeps(500, true)) do
-        if J.IsValid(creep) and (drawsCreeps or creep:GetAttackTarget() == bot) then
-            harm = harm + LaneAttackDamage(creep, bot, creep:GetAttackDamage())
-        end
-    end
+        + LaneTradeCreepHarm(bot, seconds, drawsCreeps)
     local recovery = GetLaneRecoveryBudget(bot)
     local reserve = recovery < 40 and J.GetHP(bot) < 0.76 and 0.26 or 0.35
     return harm < bot:GetHealth() * reserve
@@ -1956,7 +1971,7 @@ function J.GetCoveredRangedLaneShot(bot, enemies, tower)
     local recovery = GetLaneRecoveryBudget(bot)
     local fraction = recovery < 40 and 0.18 or 0.25
     if J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 1.4)
-        + J.GetCreepAttackProjectileWillRealDamage(bot, 1.4, true) >= bot:GetHealth() * fraction then return nil end
+        + LaneTradeCreepHarm(bot, 1.4, true) >= bot:GetHealth() * fraction then return nil end
     if J.CanSpendLaneTradeTime(bot, tower, enemies, bot:GetSecondsPerAttack()) then return target, clash end
 end
 
@@ -1964,23 +1979,28 @@ end
 -- reaches the enemy hero. The normal last-hit planner takes over afterwards.
 function J.GetSideLaneCreepDrag(bot, enemies, tower)
     local lane, now = bot:GetAssignedLane(), DotaTime()
-    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 40 or now > 600
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 25 or now > 600
         or not J.IsInLaningPhase(bot) or bot:GetAttackRange() >= 280 or not J.IsCore(bot)
-        or J.GetHP(bot) < 0.62 or J.IsRetreating(bot) or bot:WasRecentlyDamagedByAnyHero(2)
+        or J.GetHP(bot) < 0.55 or J.IsRetreating(bot)
         or (bot.ohaCreepDragNext or 0) > now then return nil end
     local origin = bot:GetLocation()
+    local towerId = lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1
+    local homeTower = GetTower(bot:GetTeam(), towerId)
     if not J.IsValidBuilding(tower) then
-        tower = GetTower(GetOpposingTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+        tower = GetTower(GetOpposingTeam(), towerId)
     end
     if J.IsValidBuilding(tower) and J.IsInRange(bot, tower, 1120) then return nil end
-    local eligible = 0
+    local eligible = {}
     for _, creep in ipairs(bot:GetNearbyLaneCreeps(500, true)) do
         if J.IsValid(creep) and string.find(creep:GetUnitName(), '_melee', 1, true)
-            and not J.IsInRange(bot, creep, bot:GetAttackRange() + 50) then eligible = eligible + 1 end
+            and creep:GetAttackTarget() ~= bot
+            and not J.IsInRange(bot, creep, bot:GetAttackRange() + 50) then eligible[#eligible + 1] = creep end
     end
-    if eligible < 2 then return nil end
+    if #eligible < 2 then return nil end
 
     local point = J.AdjustLocationWithOffsetTowardsFountain(origin, 330)
+    if J.IsValidBuilding(homeTower) and J.IsInRange(bot, homeTower, 950)
+        and GetUnitToLocationDistance(homeTower, point) <= 650 then return nil end
     if not IsLocationPassable(point) or #J.GetEnemiesNearLoc(point, 660) > 0
         or #J.GetLastSeenEnemiesNearLoc(point, 660) > 0 then return nil end
     local covered = false
@@ -1988,12 +2008,34 @@ function J.GetSideLaneCreepDrag(bot, enemies, tower)
         if J.IsValid(creep) and GetUnitToLocationDistance(creep, point) <= 360 then covered = true; break end
     end
     if not covered then return nil end
+    local exposed = not J.IsValidBuilding(homeTower) or not J.IsInRange(bot, homeTower, 1050)
+    local delicate = J.GetHP(bot) < 0.62 or bot:WasRecentlyDamagedByAnyHero(2)
+    if delicate and not exposed then return nil end
+    local limit = bot:GetHealth() * (delicate and 0.14 or 0.28)
+    if J.GetVisibleThreatAt(bot, enemies, origin, 0.8) >= limit
+        or J.GetVisibleThreatAt(bot, enemies, point, 1.4) >= limit then return nil end
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy)
             and J.CanBeAttacked(enemy) and not enemy:IsInvulnerable()
             and not J.IsInRange(bot, enemy, math.max(480, bot:GetAttackRange() + 250))
-            and J.IsInRange(bot, enemy, 1250) then return enemy, point end
+            and J.IsInRange(bot, enemy, 1250) then return enemy, point, eligible end
     end
+end
+
+function J.ObserveSideLaneCreepDrag(bot)
+    local drag = bot.ohaLaneDragSample
+    if not drag then return end
+    local following, now = 0, DotaTime()
+    for _, before in ipairs(drag.creeps) do
+        local creep = before.unit
+        if J.IsValid(creep) and creep:GetAttackTarget() == bot
+            and GetUnitToLocationDistance(creep, drag.point) + 70 <= before.distance then following = following + 1 end
+    end
+    if following == 0 and now < drag.expires then return end
+    if J.Customize and J.Customize.TraceLaneDecisions then
+        print(string.format('[OHA lane-drag] %.2f player=%d attempt=%.2f following=%d', now, bot:GetPlayerID(), drag.started, following))
+    end
+    bot.ohaLaneDragSample = nil
 end
 
 function J.RunSideLaneCreepDrag(bot, enemies, tower, noStart)
@@ -2011,9 +2053,14 @@ function J.RunSideLaneCreepDrag(bot, enemies, tower, noStart)
         return true
     end
     if noStart then return false end
-    local enemy, point = J.GetSideLaneCreepDrag(bot, enemies, tower)
+    local enemy, point, creeps = J.GetSideLaneCreepDrag(bot, enemies, tower)
     if not enemy then return false end
     bot.ohaCreepDrag, bot.ohaCreepDragExpires, bot.ohaCreepDragNext = point, now + 0.35, now + 5
+    local sample = {point=point, started=now, expires=now + 1.8, creeps={}}
+    for _, creep in ipairs(creeps) do
+        sample.creeps[#sample.creeps + 1] = {unit=creep, distance=GetUnitToLocationDistance(creep, point)}
+    end
+    bot.ohaLaneDragSample = sample
     bot:Action_AttackUnit(enemy, true)
     return true
 end

@@ -1,7 +1,7 @@
 local function yes() return true end
 local function no() return false end
 local function none() return {} end
-local now, danger, orders = 510, false, {}
+local now, danger, orders, threat = 510, false, {}, 0
 local bot, core, foe, second, tower = {x=0,hp=0.33}, {x=200,hp=0.85}, {x=690}, {x=710}, {x=1650}
 local me1, me2, friend = {x=370,name='npc_dota_creep_badguys_melee'}, {x=420,name='npc_dota_creep_badguys_melee'}, {x=-330}
 local visible, allies = {foe,second}, {core}
@@ -16,6 +16,8 @@ for _, u in ipairs({bot,core,foe,second,tower,me1,me2,friend}) do
     u.IsInvulnerable, u.IsChanneling = no, no
 end
 bot.GetAssignedLane=function(self) return self.lane or 3 end
+bot.GetTeam=function() return 2 end
+bot.GetHealth=function(self) return self.hp * 1000 end
 bot.GetNearbyLaneCreeps=function(_,_,hostile) return hostile and creeps or {friend} end
 bot.WasRecentlyDamagedByAnyHero=no
 bot.Action_AttackUnit=function(_, unit, once) assert(once); orders[#orders+1]={'attack',unit} end
@@ -30,6 +32,7 @@ local j = {
     GetLastSeenEnemiesNearLoc=none, IsValidBuilding=function(a) return a==tower end, IsInLaningPhase=yes,
     IsCore=function(u) return u==bot or u==core end, IsValid=function(u) return u~=nil end,
     AdjustLocationWithOffsetTowardsFountain=function(point,d) return point-d end, IsLaningUnderPressure=no,
+    GetVisibleThreatAt=function() return threat end,
 }
 local f=assert(io.open('bots/FunLib/jmz_func.lua','rb'))
 local source=f:read('*a'); f:close()
@@ -64,12 +67,35 @@ assert(j.RunSideLaneCreepDrag(bot,{foe},nil,false) and orders[1][1]=='attack','o
 now=now+0.1
 assert(j.RunSideLaneCreepDrag(bot,{foe},nil,true) and orders[2][1]=='move' and orders[2][2]==-330,
     'cancel on the next tick by moving back, never chase')
+j.ObserveSideLaneCreepDrag(bot)
+assert(bot.ohaLaneDragSample, 'an order by itself does not count as a pull')
+me1.target, me1.x = bot, 295
+j.ObserveSideLaneCreepDrag(bot)
+assert(not bot.ohaLaneDragSample, 'observe a creep targeting the core and actually moving toward the retreat point')
+me1.target, me1.x = nil, 370
 assert(not j.RunSideLaneCreepDrag(bot,{foe},nil,false),'do not spam aggro')
 now=now+6
 assert(not j.RunSideLaneCreepDrag(bot,{foe}, {x=200},true),'a cancel-only pass must not start an attack')
 assert(j.RunSideLaneCreepDrag(bot,{foe},nil,false))
 danger=true
 assert(j.RunSideLaneCreepDrag(bot,{foe},nil,true) and orders[#orders][1]=='clear','cancel if the retreat becomes unsafe')
+danger, bot.hp, threat, now = false, 0.57, 60, now + 6
+bot.WasRecentlyDamagedByAnyHero = yes
+assert(j.GetSideLaneCreepDrag(bot,{foe},nil), 'a displaced wounded core can drag toward safety if retaliation is small')
+threat = 90
+assert(not j.GetSideLaneCreepDrag(bot,{foe},nil), 'a healthy retreat route alone cannot justify dangerous initial exposure')
+bot.WasRecentlyDamagedByAnyHero = no
+local home = {x=-400}
+local isBuilding, getTower = j.IsValidBuilding, env.GetTower
+env.TOWER_BOT_1 = 22
+j.IsValidBuilding = function(unit) return unit == home or isBuilding(unit) end
+env.GetTower = function(team, id)
+    if team == 2 and id == 22 then return home end
+    return getTower(team, id)
+end
+bot.hp, threat = 0.9, 0
+assert(not j.GetSideLaneCreepDrag(bot,{foe},nil), 'keep a stable wave outside the allied tower')
+j.IsValidBuilding, env.GetTower = isBuilding, getTower
 extract('function J.GetTeamFightLocation','function J.CanJoinObservedFightByTeleport')
 env.GetTeam = function() return 2 end
 env.GetTeamPlayers = function() return {1,2} end

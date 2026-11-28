@@ -47,6 +47,14 @@ local function almostOutOfTangos(bot, held)
     return charges == 1 or charges == 0 and bot:HasModifier('modifier_tango_heal')
 end
 
+local function safeCourierLeg(start, finish)
+    for _, part in ipairs({0.25, 0.5, 0.75}) do
+        local point = (start * (1 - part)) + (finish * part)
+        if #J.GetLastSeenEnemiesNearLoc(point, 850) > 0 or #J.GetEnemiesNearLoc(point, 850) > 0 then return false end
+    end
+    return true
+end
+
 local function deliveryTime(bot, courier, aboard, tower)
     if not courier or courier:IsNull() or not courier:IsAlive() or J.GetHP(courier) < 0.9
         or (bot.ohaCourierUnsafeUntil or 0) > DotaTime() or bot.SShopUser then return nil end
@@ -58,10 +66,11 @@ local function deliveryTime(bot, courier, aboard, tower)
     local start = courier:GetLocation()
     if not aboard then
         distance = courier:DistanceFromFountain() + bot:DistanceFromFountain()
-        start = J.GetTeamFountain()
+        local fountain = J.GetTeamFountain()
+        if courier:DistanceFromFountain() > 800 and not safeCourierLeg(start, fountain) then return nil end
+        start = fountain
     end
-    local midpoint = (start + destination) / 2
-    if #J.GetLastSeenEnemiesNearLoc(midpoint, 850) > 0 or #J.GetEnemiesNearLoc(midpoint, 850) > 0 then return nil end
+    if not safeCourierLeg(start, destination) then return nil end
     local enemies = J.GetEnemiesNearLoc(destination, 900)
     if #enemies > 0 and (not J.IsInRange(bot, tower, 1050) or #J.GetHeroesTargetingUnit(enemies, bot) > 0) then return nil end
     return 2 + 1.15 * distance / math.max(1, courier:GetCurrentMovementSpeed())

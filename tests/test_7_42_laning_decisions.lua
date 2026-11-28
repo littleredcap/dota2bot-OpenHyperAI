@@ -16,7 +16,8 @@ local function fixture(core, overridden, startMid)
     local creep = {x = 200, GetHealth = function() return state.creepHP end,
         GetTeam = function() return 3 end, GetUnitName = function() return 'npc_dota_creep_badguys_melee' end,
         GetLocation = function() return 200 end, GetHealthRegen = function() return 0 end, GetIncomingTrackingProjectiles = empty,
-        GetActualIncomingDamage = function(_, damage) return damage end, IsCreep = yes}
+        GetActualIncomingDamage = function(_, damage) return damage end, IsCreep = yes,
+        GetAttackTarget = function() return nil end, GetAttackDamage = function() return state.creepAttackDamage or 0 end}
     local partner = {x = 260, IsAlive = function() return not state.partnerDead end,
         DistanceFromFountain = function() return state.partnerAtBase and 0 or 6000 end,
         HasModifier = function(_, m) return m == 'modifier_teleporting' and state.partnerTP end,
@@ -1175,4 +1176,17 @@ do
     assert(j.GetCoveredRangedLaneShot(bot, {enemy}, nil) == enemy, 'a free ranged hit at a real clash also works outside tower cover')
     enemy.x = 490
     assert(not j.GetCoveredRangedLaneShot(bot, {enemy}, nil), 'do not walk into range for the optional hit')
+    enemy.x = 415
+    creep.GetAttackDamage, state.creepProjectiles = function() return 80 end, 55
+    assert(not j.GetCoveredRangedLaneShot(bot, {enemy}, nil), 'account for creeps that could attack after the new order')
+end
+
+do
+    local state, mode, creep, _, bot = fixture(false, false)
+    local ranged = setmetatable({x=320, GetHealth=function() return 30 end,
+        GetTeam=function() return 2 end, GetUnitName=function() return 'npc_dota_creep_goodguys_ranged' end}, {__index=creep})
+    state.creepHP, state.allies, state.deniable = 240, {ranged}, true
+    assert(not mode.J.CanSpendLaneTradeTime(bot, nil, {}, 0.3), 'do not spend a free cast over a valuable deny')
+    ranged.GetHealth = function() return 100 end
+    assert(mode.J.CanSpendLaneTradeTime(bot, nil, {}, 0.3), 'still allow the cast when no deny is opening')
 end

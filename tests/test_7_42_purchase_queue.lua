@@ -272,7 +272,8 @@ local function laneFixture(o, plan)
     j.AdjustLocationWithOffsetTowardsFountain = function(x, distance) return x - distance end
     j.GetEnemiesNearLoc = empty
     j.GetLastSeenEnemiesNearLoc = function(x)
-        return o.routeThreat and math.abs(x - 3000) < 200 and {true} or {}
+        return (o.routeThreat or o.routeThreatAt)
+            and math.abs(x - (o.routeThreatAt or 3000)) < 200 and {true} or {}
     end
     j.GetHP = function(unit) return unit:GetHealth() / unit:GetMaxHealth() end
     j.GetMP = function(unit) return unit:GetMana() / unit:GetMaxMana() end
@@ -401,6 +402,8 @@ expectPurchase({gold = 650}, 'item_flask', 'surplus gold can cover both', {'item
 expectPurchase({gold = 450}, 'item_tango', 'respect the already planned consumable', {'item_tango'})
 expectPurchase({dead = true}, nil, 'no courier is available')
 expectPurchase({routeThreat = true}, nil, 'avoid a threatened courier route')
+expectPurchase({routeThreatAt = 4500}, nil, 'avoid an enemy near the last quarter of the delivery')
+expectPurchase({courierAt = 3600, routeThreatAt = 900}, nil, 'also check the courier leg to collect the stash')
 expectPurchase({dived = true}, nil, 'the hero has to retreat')
 expectPurchase({fight = true}, nil, 'waiting for a parcel must not displace a teamfight')
 expectPurchase({hp = 0.28}, nil, 'a critically injured hero cannot wait')
