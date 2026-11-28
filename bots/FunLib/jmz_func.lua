@@ -7970,7 +7970,7 @@ function J.ShouldKeepLaningWave(bot, targetLane, threat)
 end
 
 local function GetWaveClearScore(hero, travelTime)
-	local best, bestReach, bestDamage, bestImpact = 0, 0, 0, math.huge
+	local best, bestReach, bestDamage, bestImpact, bestCastRange = 0, 0, 0, math.huge, 0
 	for slot = 0, 8 do
 		local ability = hero:GetAbilityInSlot(slot)
 		if J.CanCastAbilitySoon(ability, travelTime + 3) and not ability:IsUltimate()
@@ -7985,7 +7985,8 @@ local function GetWaveClearScore(hero, travelTime)
 			local behavior = ability:GetBehavior()
 			local needsTarget = J.Utils.AbilityBehaviorHasFlag(behavior, ABILITY_BEHAVIOR_UNIT_TARGET)
 				and not J.Utils.AbilityBehaviorHasFlag(behavior, ABILITY_BEHAVIOR_POINT)
-			local reach = ability:GetCastRange() + (needsTarget and 0 or radius)
+			local castRange = ability:GetCastRange()
+			local reach = castRange + (needsTarget and 0 or radius)
 			if radius >= 100 and damage >= 60 and reach >= 600 and (shrapnel == 0 or ability:IsFullyCastable()) then
 				local score = math.sqrt(damage * radius) + math.min(reach, 1400) * 0.25
 					- 12 * math.max(0, ability:GetCooldownTimeRemaining() - travelTime)
@@ -7995,11 +7996,12 @@ local function GetWaveClearScore(hero, travelTime)
 				score = score - impact * 18
 				if score > best then
 					best, bestReach, bestDamage, bestImpact = score, reach, damage * math.min(1, radius / 250), impact
+					bestCastRange = castRange
 				end
 			end
 		end
 	end
-	return best, bestReach, bestDamage, bestImpact
+	return best, bestReach, bestDamage, bestImpact, bestCastRange
 end
 
 -- A rear rally is a safe place to assemble. Once the visible wave hits a
@@ -9185,6 +9187,31 @@ function J.GetTowerDefenseTarget(bot)
 		and J.IsInRange(state.waveClearTower, state.waveClearTarget, 950) then return state.waveClearTarget end
 end
 
+local function GetOuterTowerSpellStep(bot, tower, threat)
+	local wave = threat.clearAt
+	if not threat.underAttack or not wave or (threat.waveSize or 0) < 2
+		or not IsLocationVisible(wave) or J.GetHP(bot) < 0.60 or bot:IsSilenced()
+		or J.IsDisabled(bot) or bot:IsRooted() or bot:WasRecentlyDamagedByAnyHero(2) then return nil end
+	local _, _, damage, impact, castRange = GetWaveClearScore(bot, 0)
+	if damage == 0 or castRange < 425 or impact > 1.25 then return nil end
+	-- The spell's effect radius helps the assignment score, but the cast
+	-- still needs a target point within the actual cast range.
+	local distance = GetUnitToLocationDistance(bot, wave) - castRange
+	if distance <= 0 or distance > 245 then return nil end
+	local origin = bot:GetLocation()
+	local point = J.VectorTowards(origin, wave, distance + 25)
+	local mid = J.VectorTowards(origin, point, (distance + 25) * 0.5)
+	local fountain = J.GetTeamFountain()
+	if GetUnitToLocationDistance(tower, point) > 850
+		or J.GetLocationToLocationDistance(point, fountain) > GetUnitToLocationDistance(tower, fountain) + 100
+		or not IsLocationVisible(point) or not IsLocationPassable(point) or not IsLocationPassable(mid)
+		or J.GetAvailableFightAllies(bot, point, 900) == 0
+		or not J.CanCommitToLaneTeleport(bot, point, true, 700)
+		or not J.CanCommitToLaneTeleport(bot, mid, true, 700)
+		or J.GetVisibleThreatAt(bot, threat.enemies, point, 1.6) >= bot:GetHealth() * 0.22 then return nil end
+	return point
+end
+
 function J.RunOuterTowerContest(bot, tower, threat, state)
 	state.waveClearTarget = nil
 	if bot:IsUsingAbility() or bot:IsCastingAbility() or bot:IsChanneling() then return false end
@@ -9245,6 +9272,14 @@ function J.RunOuterTowerContest(bot, tower, threat, state)
 		and (#J.GetEnemiesNearLoc(bot:GetLocation(), 800) >= 2 or J.GetHP(bot) < 0.5) then
 		bot:Action_MoveToLocation(J.AdjustLocationWithOffsetTowardsFountain(hub, 1200))
 		return true
+	end
+	if not state.waveClearCover then
+		local point = GetOuterTowerSpellStep(bot, tower, threat)
+		if point then
+			state.waveClearSpellUntil = DotaTime() + 1.4
+			bot:Action_MoveToLocation(point)
+			return true
+		end
 	end
 	local hold = gather
 	if state.waveClearScreen and not state.waveClearCover then

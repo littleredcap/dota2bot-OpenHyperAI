@@ -275,7 +275,9 @@ function X.ConsiderBreatheFire()
 	local fManaThreshold1 = J.GetManaThreshold(bot, nManaCost, {BreatheFire, DragonTail, Fireball, ElderDragonForm})
 	local fManaThreshold2 = J.GetManaThreshold(bot, nManaCost, {DragonTail, ElderDragonForm})
 	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
-	if holdTower ~= nil and fManaAfter > fManaThreshold2 then
+	local stagedClear = holdTower ~= nil and bot._defend and bot._defend.waveClearTower == holdTower
+		and (bot._defend.waveClearSpellUntil or 0) > DotaTime()
+	if holdTower ~= nil and (fManaAfter > fManaThreshold2 or stagedClear) then
 		local wave = bot:FindAoELocation(true, false, bot:GetLocation(), nCastRange, nRadius, nCastPoint, 0)
 		if wave and wave.targetloc and (wave.count or 0) >= 2
 			and GetUnitToLocationDistance(holdTower, wave.targetloc) <= 1050
@@ -288,7 +290,8 @@ function X.ConsiderBreatheFire()
 				return BOT_ACTION_DESIRE_HIGH, creep:GetLocation()
 			end
 		end
-		local poke = J.GetMidDefensePokeTarget and J.GetMidDefensePokeTarget(bot, nCastRange - 35)
+		local poke = fManaAfter > fManaThreshold2 and J.GetMidDefensePokeTarget
+			and J.GetMidDefensePokeTarget(bot, nCastRange - 35)
 		if poke and J.CanCastOnNonMagicImmune(poke) then
 			return BOT_ACTION_DESIRE_HIGH, poke:GetLocation()
 		end

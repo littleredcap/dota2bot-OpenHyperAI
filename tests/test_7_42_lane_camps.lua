@@ -75,7 +75,8 @@ local function fixture(stack, mirrored)
         GetScriptDirectory = function() return 'bots' end,
         require = function() return j end,
         DotaTime = function() return state.now end,
-        GetNeutralSpawners = function() return {camp} end, IsLocationVisible = function() return not state.hidden end,
+        GetNeutralSpawners = function() return {camp} end,
+        IsLocationVisible = function(loc) return not state.hidden and not (state.campFog and loc == camp.location) end,
         GetUnitList = function() return not stack and state.wave or {} end, UNIT_LIST_ALLIED_CREEPS = 1,
         GetUnitToLocationDistance = distance, IsLocationPassable = yes,
         GetAmountAlongLane = function(_, loc) return {amount = loc.x / 10000, distance = math.abs(loc.y)} end,
@@ -105,6 +106,22 @@ do
     state.camp.type, state.camp.team = 'large', 3
     wave.x, state.wave[2].x = 200, 170
     assert(mode.Plan(support, 1), 'offlane can use a clear route from a non-ancient hard camp')
+end
+
+do
+    local state, support, _, neutral, _, mode = fixture(false)
+    state.campFog, state.neutrals, support.y = true, {}, -110
+    local probe = assert(mode.Plan(support, 3))
+    assert(probe.kind == 'probe' and probe.target == nil and distance(support, probe.goal) <= 360,
+        'check the near side of a pull camp without assuming a neutral is alive')
+    assert(mode.Think(support, probe) and state.orders[1].move == probe.goal and state.orders[1].attack == nil,
+        'scouting issues only a short move')
+    state.campFog, state.neutrals = false, {neutral}
+    support.x, support.y = probe.goal.x, probe.goal.y
+    local pull = assert(mode.Plan(support, 3))
+    assert(pull.kind == 'pull' and pull.target == neutral, 're-evaluate the actual wave and newly visible camp')
+    state.campFog, state.campInvaded = true, true
+    assert(not mode.Plan(support, 3), 'skip a scout toward an unsafe camp')
 end
 
 do

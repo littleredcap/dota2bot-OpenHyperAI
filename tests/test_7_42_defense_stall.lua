@@ -69,6 +69,25 @@ assert(not j.RunOuterTowerHold(bot,0,1200,false,-800) and not bot.order,'do not 
 print('PASS: staged defender takes a bounded, safe step and shoots without dropping a cast or TP')
 
 do
+    local first = assert(source:find('local function GetOuterTowerSpellStep', 1, true))
+    local after = assert(source:find('function J.RunOuterTowerContest', first, true))
+    local stage = setmetatable({J = setmetatable({GetTeamFountain = function() return -2000 end,
+        IsDisabled = no, GetAvailableFightAllies = function() return 1 end,
+        GetVisibleThreatAt = function() return 80 end}, {__index = j}),
+        GetWaveClearScore = function() return 100, 850, 120, 0.55, 600 end}, {__index = e})
+    local step = setfenv(assert(loadstring(source:sub(first, after-1) .. '\nreturn GetOuterTowerSpellStep')), stage)()
+    local tower = {x=0}
+    local threat = {underAttack=true, waveSize=3, clearAt=180, enemies={}}
+    bot.x, bot.IsSilenced, bot.GetHealth = -550, no, function() return 1000 end
+    assert(step(bot, tower, threat) == -395, 'step into the real cast range even when the area score predicted contact')
+    unsafe = true
+    assert(step(bot, tower, threat) == nil, 'a wave at the tower cannot override a dangerous casting route')
+    unsafe = false
+    threat.clearAt = 520
+    assert(step(bot, tower, threat) == nil, 'no extended march from the current hold position')
+end
+
+do
     local tower={x=0}
     j.GetAssignedOuterTower=function() return tower end
     j.GetAvailableFightAllies=function() return 1 end

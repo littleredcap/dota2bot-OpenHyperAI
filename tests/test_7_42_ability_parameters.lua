@@ -1087,6 +1087,17 @@ do
     common.GetSideLaneDuoTrade=function() return foe end
     dk.SkillsComplement()
     assert(order and order[1]==breath and order[2]==580,'cast on the linked target once in range')
+    defending = true
+    common.GetManaAfter = function() return 0.12 end
+    common.GetInLocLaneCreepCount = function() return 2 end
+    dragon.FindAoELocation = function() return {count=2, targetloc=400} end
+    env.GetUnitToLocationDistance = function() return 250 end
+    env.DotaTime = function() return 500 end
+    dragon._defend = {waveClearTower=tower, waveClearSpellUntil=501}
+    local desire, place = dk.ConsiderBreatheFire()
+    assert(desire==HIGH and place==400, 'use affordable fire to clear the wave at the safely reached post')
+    dragon._defend.waveClearSpellUntil = 499
+    assert(dk.ConsiderBreatheFire()==NONE, 'the brief wave assignment does not relax the reserve after expiry')
 end
 
 do
