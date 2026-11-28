@@ -54,6 +54,7 @@ X['sStunProjectileAbilityIndex'] = {
 
 		["chaos_knight_chaos_bolt"] = true,
 		["skeleton_king_hellfire_blast"] = true,
+		["sniper_assassinate"] = true,
 		["sven_storm_bolt"] = true,
 		["vengefulspirit_magic_missile"] = true,
 		["witch_doctor_paralyzing_cask"] = true,

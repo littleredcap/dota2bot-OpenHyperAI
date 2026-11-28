@@ -9,7 +9,9 @@ local env = setmetatable({
     ABILITY_BEHAVIOR_UNIT_TARGET=8, ABILITY_BEHAVIOR_POINT=16, ABILITY_TARGET_TEAM_ENEMY=2,
 }, {__index=_G})
 local threat = setfenv(assert(loadfile('bots/FunLib/visible_threat.lua')), env)()
-local j = {IsValidHero=yes, IsSuspiciousIllusion=no, IsStunProjectileSpell=function(n) return n=='dragon_knight_dragon_tail' end,
+local j = {IsValidHero=yes, IsSuspiciousIllusion=no, IsStunProjectileSpell=function(n)
+        return n=='dragon_knight_dragon_tail' or n=='sniper_assassinate'
+    end,
     GetFightHardControlRemaining=function(e) return e.disabled or 0 end,
     Utils={AbilityBehaviorHasFlag=function(n,flag) return n==flag end}}
 local bot = {GetLocation=value(0), IsMagicImmune=no, GetActualIncomingDamage=function(_, raw) return raw * 0.75 end,
@@ -40,7 +42,7 @@ local a=assert(src:find('function J.GetVisibleThreatAt',1,true))
 local b=assert(src:find('function J.IsLaningUnderPressure',a,true))
 env.J,env.VisibleThreat=j,threat
 setfenv(assert(loadstring(src:sub(a,b-1))),env)()
-j.GetNearbyHeroes=function() return enemies end
+j.GetEnemiesNearLoc=function() return enemies end
 j.GetCreepAttackProjectileWillRealDamage=value(0)
 j.GetHP=value(0.6)
 j.IsInRange=function(a,b,gap) return math.abs(a.x-b.x)<=gap end
@@ -71,6 +73,21 @@ dk.IsSilenced,dk.GetStunDuration=no,value(0)
 assert(not j.CanStartTeleportHere(bot),'a reachable named stun remains a threat despite a zero aggregate estimate')
 dk.GetStunDuration,dk.IsUsingAbility=value(1.5),yes
 assert(not j.CanStartTeleportHere(bot),'a visible, affordable control remains possible without teammate-only cooldown data')
+do
+    local sniper = caster(10, 2120, 700, 3000, 175, 'sniper_assassinate')
+    sniper:GetAbilityInSlot(0).GetCastPoint = value(2)
+    j.GetEnemiesNearLoc = function(point, radius)
+        assert(point == bot:GetLocation())
+        return radius >= sniper.x and {sniper} or {}
+    end
+    assert(not j.CanStartTeleportHere(bot),'24:43: a visible long-range interrupt outside the nearby-hero cap')
+    sniper.mana = 40
+    assert(j.CanStartTeleportHere(bot),'out of mana, the distant sniper cannot interrupt')
+    sniper.visible = false
+    bot.HasModifier = function(_, name) return name == 'modifier_sniper_assassinate' end
+    assert(not j.CanStartTeleportHere(bot),'a visible lock-on already marks the channel origin as dangerous')
+    bot.HasModifier, j.GetEnemiesNearLoc = no, function() return enemies end
+end
 now=now+6;dk.IsUsingAbility=no
 local wl=caster(8,854,347,700,110,'warlock_shadow_word')
 dk.x,dk.magic,wl.magic=572,75,170

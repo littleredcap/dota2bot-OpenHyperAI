@@ -186,6 +186,15 @@ function GetDesire()
 			end
 
 			if IsBountySpot(rune.location) then
+				local now = DotaTime()
+				if not J.IsCore(bot) and botHP >= 0.68 and #nEnemyHeroes == 0
+					and #bot:GetNearbyLaneCreeps(850, true) == 0 then
+					-- The roster assignment has already checked the route and
+					-- lane obligations. Use a nearby support before the rune is lost.
+					if rune.status == RUNE_STATUS_AVAILABLE and rune.distance <= 1050 then return 0.78 end
+					if rune.status == RUNE_STATUS_UNKNOWN and rune.distance <= 700
+						and now >= 180 and now % 180 <= 10 then return 0.67 end
+				end
 				local priority = rune.status == RUNE_STATUS_AVAILABLE and BOT_MODE_DESIRE_HIGH or BOT_MODE_DESIRE_MODERATE
 				return X.GetScaledDesire(priority, rune.distance, 3000)
 			else

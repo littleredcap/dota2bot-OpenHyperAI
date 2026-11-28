@@ -77,6 +77,7 @@ local function fixture(rescue)
         GetAlliesNearLoc = function(point, radius) return near(members, point, radius) end,
         GetEnemiesNearLoc = function(point, radius) return near(opponents, point, radius) end,
         GetLastSeenEnemiesNearLoc = function() return state.recent or {} end,
+        GetVisibleThreatAt = function() return 0, false, 0 end,
         GetLocationToLocationDistance = distance,
         GetTeamFightLocation = function() return pos(650) end,
         GetDistance = distance, WeAreStronger = no, IsInLaningPhase = no, IsInTeamFight = yes,
@@ -310,9 +311,9 @@ do
     assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'two opponents can also threaten lethal damage without control')
     state.time, core.retreating = state.time + 2, false
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'available backup prevents the isolated-core rule')
-    state.hp, core.x = 0.55, 100
+    state.hp, core.x = 0.93, 100
     core.GetAttackRange = function() return 150 end
-    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'a nearby melee partner outside contact cannot cover a vulnerable ranged core')
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), '22:46: high HP does not replace an ally in reach when two opponents can burst the ranged core')
     state.time, core.x = state.time + 2, 670
     assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'a partner already in contact can cover the ranged core')
     state.time = state.time + 2

@@ -131,7 +131,7 @@ end
 do
     local s, h, m = fixture()
     h[1].x, h[1].wave = 200, true
-    assert(m[1].GetDesire() == 0 and m[2].GetDesire() > 0, 'the support covers the rune while the mid takes the wave')
+    assert(m[1].GetDesire() == 0 and m[2].GetDesire() == 0.78, 'an unoccupied nearby support collects the visible rune while mid takes the wave')
     m[2].Think()
     order(h[2], 'pick', bounty2)
     h[1].x, h[1].wave, s.status[bounty1] = -800, false, available
@@ -143,6 +143,16 @@ do
     m[2].Think()
     order(h[2], 'cancel')
     assert(m[1].GetDesire() == 0, 'base defense preempts collection')
+end
+
+do
+    local s, h, m = fixture()
+    s.time, s.status[bounty2], h[1].wave = 1442, unknown, true
+    assert(m[2].GetDesire() == 0.67, 'check the near home spot soon after a scheduled spawn')
+    h[2].wave = true
+    assert(m[2].GetDesire() < 0.67, 'do not replace nearby wave duties with the scouting bonus')
+    h[2].wave, s.threat = false, s.spots[bounty2]
+    assert(m[2].GetDesire() == 0, 'recent enemy presence still vetoes the scout')
 end
 
 do

@@ -1245,13 +1245,18 @@ local function GetFocusedNonHeroDamage(bot, channel)
 end
 
 function J.CanStartTeleportHere(bot)
-    local channel = 3
-    local projectile = J.IsStunProjectileIncoming(bot, 1600, bot:IsMagicImmune())
-    local enemies = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE)
+    -- Include a small margin for the next order to reach the engine, and use
+    -- team vision for long-range interrupts rather than the nearby-hero cap.
+    local channel = 3.2
+    local location = bot:GetLocation()
+    local immune = bot:IsMagicImmune()
+    local projectile = J.IsStunProjectileIncoming(bot, 3400, immune)
+        or not immune and bot:HasModifier('modifier_sniper_assassinate')
+    local enemies = J.GetEnemiesNearLoc(location, 3400)
     local inFlight = J.GetCreepAttackProjectileWillRealDamage(bot, channel, true)
     local focused = GetFocusedNonHeroDamage(bot, channel)
     if #enemies == 0 and not projectile and inFlight == 0 and focused == 0 then return true end
-    local damage, interrupt, contacts = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), channel, true)
+    local damage, interrupt, contacts = J.GetVisibleThreatAt(bot, enemies, location, channel, true)
     damage = damage + inFlight + focused
     local health = bot:GetHealth() + channel * bot:GetHealthRegen()
     -- Keep a margin for attack variance and damage already ticking in a contested lane.
@@ -1658,7 +1663,14 @@ function J.GetSideLaneYieldPoint(bot, enemies, enemyTower, underPressure)
                 end
             end
         end
-        if safe and #J.GetLastSeenEnemiesNearLoc(point, 520) == 0 then return point end
+        if safe and #J.GetLastSeenEnemiesNearLoc(point, 520) == 0 then
+            local escapeTime = math.min(3, step / math.max(1, bot:GetCurrentMovementSpeed()) + 0.6)
+            local damage, control = J.GetVisibleThreatAt(bot, enemies, point, escapeTime, true)
+            -- The retreat mode must keep control when a short step still
+            -- leaves an injured core in reach of a disable or follow-up.
+            if damage < bot:GetHealth() * (control and 0.20 or 0.35)
+                and (not control or J.GetHP(bot) > 0.62) then return point end
+        end
     end
 end
 
@@ -1995,7 +2007,7 @@ function J.CanTradeAtLaneClash(bot, enemies, tower, clash, enemyTower, actionTim
     local partner = J.GetLanePartner(bot)
     if not tower and (not J.IsValidHero(partner) or not J.IsInRange(bot, partner, 780)
         or J.GetHP(partner) < 0.60 or J.IsRetreating(partner) or J.IsDisabled(partner)) then return false end
-    if J.IsValidHero(partner) and J.IsCore(partner) and J.IsInRange(bot, partner, 850)
+    if not tower and J.IsValidHero(partner) and J.IsCore(partner) and J.IsInRange(bot, partner, 850)
         and (J.GetHP(partner) < 0.55 or J.IsRetreating(partner)) then return false end
     local exitTime = tower and math.max(0, GetUnitToUnitDistance(bot, tower) - 500) / math.max(1, bot:GetCurrentMovementSpeed()) or 0.35
     local seconds = math.min(3.0, 0.8 + actionTime + exitTime)
@@ -9520,13 +9532,12 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	end
 	local losingDuel = empoweredAttacker ~= nil and backup == 0 and J.GetHP(bot) <= 0.8
 		and (J.GetHP(bot) < 0.5 or J.GetHP(empoweredAttacker) > 0.35)
-	local exposedRangedCore = now >= 8 * 60 and total == 2 and #enemies == 2
-		and J.IsCore(bot) and bot:GetAttackRange() >= 400
-		and (backup == 0 or J.GetHP(bot) <= 0.70
+	local exposedRangedHero = now >= 6 * 60 and #enemies >= 2 and bot:GetAttackRange() >= 400
+		and (backup == 0 or now >= 8 * 60 and J.IsCore(bot)
 			and not J.IsValidBuilding(bot:GetNearbyTowers(850, false)[1])
 			and not HasImmediateFightCover(bot, location, enemies))
 	local closing = 0
-	if now >= 8 * 60 and close > 0 and (exposedRangedCore or backup == 0 and total >= 3 and close < 3) then
+	if close > 0 and (exposedRangedHero or now >= 8 * 60 and backup == 0 and total >= 3 and close < 3) then
 		for _, enemy in ipairs(enemies) do
 			local distance = GetUnitToUnitDistance(bot, enemy)
 			if J.GetLocationToLocationDistance(enemy:GetExtrapolatedLocation(0.8), location) < distance - 90 then
@@ -9535,7 +9546,7 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 		end
 	end
 	local losingGank = false
-	if exposedRangedCore and (closing > 0 or underFire) then
+	if exposedRangedHero and (closing > 0 or underFire) then
 		local window = 4.5
 		local damage, control, contacts = J.GetVisibleThreatAt(bot, enemies, location, window, true)
 		local health = bot:GetHealth() + window * bot:GetHealthRegen()

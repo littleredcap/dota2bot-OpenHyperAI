@@ -209,6 +209,7 @@ function GetDesire()
 			and J.GetSideLaneFinishTarget(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
 		campPlan = LaneCamp.Plan(bot, botAssignedLane)
 		if campPlan and campPlan.kind == 'pull' then return bot.ohaLaneCamp and 0.74 or 0.68 end
+		if campPlan and campPlan.kind == 'probe' then return bot.ohaLaneCamp and 0.72 or 0.68 end
 		if not local_mode_laning_generic then
 			local target, step = J.GetSideLaneDuoTrade(bot, nInRangeEnemy, enemyTower, botAttackRange)
 			if target then return step and 0.68 or 0.71 end
@@ -368,6 +369,12 @@ local function ThinkLane()
 			end
 		end
 		local enemyTower = bot:GetNearbyTowers(1500, true)[1]
+		local cover = J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower)
+		if cover and not J.IsFinishingLaningAttack(bot, current) then
+			TraceLaneDecision('cover-core', cover)
+			bot:Action_AttackUnit(cover, true)
+			return
+		end
 		if nearbyTower and ShootAtLaneClash(nInRangeEnemy, enemyTower, nearbyTower) then return end
 		local press = not nearbyTower and J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
 		if press and J.IsInRange(bot, press, botAttackRange) then
@@ -391,7 +398,19 @@ local function ThinkLane()
 	end
 	if underPressure then
 		TraceLaneDecision('yield-pressure')
-		bot:Action_MoveToLocation(GetLaneFrontLocation(GetTeam(), botAssignedLane or bot:GetAssignedLane(), -1200))
+		local lane = botAssignedLane or bot:GetAssignedLane()
+		local team = bot:GetTeam()
+		local tower = laneTierOne[lane] and GetTower(team, laneTierOne[lane])
+		local fallback = J.GetTeamFountain()
+		if J.IsValidBuilding(tower) then
+			local direction = team == TEAM_RADIANT and 1 or -1
+			local here = GetAmountAlongLane(lane, bot:GetLocation()).amount
+			local shelter = GetAmountAlongLane(lane, tower:GetLocation()).amount
+			if (here - shelter) * direction > 0 and not J.IsInRange(bot, tower, 450) then
+				fallback = tower:GetLocation()
+			end
+		end
+		bot:Action_MoveToLocation(fallback)
 		return
 	end
 
@@ -454,9 +473,9 @@ local function ThinkLane()
 		bot:Action_AttackUnit(cover, true)
 		return
 	end
-	local pull = campPlan or bot.ohaLaneCamp
-	if pull and pull.kind == 'pull' and not J.IsFinishingLaningAttack(bot, attackTarget)
-		and LaneCamp.Think(bot, pull) then return end
+	local camp = campPlan or bot.ohaLaneCamp
+	if camp and (camp.kind == 'pull' or camp.kind == 'probe') and not J.IsFinishingLaningAttack(bot, attackTarget)
+		and LaneCamp.Think(bot, camp) then return end
 	if not denyCreep and not reserveDeny and not J.IsFinishingLaningAttack(bot, attackTarget) then
 		local point, deny = J.GetLaningDenyStep(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if point then
@@ -479,7 +498,7 @@ local function ThinkLane()
 			return
 		end
 	end
-	if campPlan ~= nil and campPlan.kind ~= 'pull' and not J.IsFinishingLaningAttack(bot, attackTarget)
+	if campPlan ~= nil and campPlan.kind == 'stack' and not J.IsFinishingLaningAttack(bot, attackTarget)
 		and LaneCamp.Think(bot, campPlan) then return end
 
 	if not J.IsFinishingLaningAttack(bot, attackTarget) then

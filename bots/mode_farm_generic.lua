@@ -170,26 +170,28 @@ local function CanFarmCamp(camp)
 	-- a speculative camp. Reserve exposed resources for visible team pushes.
 	if DotaTime() >= 25 * 60 and J.Site.IsEnemyCamp(camp.cattr)
 		and (not IsLocationVisible(location) or #J.GetAlliesNearLoc(location, 1050) == 0) then return false end
-	if postWaveCampDistance then
-		local walk = GetUnitToLocationDistance(bot, location)
+	local walk = GetUnitToLocationDistance(bot, location)
+	local visibleCamp = IsLocationVisible(location)
+	if postWaveCampDistance or (walk <= 600 and visibleCamp) then
 		local health = 0
-		local visibleCamp = IsLocationVisible(location)
 		local nearby = walk > 1100 and visibleCamp and GetUnitList(UNIT_LIST_NEUTRAL_CREEPS)
-			or bot:GetNearbyNeutralCreeps(math.min(1600, walk + 500))
+			or bot:GetNearbyNeutralCreeps(math.min(1600, walk + 600))
 		for _, creep in ipairs(nearby) do
-			if J.IsValid(creep) and not J.IsRoshan(creep) and GetUnitToLocationDistance(creep, location) <= 500 then
+			if J.IsValid(creep) and not J.IsRoshan(creep) and GetUnitToLocationDistance(creep, location) <= 600 then
 				health = health + creep:GetHealth()
 			end
 		end
 		if health == 0 then
-			if visibleCamp then return false end
+			if visibleCamp then return false, true end
 			health = J.Site.IsSmallCamp(camp.cattr) and 790 or (J.Site.IsMediumCamp(camp.cattr) and 1350 or 2200)
 		end
-		local speed = math.max(1, bot:GetCurrentMovementSpeed())
-		local damagePerSecond = math.max(1, J.GetLaningAttackDamage(bot) * 0.85 / math.max(0.2, bot:GetSecondsPerAttack()))
-		local clear = health / damagePerSecond
-		local returnWalk = J.GetLocationToLocationDistance(location, postWaveOrigin)
-		if DotaTime() + (walk + returnWalk) / speed + clear + 1.5 > postWaveUntil then return false end
+		if postWaveCampDistance then
+			local speed = math.max(1, bot:GetCurrentMovementSpeed())
+			local damagePerSecond = math.max(1, J.GetLaningAttackDamage(bot) * 0.85 / math.max(0.2, bot:GetSecondsPerAttack()))
+			local clear = health / damagePerSecond
+			local returnWalk = J.GetLocationToLocationDistance(location, postWaveOrigin)
+			if DotaTime() + (walk + returnWalk) / speed + clear + 1.5 > postWaveUntil then return false end
+		end
 	end
 	for i = 1, #GetTeamPlayers(team) do
 		local ally = GetTeamMember(i)
@@ -218,7 +220,11 @@ end
 
 local function FindFarmCamp()
 	if preferedCamp ~= nil then
-		if CanFarmCamp(preferedCamp) then return preferedCamp end
+		local available, empty = CanFarmCamp(preferedCamp)
+		if available then return preferedCamp end
+		if empty and GetUnitToLocationDistance(bot, preferedCamp.cattr.location) <= 600 then
+			J.Role.availableCampTable = J.Site.UpdateAvailableCamp(bot, preferedCamp, J.Role.availableCampTable)
+		end
 		preferedCamp, farmState = nil, FARM_STATE_NONE
 		nextCampSearch = 0
 	end
@@ -1246,7 +1252,7 @@ function GetDesireHelper()
 		and (botActiveModeDesire < BOT_MODE_DESIRE_HIGH or (not J.IsPushing(bot) and not J.IsDefending(bot)))
 	then
 		-- Use nearby income between fights, including after the late-game cutoff.
-		local desire = FindRecoveryRoute(nil, Min(nFarmCap, 0.55))
+		local desire = FindRecoveryRoute(3200, Min(nFarmCap, 0.55))
 		if desire > BOT_MODE_DESIRE_NONE then return desire end
 	end
 
@@ -1271,35 +1277,8 @@ function GetDesireHelper()
 			bot.farmLocation = farmLaneLocation
 			return Min(RemapValClamped(J.GetHP(bot), 0.2, 0.7, 0.4, BOT_MODE_DESIRE_HIGH), nFarmCap)
 		else
-			-- Early game: prefer lane farming over jungle
-			-- Lane creeps give more gold/XP per minute than jungle camps,
-			-- especially before the bot has farming items.
-			local bEarlyGame = (J.IsModeTurbo() and DotaTime() < 18 * 60 or DotaTime() < 25 * 60)
-				and bot:GetNetWorth() < 15000
-			local nDeaths = GetHeroDeaths(bot:GetPlayerID())
-
-			if bEarlyGame and nDeaths < 5 then
-				-- Find the closest safe lane front to farm
-				local bestLane = nil
-				local bestDist = 99999
-				for _, lane in pairs({LANE_TOP, LANE_MID, LANE_BOT}) do
-					local laneFront = GetLaneFrontLocation(GetTeam(), lane, 0)
-					local dist = GetUnitToLocationDistance(bot, laneFront)
-					if dist < bestDist and IsLocationVisible(laneFront) and IsFarmLocationSafe(laneFront) then
-						bestDist = dist
-						bestLane = lane
-					end
-				end
-
-				if bestLane then
-					local laneFront = GetLaneFrontLocation(GetTeam(), bestLane, 0)
-					farmLaneLocation = laneFront
-					bot.farmLocation = farmLaneLocation
-					return Min(RemapValClamped(J.GetHP(bot), 0.2, 0.7, 0.35, BOT_MODE_DESIRE_HIGH), nFarmCap)
-				end
-			end
-
-			-- Late game or dangerous lanes: farm jungle camps
+			-- The earlier recovery search uses actual visible waves. An
+			-- empty lane-front coordinate is not a farm destination.
 			if FindFarmCamp() ~= nil then
 				if not J.Site.IsModeSuitableToFarm(bot)
 				then

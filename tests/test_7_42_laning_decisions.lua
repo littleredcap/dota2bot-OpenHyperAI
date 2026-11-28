@@ -114,6 +114,7 @@ local function fixture(core, overridden, startMid)
             return state.towerDive and (state.threatSpot == nil or state.threatSpot == location) and {6, 7} or {}
         end,
         GetEnemiesNearLoc = empty,
+        GetTeamFountain = function() return -7000 end,
         GetLocationToLocationDistance = function(a, b) return math.abs(a - b) end,
         VectorTowards = function(a, b, d) return a + (b > a and d or -d) end,
         GetLanePartner = function() return state.partner and partner or nil end,
@@ -141,6 +142,7 @@ local function fixture(core, overridden, startMid)
         TOWER_TOP_2 = 13, TOWER_BOT_2 = 15,
         GetLaneFrontLocation = function(_, _, offset) return offset end,
         GetLaneFrontAmount = function() return 0.5 end,
+        GetAmountAlongLane = function(_, point) return {amount = (point + 7000) / 14000} end,
         GetUnitToUnitDistance = function(a, b) return math.abs(a.x - b.x) end,
         GetUnitToLocationDistance = function(unit, point) return math.abs(unit.x - point) end,
         GetHeightLevel = function(point) return state.uphill and point > bot.x and 2 or 1 end,
@@ -280,7 +282,9 @@ do
     enemy.x = 710
     assert(mode.J.IsLaningUnderPressure(bot, {enemy}), 'do not reenter melee control range at critical health')
     mode.GetDesire()
-    expect(state, mode, 'move', -1200)
+    expect(state, mode, 'move', -7000)
+    mode.GetTower().x = -600
+    expect(state, mode, 'move', -600)
 end
 
 do
@@ -545,7 +549,7 @@ do
     state.creepHP = 30
     expect(state, mode, 'attack', creep)
     state.tower = true
-    expect(state, mode, 'move', -1200)
+    expect(state, mode, 'move', -7000)
 end
 
 do
@@ -594,7 +598,7 @@ for _, overridden in ipairs({false, true}) do
     state.attacking, state.attackTarget = true, creep
     expect(state, mode, nil)
     state.tower = true
-    expect(state, mode, 'move', -1200)
+    expect(state, mode, 'move', overridden and -1200 or -7000)
     state.tower, state.attacking, state.incomingDamage = false, false, 40
     expect(state, mode, 'move', -450)
     state.incomingDamage, state.creeps = 0, {distant}
@@ -605,7 +609,7 @@ for _, overridden in ipairs({false, true}) do
     state.enemy, state.pressure, state.secondEnemy = true, true, {x = 270, GetAttackRange = enemy.GetAttackRange,
         GetAttackTarget = function() return bot end}
     state.enemies = {enemy, state.secondEnemy}
-    expect(state, mode, 'move', -1200)
+    expect(state, mode, 'move', overridden and -1200 or -7000)
 end
 do
     local state, mode, creep = fixture(true, false)

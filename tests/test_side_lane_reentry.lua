@@ -124,12 +124,21 @@ j.IsValidHero=function(x) return x==ally or x==attacker end
 state.fog=false
 state.hp=0.58
 bot.x=1800
-assert(j.GetSideLaneYieldPoint(bot,{attacker})==1440,'break attack contact with one small backward step')
-state.hp, state.hit = 0.82, true
 bot.GetHealth = function() return state.hp * 1000 end
+j.GetVisibleThreatAt = function() return 0, false end
+assert(j.GetSideLaneYieldPoint(bot,{attacker})==1440,'break attack contact with one small backward step')
+j.GetVisibleThreatAt = function(_, _, point)
+    return point == 1440 and 70 or 0, point == 1440
+end
+assert(j.GetSideLaneYieldPoint(bot, {attacker}) == 1260,
+    'step past an affordable stun that still reaches the first endpoint')
+j.GetVisibleThreatAt = function() return 80, true end
+assert(not j.GetSideLaneYieldPoint(bot, {attacker}),
+    'do not replace retreat when every short endpoint still permits control')
+state.hp, state.hit = 0.82, true
 j.IsInRange = function(u, enemy, range) return distance(u.x, enemy.x) <= range end
 j.GetHeroesTargetingUnit = function() return {attacker} end
-j.GetVisibleThreatAt = function() return 110 end
+j.GetVisibleThreatAt = function(_, _, point) return point == bot.x and 110 or 0 end
 assert(j.GetSideLaneYieldPoint(bot, {attacker}, nil, false) == 1440,
     'a healthy melee core breaks repeated attack contact before its blood loss triggers retreat')
 j.GetVisibleThreatAt = function() return 45 end
