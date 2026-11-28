@@ -1093,10 +1093,10 @@ do
     dragon.FindAoELocation = function() return {count=2, targetloc=400} end
     env.GetUnitToLocationDistance = function() return 250 end
     env.DotaTime = function() return 500 end
-    dragon._defend = {waveClearTower=tower, waveClearSpellUntil=501}
+    dragon.ohaTowerWaveCast = {tower=tower, expires=501}
     local desire, place = dk.ConsiderBreatheFire()
     assert(desire==HIGH and place==400, 'use affordable fire to clear the wave at the safely reached post')
-    dragon._defend.waveClearSpellUntil = 499
+    dragon.ohaTowerWaveCast.expires = 499
     assert(dk.ConsiderBreatheFire()==NONE, 'the brief wave assignment does not relax the reserve after expiry')
 end
 

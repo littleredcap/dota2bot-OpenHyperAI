@@ -1206,7 +1206,7 @@ export function DefendThink(bot: Unit, lane: Lane) {
     if (guard && lane === guard.lane && now < guard.expires && !IsBaseThreatActive()
         && ((bot as any)._ohaCreepDefenseUntil ?? -1) <= now && jmz.IsValidBuilding(guard.tower)) {
         const stage = guard.staging && jmz.CanCommitToLaneTeleport(bot, guard.staging, true, 650) ? guard.staging : undefined;
-        jmz.RunOuterTowerHold(bot, guard.tower.GetLocation(), guard.reach, guard.cover, stage);
+        jmz.RunOuterTowerHold(bot, guard.tower.GetLocation(), guard.reach, guard.cover, stage, guard);
         return;
     }
     if (jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "defend")) return;

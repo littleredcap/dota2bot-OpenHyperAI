@@ -1527,7 +1527,7 @@ function ____exports.DefendThink(bot, lane)
         and (bot._ohaCreepDefenseUntil or -1) <= now and jmz.IsValidBuilding(guard.tower) then
         local stage = guard.staging
         if stage and not jmz.CanCommitToLaneTeleport(bot, stage, true, 650) then stage = nil end
-        jmz.RunOuterTowerHold(bot, guard.tower:GetLocation(), guard.reach, guard.cover, stage)
+        jmz.RunOuterTowerHold(bot, guard.tower:GetLocation(), guard.reach, guard.cover, stage, guard)
         return
     end
     if jmz.Utils.IsBotThinkingMeaningfulAction(bot, Customize.ThinkLess, "defend") then

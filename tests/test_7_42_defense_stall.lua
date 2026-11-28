@@ -85,6 +85,20 @@ do
     unsafe = false
     threat.clearAt = 520
     assert(step(bot, tower, threat) == nil, 'no extended march from the current hold position')
+    j.GetOuterTowerThreat = function(building, lane)
+        assert(building == tower and lane == 1)
+        return threat
+    end
+    local staged = 0
+    j.TryStageTowerWaveCast = function(hero, building, view)
+        assert(hero == bot and building == tower and view == threat)
+        staged = staged + 1
+        return true
+    end
+    assert(j.RunOuterTowerHold(bot, 0, 850, false, -550, {tower=tower, lane=1}) and staged == 1,
+        'the shared tower response can plan the same safe spell step')
+    j.RunOuterTowerHold(bot, 0, 850, true, -550, {tower=tower, lane=1})
+    assert(staged == 1, 'the cover role keeps its existing position')
 end
 
 do

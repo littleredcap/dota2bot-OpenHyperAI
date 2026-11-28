@@ -275,8 +275,8 @@ function X.ConsiderBreatheFire()
 	local fManaThreshold1 = J.GetManaThreshold(bot, nManaCost, {BreatheFire, DragonTail, Fireball, ElderDragonForm})
 	local fManaThreshold2 = J.GetManaThreshold(bot, nManaCost, {DragonTail, ElderDragonForm})
 	local holdTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) or nil
-	local stagedClear = holdTower ~= nil and bot._defend and bot._defend.waveClearTower == holdTower
-		and (bot._defend.waveClearSpellUntil or 0) > DotaTime()
+	local staged = bot.ohaTowerWaveCast
+	local stagedClear = holdTower ~= nil and staged and staged.tower == holdTower and staged.expires > DotaTime()
 	if holdTower ~= nil and (fManaAfter > fManaThreshold2 or stagedClear) then
 		local wave = bot:FindAoELocation(true, false, bot:GetLocation(), nCastRange, nRadius, nCastPoint, 0)
 		if wave and wave.targetloc and (wave.count or 0) >= 2

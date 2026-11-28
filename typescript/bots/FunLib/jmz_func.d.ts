@@ -106,7 +106,8 @@ declare function GetPostFightDuty(bot: Unit): LuaMultiReturn<["clear" | "cover" 
 declare function HasAssignedWaveDefense(plan: DefenseCoveragePlan, lane: Lane): boolean;
 declare function CanTakePostFightTrip(bot: Unit, point?: Vector, spendTeleport?: boolean, localResource?: boolean): boolean;
 declare function GetOuterTowerResponse(location: Vector, threat: OuterTowerThreat, fallback?: Vector, highGround?: boolean): LuaMultiReturn<[boolean, Record<number, {reach: number, cover: boolean, teleport?: Vector, rally?: Vector, gather?: Vector, screen?: boolean, needsGlyph?: boolean} | undefined>]>;
-declare function RunOuterTowerHold(bot: Unit, location: Vector, reach: number, cover: boolean, stage?: Vector): boolean;
+declare function RunOuterTowerHold(bot: Unit, location: Vector, reach: number, cover: boolean, stage?: Vector,
+    assignment?: { tower: Unit; lane?: number }): boolean;
 declare function IssueTowerDefenseAttack(bot: Unit, target: Unit): boolean;
 declare function RunOuterTowerContest(bot: Unit, tower: Unit, threat: OuterTowerThreat, state: {waveClearGather?: Vector, waveClearReach?: number}): boolean;
 declare function HasPendingLaningLastHit(bot: Unit): boolean;

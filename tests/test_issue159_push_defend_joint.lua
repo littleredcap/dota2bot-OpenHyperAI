@@ -1399,6 +1399,20 @@ do
 end
 
 do
+    local _, _, members, _, lane, _, _, j = fixture({time=19, outerSiege=true, direct=true})
+    local bot = members[1]
+    j.IsInLaningPhase = function() return true end
+    bot.GetAssignedLane = function() return lane.Top end
+    bot.GetNearbyLaneCreeps = empty
+    local watch = {count=1, towerHP=0.95, waveSize=1}
+    assert(j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'hold the side lane until the first wave arrives')
+    j.IsCore = function() return false end
+    assert(j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'keep the early lane partner there as well')
+    watch.siegeAttacking = true
+    assert(not j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'a siege already hitting the tower can still call for help')
+end
+
+do
     local opts = {direct=true,outerSiege=true,twoClearers=true,twoAttackers=true,rearTower=true, x=3650,
         bigWave=true, waveAttacking=true,towerCreeps=2}
     local _, _, _, _, lane, _, buildings, jmz = fixture(opts)

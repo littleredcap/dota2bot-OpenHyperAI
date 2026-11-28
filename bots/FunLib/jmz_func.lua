@@ -7949,8 +7949,12 @@ end
 
 function J.ShouldKeepLaningWave(bot, targetLane, threat)
 	local lane = bot:GetAssignedLane()
+	local now = DotaTime()
+	local openingSideWave = targetLane ~= nil and (lane == LANE_TOP or lane == LANE_BOT)
+		and now >= 0 and now < 45
 	if lane == targetLane or (lane ~= LANE_MID and lane ~= LANE_TOP and lane ~= LANE_BOT)
-		or not J.IsCore(bot) or not J.IsInLaningPhase(bot) or J.GetHP(bot) < 0.55 then return false end
+		or (not J.IsCore(bot) and not openingSideWave)
+		or not J.IsInLaningPhase(bot) or J.GetHP(bot) < 0.55 then return false end
 	if targetLane ~= nil and not threat then
 		local tower = GetTower(bot:GetTeam(), targetLane == LANE_TOP and TOWER_TOP_1 or (targetLane == LANE_MID and TOWER_MID_1 or TOWER_BOT_1))
 		if not J.IsValidBuilding(tower) then
@@ -7963,6 +7967,9 @@ function J.ShouldKeepLaningWave(bot, targetLane, threat)
 	if GetAmountAlongLane(lane, bot:GetLocation()).distance > 900 then return false end
 	local enemies = J.GetEnemiesNearLoc(bot:GetLocation(), 1100)
 	if #enemies >= 2 and J.IsLaningUnderPressure(bot, enemies, nil) then return false end
+	-- The side-lane wave may not have reached vision yet. Its absence in a
+	-- nearby creep scan is not an invitation to leave for a routine rotation.
+	if openingSideWave then return true end
 	for _, creep in ipairs(bot:GetNearbyLaneCreeps(1250, true)) do
 		if J.IsValid(creep) and GetAmountAlongLane(lane, creep:GetLocation()).distance <= 550 then return true end
 	end
@@ -9033,7 +9040,7 @@ function J.GetMidDefensePokeTarget(bot, range, hold)
 	return nil, point
 end
 
-function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
+function J.RunOuterTowerHold(bot, hub, reach, cover, stage, assignment)
 	if bot:HasModifier('modifier_teleporting') then return false end
 	local hold = stage or GetOuterTowerHoldPoint(hub, reach, cover)
 	local formation = stage
@@ -9055,6 +9062,11 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 	-- Ordinary recovery must not cancel a cast; the hard danger exit above
 	-- still takes priority, as it did before the short-step fallback.
 	if bot:IsUsingAbility() or bot:IsCastingAbility() or bot:IsChanneling() then return false end
+	if assignment and not cover then
+		local tower = assignment.tower
+		local threat = J.GetOuterTowerThreat(tower, assignment.lane or LANE_MID)
+		if J.TryStageTowerWaveCast(bot, tower, threat) then return true end
+	end
 	local awayFromHold = GetUnitToLocationDistance(bot, hold) > 220
 	local canStepUp = not cover and formation == nil and #J.GetLastSeenEnemiesNearLoc(hub, 1150) == 0
 		and #J.GetEnemiesNearLoc(hub, 1150) == 0
@@ -9212,6 +9224,21 @@ local function GetOuterTowerSpellStep(bot, tower, threat)
 	return point
 end
 
+function J.TryStageTowerWaveCast(bot, tower, threat)
+	local point = GetOuterTowerSpellStep(bot, tower, threat)
+	if not point then return false end
+	local now = DotaTime()
+	local previous = bot.ohaTowerWaveCast
+	if J.Customize and J.Customize.TraceLaneDecisions
+		and (not previous or previous.tower ~= tower or previous.expires <= now) then
+		print('[OHA tower-wave-cast]', now, bot:GetPlayerID(), tower:GetUnitName(),
+			math.floor(GetUnitToLocationDistance(bot, threat.clearAt)))
+	end
+	bot.ohaTowerWaveCast = {tower = tower, expires = now + 1.4}
+	bot:Action_MoveToLocation(point)
+	return true
+end
+
 function J.RunOuterTowerContest(bot, tower, threat, state)
 	state.waveClearTarget = nil
 	if bot:IsUsingAbility() or bot:IsCastingAbility() or bot:IsChanneling() then return false end
@@ -9273,14 +9300,7 @@ function J.RunOuterTowerContest(bot, tower, threat, state)
 		bot:Action_MoveToLocation(J.AdjustLocationWithOffsetTowardsFountain(hub, 1200))
 		return true
 	end
-	if not state.waveClearCover then
-		local point = GetOuterTowerSpellStep(bot, tower, threat)
-		if point then
-			state.waveClearSpellUntil = DotaTime() + 1.4
-			bot:Action_MoveToLocation(point)
-			return true
-		end
-	end
+	if not state.waveClearCover and J.TryStageTowerWaveCast(bot, tower, threat) then return true end
 	local hold = gather
 	if state.waveClearScreen and not state.waveClearCover then
 		hold = GetOuterTowerHoldPoint(hub, state.waveClearReach or bot:GetAttackRange(), false)
