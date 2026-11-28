@@ -2594,10 +2594,8 @@ function J.CanSupportTakeLaneLastHit(bot, creep)
         then
             local displacement = (ally.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
                 and not J.IsInRange(ally, creep, ally:GetAttackRange() + 230)
-            local reach = ally:GetAttackRange()
-            -- An uncommitted core outside practical reach is not a reservation.
-            -- In range, or already attacking the creep, retain the normal timing check.
-            local canTake = J.IsInRange(ally, creep, reach + 125) or ally:GetAttackTarget() == creep
+            -- Count approach time only when the core has already targeted this creep.
+            local canTake = J.IsInRange(ally, creep, ally:GetAttackRange()) or ally:GetAttackTarget() == creep
             if canTake and not displacement and not (J.GetHP(ally) < 0.48 and ally:WasRecentlyDamagedByAnyHero(4)) then
                 laneAttackers()
                 local delay = J.GetAttackProDelayTime(ally, creep)

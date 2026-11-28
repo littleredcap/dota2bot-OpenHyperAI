@@ -1025,6 +1025,8 @@ do
     local j = mode.J
     state.partner = true
     local partner = j.GetLanePartner(bot)
+    partner.x = creep.x + 176
+    assert(j.CanSupportTakeLaneLastHit(bot, creep), 'secure a lethal hit if the uncommitted core is just outside range')
     partner.x = creep.x + 400
     partner.GetTeam = function() return 2 end
     partner.GetAttackProjectileSpeed = function() return 1000 end
