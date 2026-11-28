@@ -575,6 +575,21 @@ do
     assert(not canSmoke(plan), 'do not Smoke in contact with the enemy')
     safe, pushers = true, 2
     assert(not canSmoke(plan), 'do not Smoke to clear a routine wave')
+
+    local finish = assert(source:find('-- Dust of Appearance', stop, true))
+    env.X = {ConsiderItemDesire={}}
+    env.BOT_ACTION_DESIRE_NONE, env.BOT_ACTION_DESIRE_HIGH = 0, 0.8
+    env.J.IsValidBuilding = yes
+    setfenv(assert(loadstring(source:sub(start, finish - 1))), env)()
+    local consider = env.X.ConsiderItemDesire.item_smoke_of_deceit
+    pushers = 4
+    env.bot.ohaLaneDefenseTP = {time=95, landing=pos(env.bot.x)}
+    assert(consider({}) == 0, 'a just-landed defender keeps the first action for the wave')
+    env.bot.ohaLaneDefenseTP = nil
+    assert(consider({}) == 0.8, 'a ready group still can use smoke on the safe ground approach')
+    env.bot._defend = nil
+    env.J.GetPostFightDuty = function() return 'clear', {waveDefense=true} end
+    assert(consider({}) == 0, 'assigned wave clear cannot be replaced with opportunistic smoke')
 end
 
 print('PASS: combat item timing, concealment, displacement, conflicting effects and cross-slot priority')

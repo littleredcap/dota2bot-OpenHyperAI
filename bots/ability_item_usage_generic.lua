@@ -6940,15 +6940,23 @@ end
 
 local roshDeathTime = 0
 X.ConsiderItemDesire['item_smoke_of_deceit'] = function(item)
+	local now = DotaTime()
+	local arrival = bot.ohaLaneDefenseTP
+	if arrival and now >= arrival.time and now - arrival.time <= 8
+		and GetUnitToLocationDistance(bot, arrival.landing) <= 550 then return BOT_ACTION_DESIRE_NONE end
 	local nRadius = 1200
 	local sCastType = 'none'
 	local hEffectTarget = nil
 	local sCastMotive = 'Smoke Of Deceit'
 	local defense = bot._defend
-	if defense and defense.waveClearLane and defense.waveClearGather and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
+	if defense and defense.waveClearLane and defense.waveClearGather and (bot.ohaOuterTowerHoldUntil or 0) > now
 		and J.IsDefending(bot) and J.IsValidBuilding(defense.waveClearTower) then
 		if CanSmokeToDefend(defense) then return BOT_ACTION_DESIRE_HIGH, nil, sCastType, '开雾侧翼回防' end
 		return BOT_ACTION_DESIRE_NONE
+	end
+	if J.GetPostFightDuty then
+		local duty, plan = J.GetPostFightDuty(bot)
+		if duty and plan and plan.waveDefense then return BOT_ACTION_DESIRE_NONE end
 	end
 
 	local isThereEnemyNearby = false
@@ -6956,7 +6964,7 @@ X.ConsiderItemDesire['item_smoke_of_deceit'] = function(item)
 	local nInRangeEnemy = J.GetNearbyHeroes(bot,nRadius, true, BOT_MODE_NONE)
 	local nInRangeTower = bot:GetNearbyTowers(nRadius, true)
 
-	if DotaTime() < 0 and DotaTime() > -60
+	if now < 0 and now > -60
 	then
 		return BOT_ACTION_DESIRE_HIGH, hEffectTarget, sCastType, sCastMotive
 	end

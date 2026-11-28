@@ -11273,7 +11273,7 @@ function J.CheckBotIdleState()
 		or #J.GetEnemiesNearLoc(location, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(location, 1200) > 0 then return false end
 	if J.HasQueuedAction(bot) and not bot:GetAttackTarget() then bot:Action_ClearActions(false) end
 	bot.ohaIdleRecoveryUntil = now + 15
-	if watching then bot.ohaWatcherRecoveryUntil = now + 8 end
+	if watching then bot.ohaWatcherRecoveryUntil = now + 12 end
 	bot.ohaIdleRecoveryOrigin = location
 	if J.Customize and J.Customize.TraceLaneDecisions then
 		local name = watching and 'BOT_MODE_WATCHER' or nil
@@ -11299,7 +11299,23 @@ function J.GetStalledWatcherExit(bot, destination)
 	if #J.GetEnemiesNearLoc(origin, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(origin, 1300) > 0 then return nil end
 	local stuckAt = bot.ohaIdleRecoveryOrigin
 	local cleared = stuckAt and J.GetLocationToLocationDistance(origin, stuckAt) or 0
-	if cleared >= 1100 then return nil end
+	local rally
+	if stuckAt then
+		local team, lane = bot:GetTeam(), bot:GetAssignedLane()
+		for tier = 1, 2 do
+			local tower = LaneTower(team, lane, tier)
+			if J.IsValidBuilding(tower) then
+				local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 250)
+				local distance = J.GetLocationToLocationDistance(stuckAt, point)
+				if distance >= 1100 and distance <= 2600 and IsLocationVisible(point) and IsLocationPassable(point)
+					and #J.GetEnemiesNearLoc(point, 1300) == 0 and #J.GetLastSeenEnemiesNearLoc(point, 1250) == 0 then
+					rally = point
+					break
+				end
+			end
+		end
+	end
+	if (not rally and cleared >= 1100) or (rally and J.GetLocationToLocationDistance(origin, rally) <= 280) then return nil end
 	local function SafeExit(point)
 		local distance = J.GetLocationToLocationDistance(origin, point)
 		if distance < 120 or distance > 850 then return false end
@@ -11313,11 +11329,11 @@ function J.GetStalledWatcherExit(bot, destination)
 		if not stuckAt or J.GetLocationToLocationDistance(origin, destination) >= 120 then return nil end
 	end
 
-	local ally = J.GetClosestAlly(bot, 3000, true)
-	local anchor = ally and J.GetHP(bot) >= 0.55 and GetUnitToUnitDistance(bot, ally) > 700 and ally:GetActiveMode() ~= (BOT_MODE_WATCHER or 28)
-		and ally:GetLocation() or J.GetTeamFountain()
+	local ally = not rally and J.GetClosestAlly(bot, 3000, true)
+	local anchor = rally or (ally and J.GetHP(bot) >= 0.55 and GetUnitToUnitDistance(bot, ally) > 700
+		and ally:GetActiveMode() ~= (BOT_MODE_WATCHER or 28) and ally:GetLocation()) or J.GetTeamFountain()
 	local distance = J.GetLocationToLocationDistance(origin, anchor)
-	if distance < 450 then return nil end
+	if distance < (rally and 280 or 450) then return nil end
 	local ahead = J.VectorTowards(origin, anchor, math.min(distance, 700))
 	local dx, dy = ahead.x - origin.x, ahead.y - origin.y
 	for _, side in ipairs({0, 1, -1}) do

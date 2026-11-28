@@ -339,6 +339,7 @@ do
         return point(a.x + (b.x - a.x) * travel / length, a.y + (b.y - a.y) * travel / length)
     end
     j.CanTakePostFightTrip = yes
+    env.LaneTower = function() return nil end
     bot.ohaWatcherRecoveryUntil, bot.ohaIdleRecoveryOrigin, state.orders = 95, point(0), {}
     assert(not j.GetStalledWatcherExit(bot), 'never replace a real cast with a Watcher recovery move')
     j.IsTryingtoUseAbility, env.IsLocationVisible = no, no
@@ -354,6 +355,15 @@ do
     assert(farther and farther.x < -1100, 'arriving at the first waypoint can continue away from the original stall')
     bot.GetLocation = function() return point(-1160) end
     assert(not j.GetStalledWatcherExit(bot, farther), 'release the recovery after leaving the Watcher area')
+
+    local rallyTower = {GetLocation=function() return point(-1850) end}
+    env.LaneTower = function(_, _, tier) return tier == 1 and rallyTower or nil end
+    j.IsValidBuilding = function(unit) return unit == rallyTower end
+    j.AdjustLocationWithOffsetTowardsFountain = function(location, offset) return point(location.x - offset) end
+    local towardTower = j.GetStalledWatcherExit(bot, point(-1220))
+    assert(towardTower and towardTower.x == -1860, 'continue to the safe tower after passing the first escape distance')
+    bot.GetLocation = function() return point(-1900) end
+    assert(not j.GetStalledWatcherExit(bot, towardTower), 'end recovery at the safe tower')
 end
 
 do
