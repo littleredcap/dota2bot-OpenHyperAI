@@ -78,7 +78,10 @@ local function fixture(stack, mirrored)
         GetNeutralSpawners = function() return {camp} end,
         IsLocationVisible = function(loc) return not state.hidden and not (state.campFog and loc == camp.location) end,
         GetUnitList = function() return not stack and state.wave or {} end, UNIT_LIST_ALLIED_CREEPS = 1,
-        GetUnitToLocationDistance = distance, IsLocationPassable = yes,
+        GetUnitToLocationDistance = distance, IsLocationPassable = function(loc)
+            return not (state.centerBlocked and distance(loc, camp.location) < 5)
+                and not (state.blockY and math.abs(loc.y - state.blockY) < 6)
+        end,
         GetAmountAlongLane = function(_, loc) return {amount = loc.x / 10000, distance = math.abs(loc.y)} end,
         GetLocationAlongLane = function(_, amount) return point(amount * 10000, 0) end,
         GetTower = function(team) return team == own and tower or nil end,
@@ -93,13 +96,14 @@ local function fixture(stack, mirrored)
 end
 
 do
-    local state, support, carry, _, wave, mode = fixture(false)
+    local state, support, carry, neutral, wave, mode = fixture(false)
     state.now, wave.x, state.wave[2].x = 59, -1100, -1150
     assert(not mode.Plan(support, 3), 'respect the first camp spawn')
     state.now, support.x = 72, 200
     local early = assert(mode.Plan(support, 3))
     assert(early.attackAt > state.now + 3, 'make time to walk from lane before the earliest release window')
-    assert(mode.Think(support, early) and state.orders[1].move == state.camp.location)
+    assert(mode.Think(support, early) and distance(support, state.orders[1].move) <= 420
+        and distance(neutral, state.orders[1].move) < distance(support, neutral))
 
     state.now, support.ohaLaneCamp = 112, nil
     carry.GetAssignedLane = function() return 1 end
@@ -142,6 +146,21 @@ do
     local pull = assert(mode.Plan(support, 3))
     assert(scans > 0 and pull.kind == 'pull' and pull.target == neutral,
         'plan the actual pull once the bot can inspect the camp and the wave')
+end
+
+do
+    local state, support, _, neutral, wave, mode = fixture(false)
+    state.camp.location.y, neutral.y, support.y = 1240, 1240, 700
+    wave.x, state.wave[2].x, state.centerBlocked = -850, -880, true
+    local pull = assert(mode.Plan(support, 3))
+    assert(pull.kind == 'pull' and pull.target == neutral, 'a walkable 1,240-unit route uses the visible neutral')
+    assert(mode.Think(support, pull) and state.orders[1].move.y == 810,
+        'approach only as far as the attack range even when the camp center is blocked')
+    support.ohaLaneCamp = nil
+    state.blockY = 620
+    assert(not mode.Plan(support, 3), 'keep rejecting a blocked corridor')
+    state.blockY, neutral.GetCurrentMovementSpeed = nil, function() return 250 end
+    assert(not mode.Plan(support, 3), 'reject a neutral that takes too long to reach the lane')
 end
 
 do

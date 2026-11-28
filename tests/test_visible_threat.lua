@@ -48,6 +48,7 @@ env.J,env.VisibleThreat=j,threat
 setfenv(assert(loadstring(src:sub(a,b-1))),env)()
 setfenv(assert(loadstring(src:sub(c,d-1))),env)()
 j.GetEnemiesNearLoc=function() return enemies end
+j.GetLastSeenEnemiesNearLoc=function() return {} end
 j.GetCreepAttackProjectileWillRealDamage=value(0)
 j.GetHP=value(0.6)
 j.GetModifierTime=function(unit) return unit.modifierTime or 0 end
@@ -79,6 +80,18 @@ dk.IsSilenced,dk.GetStunDuration=no,value(0)
 assert(not j.CanStartTeleportHere(bot),'a reachable named stun remains a threat despite a zero aggregate estimate')
 dk.GetStunDuration,dk.IsUsingAbility=value(1.5),yes
 assert(not j.CanStartTeleportHere(bot),'a visible, affordable control remains possible without teammate-only cooldown data')
+do
+    local other = caster(8, 850, 0, 700, 110, 'warlock_shadow_word')
+    enemies = {dk, other}
+    assert(not j.CanStartTeleportHere(bot), 'the reachable stun makes this channel unsafe')
+    enemies = {other}
+    j.GetLastSeenEnemiesNearLoc = function() return {dk:GetPlayerID()} end
+    now = now + 0.9
+    assert(not j.CanStartTeleportHere(bot), '7:52: keep the unsafe origin when only one of two contacts drops from sight')
+    now = now + 1
+    assert(j.CanStartTeleportHere(bot), 'a brief partial loss of vision expires')
+    enemies, j.GetLastSeenEnemiesNearLoc = {dk}, function() return {} end
+end
 do
     local sniper = caster(10, 2120, 700, 3000, 175, 'sniper_assassinate')
     sniper:GetAbilityInSlot(0).GetCastPoint = value(2)

@@ -3,6 +3,8 @@ local J = require(GetScriptDirectory() .. '/FunLib/jmz_func')
 local Camp = {}
 local Customize = J.Customize or require(GetScriptDirectory() .. '/Customize/general')
 local campScanRange = 1530
+local pullCrossingRange = 1400
+local pullTravelLimit = 4.7
 
 local function TracePull(bot, plan, stage, detail)
     if not Customize.TraceLanePull or plan.kind == 'stack' then return end
@@ -31,9 +33,13 @@ local function CanInspectCamp(bot, camp)
     return GetUnitToLocationDistance(bot, camp.location) <= campScanRange and IsLocationVisible(camp.location)
 end
 
+local function ThreatAt(point)
+    if #J.GetEnemiesNearLoc(point, 1050) > 0 then return 'visible-threat' end
+    if #J.GetLastSeenEnemiesNearLoc(point, 1050) > 0 then return 'recent-threat' end
+end
+
 local function IsSafe(point)
-    return IsLocationPassable(point) and #J.GetEnemiesNearLoc(point, 1050) == 0
-        and #J.GetLastSeenEnemiesNearLoc(point, 1050) == 0
+    return IsLocationPassable(point) and not ThreatAt(point)
 end
 
 local function CanWorkCamp(bot)
@@ -172,19 +178,23 @@ local function CanPullLane(bot, lane, tower, point)
         and J.GetVisibleThreatAt(ally, enemies, anchor, 2) < ally:GetHealth() * 0.18)
 end
 
-local function CheckPullTerrain(bot, camp, lane, lanePoint)
+local function CheckPullTerrain(bot, camp, lane, lanePoint, neutral)
     local team = bot:GetTeam()
     local safeLane = team == TEAM_RADIANT and LANE_BOT or LANE_TOP
-    local cross = J.GetLocationToLocationDistance(camp.location, lanePoint)
+    local start = neutral and neutral:GetLocation() or camp.location
+    local cross = J.GetLocationToLocationDistance(start, lanePoint)
     local smallCamp = J.Site.IsSmallCamp(camp)
-    if J.Site.IsAncientCamp(camp) or (smallCamp and lane ~= safeLane) or cross > 850 then return nil, 'camp-route' end
+    if J.Site.IsAncientCamp(camp) or (smallCamp and lane ~= safeLane)
+        or cross > pullCrossingRange then return nil, 'camp-route' end
     local towerId = lane == LANE_BOT and TOWER_BOT_1 or TOWER_TOP_1
     local tower = GetTower(team, towerId)
     local front = GetLaneFrontLocation(team, lane, 0)
-    local midpoint = J.VectorTowards(camp.location, lanePoint, cross * 0.5)
+    local midpoint = cross > 1 and J.VectorTowards(start, lanePoint, cross * 0.5) or start
     if not CanPullLane(bot, lane, tower, lanePoint) then return nil, 'core-or-tower-exposed' end
     if GetUnitToLocationDistance(tower, lanePoint) > (lane == safeLane and 2050 or 2950)
         or not IsSafe(midpoint) then return nil, 'unsafe-crossing' end
+    if cross > 850 and (not IsSafe(J.VectorTowards(start, lanePoint, cross * 0.25))
+        or not IsSafe(J.VectorTowards(start, lanePoint, cross * 0.75))) then return nil, 'unsafe-crossing' end
     local direction = team == TEAM_RADIANT and 1 or -1
     local home = GetAmountAlongLane(lane, tower:GetLocation()).amount
     local pushed = (GetAmountAlongLane(lane, front).amount - home) * direction
@@ -208,6 +218,7 @@ local function PlanPullProbe(bot, camp, lane, crossing, distance)
     local neutralSpeed = type(camp.speed) == 'number' and camp.speed or 300
     local aggroTravel = J.GetLocationToLocationDistance(camp.location, crossing)
         / math.max(150, math.min(speed, neutralSpeed))
+    if aggroTravel > pullTravelLimit then return nil, 'neutral-walk' end
     local estimate = math.max(0, distance - bot:GetAttackRange()) / speed + aggroTravel + 0.45
     if eta < estimate - 0.4 or eta > estimate + 4.5 then return nil, 'probe-window' end
 
@@ -227,11 +238,23 @@ local function PlanPullProbe(bot, camp, lane, crossing, distance)
         goal = point, expires = DotaTime() + step / speed + 0.35}
 end
 
+local function GetPullAttackStep(bot, target)
+    local origin, location = bot:GetLocation(), target:GetLocation()
+    local step = math.min(420, GetUnitToUnitDistance(bot, target) - bot:GetAttackRange() + 20)
+    local point = J.VectorTowards(origin, location, step)
+    local midpoint = J.VectorTowards(origin, location, step * 0.5)
+    if IsLocationVisible(point) and IsLocationVisible(midpoint) and IsSafe(point) and IsSafe(midpoint) then return point end
+end
+
 local function PlanPull(bot, camp, lane, lanePoint, neutral, campCreeps)
-    local tower, reason, smallCamp = CheckPullTerrain(bot, camp, lane, lanePoint)
+    local tower, reason, smallCamp = CheckPullTerrain(bot, camp, lane, lanePoint, neutral)
     if not tower then return nil, reason end
+    if not J.IsInRange(bot, neutral, bot:GetAttackRange() + 35) and not GetPullAttackStep(bot, neutral) then
+        return nil, 'camp-approach'
+    end
     local eta = PullWaveETA(bot, lane, lanePoint, true)
     local impact, travel = PullIntercept(bot, neutral, lanePoint)
+    if travel > pullTravelLimit then return nil, 'neutral-walk' end
     local intercept = impact + travel
     local half, observed
     if smallCamp and #campCreeps <= 3 then
@@ -302,12 +325,12 @@ function Camp.Plan(bot, lane)
     for _, camp in pairs(GetNeutralSpawners()) do
         local distance = GetUnitToLocationDistance(bot, camp.location)
         local ownCamp = camp.team == bot:GetTeam()
-        local offlaneCamp = lane ~= safeLane and not J.Site.IsSmallCamp(camp) and not J.Site.IsAncientCamp(camp)
-        if trace and (ownCamp or offlaneCamp) and (not nearestDistance or distance < nearestDistance) then
+        local offlaneCamp = lane ~= safeLane and not J.Site.IsSmallCamp(camp)
+        local possible = (ownCamp or offlaneCamp) and not J.Site.IsAncientCamp(camp)
+        if trace and possible and (not nearestDistance or distance < nearestDistance) then
             nearestCamp, nearestDistance = camp, distance
         end
-        local eligible = (ownCamp or offlaneCamp) and distance <= 1770
-        if eligible and IsSafe(camp.location) and not CampTaken(bot, camp.location) then
+        if possible and distance <= 1770 and not ThreatAt(camp.location) and not CampTaken(bot, camp.location) then
             local track = GetAmountAlongLane(lane, camp.location)
             local point = GetLocationAlongLane(lane, track.amount)
             if track.distance >= 180 and IsSafe(point) then
@@ -327,7 +350,9 @@ function Camp.Plan(bot, lane)
                     if neutral then
                         local plan, reason = PlanPull(bot, camp, lane, point, neutral, creeps)
                         rejection = reason or rejection
-                        if not plan and ownCamp and J.CanLeaveLane(bot) then plan = PlanStack(bot, camp, point, distance) end
+                        if not plan and ownCamp and IsLocationPassable(camp.location) and J.CanLeaveLane(bot) then
+                            plan = PlanStack(bot, camp, point, distance)
+                        end
                         local score = distance - (plan and plan.kind == 'pull' and 500 or 0)
                         if plan and (bestScore == nil or score < bestScore) then
                             plan.creeps = creeps
@@ -343,11 +368,11 @@ function Camp.Plan(bot, lane)
         bot.ohaNextPullTrace = now + 15
         local reason = rejection or 'no-safe-visible-camp'
         if nearestCamp then
-            local nearestStatus = nearestDistance > 1770 and 'distance' or not IsSafe(nearestCamp.location) and 'threat-or-terrain'
+            local nearestStatus = nearestDistance > 1770 and 'distance' or ThreatAt(nearestCamp.location)
                 or CampTaken(bot, nearestCamp.location) and 'claimed' or 'candidate'
-            reason = string.format('%s nearest=%.0f type=%s loc=%.0f,%.0f visible=%s nearestStatus=%s', reason, nearestDistance,
+            reason = string.format('%s nearest=%.0f type=%s loc=%.0f,%.0f visible=%s centerPassable=%s nearestStatus=%s', reason, nearestDistance,
                 tostring(nearestCamp.type), nearestCamp.location.x, nearestCamp.location.y,
-                tostring(IsLocationVisible(nearestCamp.location)), nearestStatus)
+                tostring(IsLocationVisible(nearestCamp.location)), tostring(IsLocationPassable(nearestCamp.location)), nearestStatus)
         end
         TracePull(bot, {kind = 'pull', lane = lane}, 'rejected', reason)
     end
@@ -356,11 +381,11 @@ end
 
 function Camp.Think(bot, plan)
     local now = DotaTime()
-    if plan.expires <= now or not CanWorkCamp(bot) or not IsSafe(plan.goal) or not IsSafe(plan.camp.location)
+    if plan.expires <= now or not CanWorkCamp(bot) or not IsSafe(plan.goal) or ThreatAt(plan.camp.location)
         or (plan.kind == 'pull' and not CanPullLane(bot, plan.lane, plan.tower, plan.goal))
         or (plan.kind == 'probe' and (not IsLocationVisible(plan.goal)
             or not CanPullLane(bot, plan.lane, plan.tower, plan.crossing)))
-        or (plan.kind == 'stack' and not J.CanLeaveLane(bot))
+        or (plan.kind == 'stack' and (not J.CanLeaveLane(bot) or not IsLocationPassable(plan.camp.location)))
         or CampTaken(bot, plan.camp.location) then
         Camp.Cancel(bot, plan.expires <= now and 'expired' or 'unsafe-or-claimed')
         return false
@@ -394,10 +419,16 @@ function Camp.Think(bot, plan)
         end
         if target == nil then Camp.Cancel(bot); return false end
         if not J.IsInRange(bot, target, bot:GetAttackRange() + 35) then
-            bot:Action_MoveToLocation(plan.camp.location)
+            local point = plan.camp.location
+            if plan.kind == 'pull' then
+                point = GetPullAttackStep(bot, target)
+                if not point then Camp.Cancel(bot, 'camp-approach'); return false end
+            end
+            bot:Action_MoveToLocation(point)
         elseif plan.attackAt == nil or now >= plan.attackAt then
             if plan.kind == 'pull' then
                 local impact, travel = PullIntercept(bot, target, plan.goal)
+                if travel > pullTravelLimit then Camp.Cancel(bot, 'neutral-walk'); return false end
                 local intercept = impact + travel
                 if not plan.half and J.Site.IsSmallCamp(plan.camp) and #plan.creeps <= 3 then
                     local tail, observed = PullWaveTail(bot, plan.lane, plan.goal)

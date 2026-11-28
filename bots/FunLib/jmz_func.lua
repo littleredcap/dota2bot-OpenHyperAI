@@ -1326,11 +1326,22 @@ function J.CanStartTeleportHere(bot)
     focused = focused + ongoing
     local now = DotaTime()
     local denied = bot.ohaUnsafeChannel
-    if #enemies == 0 and denied and now < denied.expires
-        and J.GetLocationToLocationDistance(location, denied.point) <= 475 then return false end
     local recentlyHit = bot:WasRecentlyDamagedByAnyHero(2)
     local lostContact = false
-    if #enemies == 0 and recentlyHit and (hp <= 0.25 or inShrapnel and hp <= 0.40) then
+    if denied and now < denied.expires and J.GetLocationToLocationDistance(location, denied.point) <= 475 then
+        lostContact = #enemies == 0
+        if not lostContact then
+            local visible = {}
+            for _, enemy in ipairs(enemies) do
+                if enemy:CanBeSeen() then visible[enemy:GetPlayerID()] = true end
+            end
+            -- Retaining vision of one enemy does not clear a recently unsafe channel.
+            for _, id in ipairs(J.GetLastSeenEnemiesNearLoc(location, 1150)) do
+                if not visible[id] then lostContact = true; break end
+            end
+        end
+    end
+    if not lostContact and #enemies == 0 and recentlyHit and (hp <= 0.25 or inShrapnel and hp <= 0.40) then
         -- With critical HP and damage still ticking, a pursuer can finish
         -- the channel from farther away than the normal melee chase radius.
         local reach = (hp <= 0.15 and ongoing > 0 or inShrapnel) and 1400 or 750
