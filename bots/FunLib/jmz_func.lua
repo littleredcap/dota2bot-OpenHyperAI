@@ -1224,24 +1224,41 @@ function J.GetVisibleThreatAt(bot, enemies, point, seconds, checkInterrupt)
     return VisibleThreat.Evaluate(J, bot, enemies, point, seconds, checkInterrupt)
 end
 
-local function GetFocusedNonHeroDamage(bot, channel)
-    local damage, seen = 0, {}
-    local function AddAttacker(unit)
-        if seen[unit] or not unit:CanBeSeen() or not unit:IsAlive() or unit:IsDisarmed()
-            or unit:GetAttackTarget() ~= bot or not J.IsInRange(bot, unit, unit:GetAttackRange() + 80) then return end
-        seen[unit] = true
-        local period = math.max(0.25, unit:GetSecondsPerAttack())
-        local wait = math.max(0, period - (GameTime() - unit:GetLastAttackTime()))
-        local speed = unit:GetAttackProjectileSpeed()
-        if speed > 0 then wait = wait + GetUnitToUnitDistance(bot, unit) / speed end
-        if wait < channel then
-            damage = damage + (1 + math.floor((channel - wait) / period))
-                * bot:GetActualIncomingDamage(unit:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+local function GetNonHeroDamageAt(bot, units, point, seconds, seen, landing)
+    local damage = 0
+    for _, unit in ipairs(units) do
+        if not seen[unit] and unit:CanBeSeen() and unit:IsAlive() and not unit:IsDisarmed() then
+            local range = unit:GetAttackRange()
+            local distance = GetUnitToLocationDistance(unit, point)
+            local focused = unit:GetAttackTarget() == bot
+            local name = unit.GetUnitName and unit:GetUnitName() or ''
+            local summon = landing and distance <= 850 and J.IsSiegeSummon(name)
+            local laneCreep = distance <= range + 160 and (name:find('npc_dota_creep_', 1, true) or name:find('_siege', 1, true))
+            if focused or landing and (summon or laneCreep) then
+                seen[unit] = true
+                local speed = unit.GetCurrentMovementSpeed and unit:GetCurrentMovementSpeed() or 0
+                if unit.IsRooted and unit:IsRooted() then speed = 0 end
+                local gap = math.max(0, distance - range - 60)
+                local close = gap == 0 and 0 or (speed > 0 and gap / speed or math.huge)
+                local period = math.max(0.25, unit:GetSecondsPerAttack())
+                local windup = unit.GetAttackPoint and unit:GetAttackPoint() or 0
+                local wait = math.max(close + windup, period - (GameTime() - unit:GetLastAttackTime()))
+                local projectile = unit:GetAttackProjectileSpeed()
+                if projectile > 0 then wait = wait + math.min(distance, range + 60) / projectile end
+                if wait < seconds then
+                    damage = damage + (1 + math.floor((seconds - wait) / period))
+                        * bot:GetActualIncomingDamage(unit:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+                end
+            end
         end
     end
-    for _, unit in ipairs(bot:GetNearbyCreeps(1250, true)) do AddAttacker(unit) end
-    for _, tower in ipairs(bot:GetNearbyTowers(1250, true)) do AddAttacker(tower) end
     return damage
+end
+
+function J.CanLandByTeleport(bot, point)
+    if not IsLocationVisible(point) then return true end
+    local damage = GetNonHeroDamageAt(bot, GetUnitList(UNIT_LIST_ENEMY_CREEPS), point, 4, {}, true)
+    return damage < (bot:GetHealth() + 4 * bot:GetHealthRegen()) * 0.60
 end
 
 function J.CanStartTeleportHere(bot)
@@ -1254,7 +1271,16 @@ function J.CanStartTeleportHere(bot)
         or not immune and bot:HasModifier('modifier_sniper_assassinate')
     local enemies = J.GetEnemiesNearLoc(location, 3400)
     local inFlight = J.GetCreepAttackProjectileWillRealDamage(bot, channel, true)
-    local focused = GetFocusedNonHeroDamage(bot, channel)
+    local seen = {}
+    local focused = GetNonHeroDamageAt(bot, bot:GetNearbyCreeps(1250, true), location, channel, seen)
+        + GetNonHeroDamageAt(bot, bot:GetNearbyTowers(1250, true), location, channel, seen)
+    if bot.GetNearbyNeutralCreeps then
+        focused = focused + GetNonHeroDamageAt(bot, bot:GetNearbyNeutralCreeps(850), location, channel, seen)
+    end
+    local now = DotaTime()
+    local denied = bot.ohaUnsafeChannel
+    if #enemies == 0 and denied and now < denied.expires
+        and J.GetLocationToLocationDistance(location, denied.point) <= 475 then return false end
     if #enemies == 0 and not projectile and inFlight == 0 and focused == 0 then return true end
     local damage, interrupt, contacts = J.GetVisibleThreatAt(bot, enemies, location, channel, true)
     damage = damage + inFlight + focused
@@ -1264,10 +1290,13 @@ function J.CanStartTeleportHere(bot)
         health = health * 0.80
     elseif contacts >= 2 and J.GetHP(bot) <= 0.30 then
         health = health * 0.85
-    elseif (contacts >= 2 or contacts >= 1 and focused > 0) and bot:WasRecentlyDamagedByAnyHero(2) then
+    elseif focused > 0 or contacts >= 2 and bot:WasRecentlyDamagedByAnyHero(2) then
         health = health * 0.90
     end
     if not projectile and not interrupt and damage < health then return true end
+    if contacts > 0 and (interrupt or damage >= health) then
+        bot.ohaUnsafeChannel = {point=location, expires=now + 1.8}
+    end
     if J.Customize and J.Customize.TraceLaneDecisions and (bot.ohaTpDeniedLog or -100) + 2 <= DotaTime() then
         bot.ohaTpDeniedLog = DotaTime()
         local sources = {}
@@ -1504,6 +1533,7 @@ end
 function J.GetLaningHoldTower(bot)
     local delivery = bot.ohaLaneSupply
     if delivery and not delivery.proactive and delivery.waitUntil > DotaTime() and (bot.ohaCourierUnsafeUntil or 0) <= DotaTime()
+        and (delivery.item ~= 'item_clarity' or J.GetHP(bot) < 0.68)
         and bot.theCourier and not bot.theCourier:IsNull() and bot.theCourier:IsAlive() then
         local tower = J.GetSafeLaneSupplyTower(bot)
         if tower then return tower end
@@ -1526,7 +1556,8 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local recovered = fountainDistance < 1300 and J.GetHP(bot) > 0.90 and J.GetMP(bot) > 0.80
     if fountainDistance < 1000 and not recovered then return nil end
     local supply = bot.ohaLaneSupply
-    if supply and supply.waitUntil > now then return nil end
+    if supply and supply.waitUntil > now and (bot.ohaCourierUnsafeUntil or 0) <= now
+        and (supply.item ~= 'item_clarity' or J.GetHP(bot) < 0.68) then return nil end
     local origin, team = bot:GetLocation(), bot:GetTeam()
     local tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
     if not J.IsValidBuilding(tower) then return nil end
@@ -1795,8 +1826,10 @@ end
 local function GetLaneCreepHealthAt(creep, delay, attackers, exclude)
     local remaining = creep:GetHealth() + creep:GetHealthRegen() * delay - J.GetTotalAttackWillRealDamage(creep, delay, true)
     for _, attacker in ipairs(attackers) do
-        if attacker ~= exclude and attacker:GetAttackTarget() == creep and J.IsAttacking(attacker) then
-			local impact, release = J.GetAttackProDelayTime(attacker, creep, true)
+        local windingUp = attacker:GetAttackTarget() == creep and J.IsAttacking(attacker)
+        local ordered = attacker.ohaLaningAttackTarget == creep and J.HasPendingLaningLastHit(attacker)
+        if attacker ~= exclude and (windingUp or ordered) then
+            local impact, release = J.GetAttackProDelayTime(attacker, creep, windingUp)
             if release > 0 and impact < delay - 0.033 then
                 remaining = remaining - LaneAttackDamage(attacker, creep, attacker:GetAttackDamage())
             end
@@ -7150,15 +7183,30 @@ function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, 
 		if not sight.underAttack and ((sight.waveSize or 0) == 0
 			or sight.score == 0 and not (sight.siege and sight.eta <= 9)) then return false, 'no-live-pressure' end
 		local role, plan = J.GetPostFightDuty(bot)
-		if role then return plan.lane == lane and plan.building == (rear or tower) end
-		if J.HasAssignedWaveDefense(plan, lane) then return false, 'already-covered' end
-		local inbound = 0
+		if role and (plan.lane ~= lane or plan.building ~= (rear or tower)) then return false end
+		if not role and J.HasAssignedWaveDefense(plan, lane) then return false, 'already-covered' end
+		local inbound, seen, now = 0, {}, DotaTime()
 		for _, tp in ipairs(GetIncomingTeleports()) do
 			if tp.playerid ~= nil and tp.playerid ~= bot:GetPlayerID() and tp.location and tp.time_remaining
 				and tp.time_remaining >= 0 and tp.time_remaining <= 7 and GetTeamForPlayer(tp.playerid) == bot:GetTeam()
-				and J.GetLocationToLocationDistance(tp.location, landing) <= 1150 then inbound = inbound + 1 end
+				and not seen[tp.playerid] and J.GetLocationToLocationDistance(tp.location, landing) <= 1150 then
+				seen[tp.playerid], inbound = true, inbound + 1
+			end
 		end
-		if inbound >= math.max(1, sight.count or 0) then return false, 'already-incoming' end
+		for slot = 1, #GetTeamPlayers(bot:GetTeam()) do
+			local ally = GetTeamMember(slot)
+			if ally ~= bot and J.IsValidHero(ally) and not seen[ally:GetPlayerID()] then
+				local order = ally.ohaLaneDefenseTP
+				if order and order.lane == lane and order.landing and now >= order.time and now - order.time <= 9
+					and J.GetLocationToLocationDistance(order.landing, landing) <= 1150
+					and (now - order.time <= 1.2 or ally:HasModifier('modifier_teleporting')
+						or GetUnitToLocationDistance(ally, landing) <= 1150 and not J.IsRetreating(ally)) then
+					inbound = inbound + 1
+				end
+			end
+		end
+		local slots = (sight.count or 0) >= 2 or role and plan.needsBackup
+		if inbound >= (slots and 2 or 1) then return false, 'already-incoming' end
 		return true
 	end
 	if not J.IsValidBuilding(tower) or landing == nil then return false end
@@ -7776,7 +7824,7 @@ function J.TryHoldFightApproach(bot, target)
 	return true
 end
 
-local function IsSiegeSummon(name)
+function J.IsSiegeSummon(name)
 	return string.find(name, 'shadow_shaman_ward', 1, true) ~= nil or string.find(name, 'warlock_golem', 1, true) ~= nil
 		or string.find(name, 'wraith_king_skeleton_warrior', 1, true) ~= nil
 end
@@ -7857,7 +7905,7 @@ function J.GetOuterTowerThreat(tower, lane)
 			local name = creep:GetUnitName()
 			local distance = GetUnitToUnitDistance(creep, tower)
 			local attacking = creep:GetAttackTarget() == tower
-			local summon = IsSiegeSummon(name)
+			local summon = J.IsSiegeSummon(name)
 			local catapult = string.find(name, 'siege', 1, true) ~= nil
 			local laneUnit = catapult or string.find(name, 'npc_dota_creep_', 1, true)
 			local speed = laneUnit and distance <= 3000 and onApproach(creep:GetLocation())
@@ -9551,7 +9599,12 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	end
 	local losingDuel = empoweredAttacker ~= nil and backup == 0 and J.GetHP(bot) <= 0.8
 		and (J.GetHP(bot) < 0.5 or J.GetHP(empoweredAttacker) > 0.35)
-	local exposedRangedHero = now >= 6 * 60 and #enemies >= 2 and bot:GetAttackRange() >= 400
+	local earlySideSupport = false
+	if now >= 40 and now < 6 * 60 and #enemies >= 2 and backup == 0 and not J.IsCore(bot) then
+		local lane = bot:GetAssignedLane()
+		earlySideSupport = lane == LANE_TOP or lane == LANE_BOT
+	end
+	local exposedRangedHero = (now >= 6 * 60 or earlySideSupport) and #enemies >= 2 and bot:GetAttackRange() >= 400
 		and (backup == 0 or now >= 8 * 60 and J.IsCore(bot)
 			and not J.IsValidBuilding(bot:GetNearbyTowers(850, false)[1])
 			and not HasImmediateFightCover(bot, location, enemies))
@@ -9566,11 +9619,12 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	end
 	local losingGank = false
 	if exposedRangedHero and (closing > 0 or underFire) then
-		local window = 4.5
+		local window = earlySideSupport and 5.0 or 4.5
 		local damage, control, contacts = J.GetVisibleThreatAt(bot, enemies, location, window, true)
 		local health = bot:GetHealth() + window * bot:GetHealthRegen()
 		-- Leave a margin for follow-up attacks while a reachable disable prevents escape.
-		losingGank = contacts >= 2 and damage >= health * (control and 0.80 or 1)
+		losingGank = contacts >= 2 and (not earlySideSupport or control and (closing > 0 or underFire))
+			and damage >= health * (control and 0.80 or 1)
 		if losingGank and J.Customize and J.Customize.TraceLaneDecisions
 			and now - (bot.ohaReinforcementRetreatAt or -math.huge) > 1.25 then
 			print(string.format('[OHA retreat-exposure] %.2f player=%d health=%.0f damage=%.0f control=%s allies=%d',

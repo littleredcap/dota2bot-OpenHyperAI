@@ -358,6 +358,20 @@ local function ThinkLane()
 				local point = J.AdjustLocationWithOffsetTowardsFountain(wave[1]:GetLocation(), math.max(240, bot:GetAttackRange() - 50))
 				if IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 900) == 0 then hold = point end
 			end
+		elseif botAssignedLane ~= LANE_MID and #nInRangeEnemy == 0 and not underPressure and J.GetHP(bot) >= 0.80 then
+			local lane = botAssignedLane or bot:GetAssignedLane()
+			local front = GetLaneFrontLocation(bot:GetTeam(), lane, 0)
+			local anchor = holdTower:GetLocation()
+			local direction = bot:GetTeam() == TEAM_RADIANT and 1 or -1
+			local ahead = (GetAmountAlongLane(lane, front).amount - GetAmountAlongLane(lane, anchor).amount) * direction
+			if ahead > 0.02 then
+				local point = J.VectorTowards(anchor, front, 460)
+				if IsLocationPassable(point) and IsLocationVisible(point)
+					and #J.GetEnemiesNearLoc(point, 1050) == 0 and #J.GetLastSeenEnemiesNearLoc(point, 1050) == 0 then
+					hold = point
+					if GetUnitToLocationDistance(bot, hold) > 90 then TraceLaneDecision('tower-face-wave', holdTower) end
+				end
+			end
 		end
 		-- On a real reset, the laner covering the tower can still deny from safety.
 		if not underPressure and J.IsInRange(bot, holdTower, 900) then

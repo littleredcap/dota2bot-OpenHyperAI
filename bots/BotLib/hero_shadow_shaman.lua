@@ -426,22 +426,14 @@ function X.ConsiderQ()
 			end
 		end
 
-		if canSecure and (#hAllyList <= 1 or J.IsCore(bot)) then
-			local nEnemyCreeps = bot:GetNearbyLaneCreeps( 800, true )
-			for _, creep in pairs( nEnemyCreeps )
-			do
-				if J.IsValid( creep )
-					and not creep:HasModifier( 'modifier_fountain_glyph' )
-					and not J.IsAllysTarget( creep )
-				then
-					if bot:GetMana() > 320
-						and J.IsInRange(bot, creep, spellReach)
-						and J.IsKeyWordUnit( 'melee', creep )
-						and J.WillKillTarget( creep, nDamage, nDamageType, nCastPoint )
-						and not J.WillKillTarget( creep, nDamage * 0.5, nDamageType, nCastPoint )
-					then
-						return BOT_ACTION_DESIRE_HIGH, creep, "Q-LaneMelee"
-					end
+		if canSecure and #nInRangeEnemyList == 0 then
+			for _, creep in ipairs(bot:GetNearbyLaneCreeps(spellReach, true)) do
+				if J.IsValid(creep) and J.CanBeAttacked(creep) and not creep:HasModifier('modifier_fountain_glyph')
+					and (J.IsKeyWordUnit('_melee', creep) or J.IsKeyWordUnit('_flagbearer', creep))
+					and J.IsInRange(bot, creep, spellReach) and J.GetAttackProDelayTime(bot, creep) > nCastPoint + 0.12
+					and J.GetAroundTargetEnemyUnitCount(creep, 280) >= 2
+					and J.CanSecureLaneCreepWithSpell(bot, creep, nDamage, nDamageType, nCastPoint, nInBonusEnemyList) then
+					return BOT_ACTION_DESIRE_HIGH, creep, 'Q-LaneMelee'
 				end
 			end
 		end

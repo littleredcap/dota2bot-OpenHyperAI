@@ -947,7 +947,8 @@ local function ConsiderItemSlot(slot, combat, preserveConcealment, revealed)
 	local consider = X.ConsiderItemDesire[name]
 	if consider ~= nil and not X.IsItemInStash(name) then
 		local desire, target, castType, motive, followUp, emergency = consider(item)
-		if name == 'item_tpscroll' and desire > 0 and not J.CanStartTeleportHere(bot) then return end
+		if name == 'item_tpscroll' and desire > 0
+			and (not J.CanStartTeleportHere(bot) or castType == 'ground' and not J.CanLandByTeleport(bot, target)) then return end
 		if desire > 0 and (not preserveConcealment or name == 'item_armlet' or emergency == 'always'
 			or (revealed and emergency == 'revealed')) then
 			return {item = item, name = name, slot = slot, desire = desire, target = target,
@@ -5096,8 +5097,8 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		local location = J.GetHighGroundResponseTeleport(bot, response.stage, anchors)
 		if location then return BOT_ACTION_DESIRE_ABSOLUTE, location, sCastType, 'high-ground-response' end
 	end
-	local function RememberDefense(lane)
-		return function() bot.ohaLaneDefenseTP = { lane = lane, time = DotaTime() } end
+	local function RememberDefense(lane, landing)
+		return function() bot.ohaLaneDefenseTP = { lane = lane, landing = landing, time = DotaTime() } end
 	end
 	local defense = bot._defend
 	local plannedDefense = defense and defense.waveClearLane ~= nil and (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
@@ -5109,17 +5110,17 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		and J.CanTakeLaneDefenseTeleport(bot, defense.waveClearLane, defense.waveClearTeleport,
 			defense.waveClearTower, defense.waveClearRearTower, true, defense.waveClearReach) then
 		return BOT_ACTION_DESIRE_ABSOLUTE, defense.waveClearTeleport, sCastType,
-			'planned-lane-defense:' .. tostring(defense.waveClearLane), RememberDefense(defense.waveClearLane)
+			'planned-lane-defense:' .. tostring(defense.waveClearLane), RememberDefense(defense.waveClearLane, defense.waveClearTeleport)
 	end
 
 	if postFightDuty and nEnemyCount == 0 then
 		local assignment = postFightDuty == 'clear' and postFightPlan.primary or postFightPlan.backup
 		if assignment and assignment.teleport and not J.ShouldKeepLaningWave(bot, postFightPlan.lane)
 			and J.CanCommitToLaneTeleport(bot, assignment.teleport, true, 1050)
-			and (not laning or J.CanTakeLaneDefenseTeleport(bot, postFightPlan.lane, assignment.teleport,
-				postFightPlan.building, nil, true, assignment.reach)) then
+			and J.CanTakeLaneDefenseTeleport(bot, postFightPlan.lane, assignment.teleport,
+				postFightPlan.building, nil, true, assignment.reach) then
 			return BOT_ACTION_DESIRE_ABSOLUTE, assignment.teleport, sCastType, 'post-fight-cover',
-				RememberDefense(postFightPlan.lane)
+				RememberDefense(postFightPlan.lane, assignment.teleport)
 		end
 	end
 
@@ -5287,7 +5288,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 				end
 			end
 
-			return BOT_ACTION_DESIRE_ABSOLUTE, hEffectTarget, sCastType, sCastMotive, RememberDefense(nDefendLane)
+			return BOT_ACTION_DESIRE_ABSOLUTE, hEffectTarget, sCastType, sCastMotive, RememberDefense(nDefendLane, hEffectTarget)
 		end
 	end
 

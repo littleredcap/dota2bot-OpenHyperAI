@@ -1,10 +1,11 @@
 local function value(n) return function() return n end end
 local no, yes = value(false), value(true)
-local now = 277.6
+local now, landingUnits = 277.6, {}
 local env = setmetatable({
     DotaTime=function() return now end, GameTime=function() return now end,
     GetUnitToLocationDistance=function(e, p) return math.abs(e.x-p) end,
     GetUnitToUnitDistance=function(a, b) return math.abs(a.x-b.x) end,
+    IsLocationVisible=yes, GetUnitList=function() return landingUnits end, UNIT_LIST_ENEMY_CREEPS=3,
     DAMAGE_TYPE_PHYSICAL=1, DAMAGE_TYPE_MAGICAL=2, DAMAGE_TYPE_PURE=4,
     ABILITY_BEHAVIOR_UNIT_TARGET=8, ABILITY_BEHAVIOR_POINT=16, ABILITY_TARGET_TEAM_ENEMY=2,
 }, {__index=_G})
@@ -13,6 +14,7 @@ local j = {IsValidHero=yes, IsSuspiciousIllusion=no, IsStunProjectileSpell=funct
         return n=='dragon_knight_dragon_tail' or n=='sniper_assassinate'
     end,
     GetFightHardControlRemaining=function(e) return e.disabled or 0 end,
+    GetLocationToLocationDistance=function(a,b) return math.abs(a-b) end,
     Utils={AbilityBehaviorHasFlag=function(n,flag) return n==flag end}}
 local bot = {GetLocation=value(0), IsMagicImmune=no, GetActualIncomingDamage=function(_, raw) return raw * 0.75 end,
     GetHealth=value(341), GetHealthRegen=value(4), x=0, WasRecentlyDamagedByAnyHero=no, HasModifier=no,
@@ -40,8 +42,11 @@ local enemies = {dk}
 local f=assert(io.open('bots/FunLib/jmz_func.lua','rb'));local src=f:read('*a');f:close()
 local a=assert(src:find('function J.GetVisibleThreatAt',1,true))
 local b=assert(src:find('function J.IsLaningUnderPressure',a,true))
+local c=assert(src:find('function J.IsSiegeSummon',1,true))
+local d=assert(src:find('function J.GetOuterTowerThreat',c,true))
 env.J,env.VisibleThreat=j,threat
 setfenv(assert(loadstring(src:sub(a,b-1))),env)()
+setfenv(assert(loadstring(src:sub(c,d-1))),env)()
 j.GetEnemiesNearLoc=function() return enemies end
 j.GetCreepAttackProjectileWillRealDamage=value(0)
 j.GetHP=value(0.6)
@@ -107,7 +112,9 @@ do
     j.GetCreepAttackProjectileWillRealDamage=value(170)
     assert(not j.CanStartTeleportHere(bot),'already released lethal shots remain even when no hero is in sight')
     j.GetCreepAttackProjectileWillRealDamage=value(0)
-    assert(j.CanStartTeleportHere(bot),'allow a cleared escape point')
+    assert(not j.CanStartTeleportHere(bot),'a recent dangerous attacker slipping out of sight does not make the same position safe')
+    now=now+2
+    assert(j.CanStartTeleportHere(bot),'allow a cleared escape point after brief lost contact')
     enemies={dk}
     dk.x, dk.GetAttackDamage = 140, value(94)
     bot.WasRecentlyDamagedByAnyHero, bot.HasModifier = yes, yes
@@ -118,13 +125,22 @@ do
     enemies={}
     local golem={x=140,CanBeSeen=yes,IsAlive=yes,IsDisarmed=no,GetAttackTarget=value(bot),
         GetAttackRange=value(150),GetSecondsPerAttack=value(1.4),GetAttackProjectileSpeed=value(0),
-        GetLastAttackTime=value(now-1),GetAttackDamage=value(120)}
+        GetLastAttackTime=value(now-1),GetAttackDamage=value(120),GetCurrentMovementSpeed=value(310),
+        GetUnitName=value('npc_dota_warlock_golem')}
+    now=now+2
     bot.GetNearbyCreeps=value({golem})
     assert(not j.CanStartTeleportHere(bot),'a visible golem hitting the caster can kill during the scroll')
     golem.GetAttackTarget=no
     assert(j.CanStartTeleportHere(bot),'a golem fighting someone else does not add immediate focused damage')
+    golem.GetAttackTarget, golem.x = value(bot), 315
+    assert(not j.CanStartTeleportHere(bot),'a pursuing summon can walk into reach before the scroll finishes')
+    golem.GetAttackTarget, golem.x = no, 140
+    landingUnits = {golem}
+    assert(not j.CanLandByTeleport(bot,0),'do not land a low-health responder beside the visible summon attacking the tower')
+    assert(j.CanLandByTeleport(bot,1300),'a clear position farther behind the tower stays available')
     golem.GetAttackTarget,golem.CanBeSeen=value(bot),no
     assert(j.CanStartTeleportHere(bot),'do not count nonhero attacks using hidden units')
+    assert(j.CanLandByTeleport(bot,0),'do not read a hidden summon at the landing point')
     bot.GetNearbyCreeps=function() return {} end
     local shaman=caster(9,591,280,400,130,'shadow_shaman_shackles')
     enemies={shaman}

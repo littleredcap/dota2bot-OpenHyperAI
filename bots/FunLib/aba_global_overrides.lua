@@ -76,6 +76,7 @@ function print(...)
         -- These messages already have explicit, opt-in trace switches at their call sites.
         local first = select(1, ...)
         if type(first) ~= 'string' or not (first:find('^%[OHA lane') or first:find('^%[OHA tp%]') or first:find('^%[OHA cover%]')
+            or first:find('^%[OHA bounty%]')
             or first:find('^%[OHA no%-auto%]') or first:find('^%[OHA auto%-resumed%]')
             or first:find('^%[OHA tower trade%]')) then return end
     end

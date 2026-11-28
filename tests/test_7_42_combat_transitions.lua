@@ -44,6 +44,7 @@ local function fixture(rescue)
         unit.GetExtrapolatedLocation = unit.GetLocation
     end
     bot.GetLevel, bot.FindItemSlot = function() return 12 end, function() return -1 end
+    bot.GetAssignedLane = function() return state.lane or 2 end
     bot.GetItemSlotType, bot.GetNetWorth = function() return 0 end, function() return 3000 end
     bot.GetNearbyCreeps = empty
     bot.GetActiveMode, bot.GetCurrentActionType = function() return 0 end, function() return 0 end

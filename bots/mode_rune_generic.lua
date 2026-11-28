@@ -61,11 +61,15 @@ local function IsBountySpot(rune)
 end
 
 local function BountySpawnApproaching(now)
-	return now >= 174 and now % 180 >= 174
+	return now >= 170 and now % 180 >= 170
 end
 
 local function BountyJustSpawned(now)
 	return now >= 180 and now % 180 <= 12
+end
+
+local function BountyScoutRange(member)
+	return math.min(2300, member:GetCurrentMovementSpeed() * 8)
 end
 
 local function CanTakeRuneTrip(member, point, localResource)
@@ -155,13 +159,9 @@ function GetDesire()
 
 			local nEnemyTowers = bot:GetNearbyTowers(700, true)
 			local nInRangeEnemy = J.GetEnemiesNearLoc(bot:GetLocation(), 1200)
-			if (#nEnemyTowers > 0 and bot:WasRecentlyDamagedByTower(1.0) and botHP < 0.3)
-			or (#nInRangeEnemy > 0 and not J.IsRealInvisible(bot))
-			then
-				return 0
-			end
-
-			nShrineOfWisdomTeam = X.GetShrineOfWisdomTeam()
+			local unsafe = #nEnemyTowers > 0 and bot:WasRecentlyDamagedByTower(1.0) and botHP < 0.3
+				or #nInRangeEnemy > 0 and not J.IsRealInvisible(bot)
+			nShrineOfWisdomTeam = not unsafe and X.GetShrineOfWisdomTeam() or nil
 			if nShrineOfWisdomTeam then
 				local bChecked  = wisdom.spot[nShrineOfWisdomTeam].status
 				local vLocation = wisdom.spot[nShrineOfWisdomTeam].location
@@ -212,7 +212,7 @@ function GetDesire()
 					-- The roster assignment has already checked the route and
 					-- lane obligations. Use a nearby support before the rune is lost.
 					if rune.status == RUNE_STATUS_AVAILABLE and rune.distance <= 1050 then return 0.78 end
-					if rune.status ~= RUNE_STATUS_AVAILABLE and rune.distance <= bot:GetCurrentMovementSpeed() * 6
+					if rune.status ~= RUNE_STATUS_AVAILABLE and rune.distance <= BountyScoutRange(bot)
 						and (BountySpawnApproaching(now) or BountyJustSpawned(now)) then return 0.70 end
 				end
 				local priority = rune.status == RUNE_STATUS_AVAILABLE and BOT_MODE_DESIRE_HIGH or BOT_MODE_DESIRE_MODERATE
@@ -319,7 +319,8 @@ function Think()
 	if pursueWisdom or (bot.rune and bot.rune.normal and IsBountySpot(bot.rune.normal.location)) then
 		CancelRiverMove()
 	end
-	if picking and issuedBountySpot == nil then return end
+	if picking and issuedBountySpot == nil
+		and not (bot.rune and bot.rune.normal and IsBountySpot(bot.rune.normal.location)) then return end
 
 	-- Wisdom Rune
 	if pursueWisdom and nShrineOfWisdomTeam and DotaTime() >= 7 * 60
@@ -382,6 +383,11 @@ function Think()
 			rune.location, rune.distance = assigned, distance
 			local location = GetRuneSpawnLocation(assigned)
 			local status = GetRuneStatus(assigned)
+			if J.Customize and J.Customize.TraceLaneDecisions and (issuedBountySpot ~= assigned
+				or bot.ohaLastBountyStatus ~= status) then
+				print('[OHA bounty]', now, bot:GetPlayerID(), assigned, status, math.floor(distance), location.x, location.y)
+				bot.ohaLastBountyStatus = status
+			end
 			if status == RUNE_STATUS_AVAILABLE then
 				if not picking or issuedBountySpot ~= assigned then bot:Action_PickUpRune(assigned) end
 			elseif distance > 150 then
@@ -550,7 +556,7 @@ function X.GetBountyAssignment()
 						and (not member.ohaWaveClaim or member.ohaWaveClaim.expires <= DotaTime())
 						and #member:GetNearbyLaneCreeps(850, true) == 0
 					if not available and support and (BountySpawnApproaching(now) or BountyJustSpawned(now)) then
-						scoutRange = math.min(1800, member:GetCurrentMovementSpeed() * 6)
+						scoutRange = BountyScoutRange(member)
 					elseif not available and support and now >= 14 * 60 then
 						scoutRange = math.min(1700, member:GetCurrentMovementSpeed() * 5)
 					end

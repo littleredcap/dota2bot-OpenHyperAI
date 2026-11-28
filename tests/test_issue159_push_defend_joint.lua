@@ -350,7 +350,7 @@ local function fixture(opts)
         jmz.Utils.HasTeamMemberWithCriticalSpellInCooldown = no
         jmz.Utils.HasCriticalSpellWithCooldown = function(ally, eta) return (ally.cooldown or 0) > eta end
         jmz.CanCastAbilitySoon = function(ability, seconds) return ability ~= nil and ability:GetCooldownTimeRemaining() <= seconds end
-        local first = assert(source:find('local function IsSiegeSummon(', 1, true))
+        local first = assert(source:find('function J.IsSiegeSummon(', 1, true))
         local last = assert(source:find('function J.ShouldRetreatFromEnemyReinforcements(', first, true))
         setfenv(assert(loadstring(source:sub(first, last - 1))), env)()
     end
@@ -2249,6 +2249,10 @@ do
     assert(j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower))
     assert(not j.CanTakeLaneDefenseTeleport(members[2], lane.Top, tower:GetLocation(), tower),
         'an unassigned actor does not duplicate a filled wave-defense task')
+    members[2].ohaLaneDefenseTP = {lane=lane.Top, time=env.DotaTime(), landing=tower:GetLocation()}
+    local duplicate, reason = j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower, nil, true)
+    assert(not duplicate and reason=='already-incoming', 'a reassigned clearer counts a scroll before the engine exposes its channel')
+    members[2].ohaLaneDefenseTP = nil
     front.lane = lane.Bot
     assert(not j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower),
         'a routine lane TP cannot take the assigned defender to a different front')
