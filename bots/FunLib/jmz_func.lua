@@ -1758,7 +1758,7 @@ local function GetSupportLastHitStep(bot, creep, distance, tower, enemies)
     end
 end
 
-function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, coveringLane)
+function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, coveringLane, occupiedTime)
     if #creeps == 0 then return nil, false, false end
     local range = bot:GetAttackRange()
     local core = J.IsCore(bot)
@@ -1786,20 +1786,26 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
                             -- Take a shot that is about to be lost to another hit before a stable one.
                             if GetLaneCreepHealthAt(creep, delay + 0.18, attackers) <= 0 then score = score + 2 end
                             if score > bestScore then best, bestScore = creep, score end
-                        elseif wait <= 0.48 then
+                        elseif wait <= math.max(0.48, occupiedTime or 0) then
                             holdsAttack = true
                         end
-                    elseif inRange and not holdsAttack and remaining > damage and remaining <= damage * 2.5 then
+                    elseif (inRange or occupiedTime and core) and not holdsAttack
+                        and (not occupiedTime or (wait or 0) < math.max(0.65, occupiedTime))
+                        and remaining > damage and remaining <= damage * 2.5 then
                         holdsAttack = CanReserveLaneCreepShot(creep, damage, delay,
-                            delay + math.min(0.55, bot:GetSecondsPerAttack() * 0.5), attackers)
-                    elseif not inRange and remaining <= damage * 1.45 and score > approachScore then
+                            delay + math.max(occupiedTime or 0, math.min(0.55, bot:GetSecondsPerAttack() * 0.5)), attackers)
+                    end
+                    local lethalOnArrival = remaining <= damage
+                    if not inRange and remaining <= damage * 1.45
+                        and (approach == nil or lethalOnArrival and not urgentApproach
+                            or lethalOnArrival == urgentApproach and score > approachScore) then
                         local step
                         if not core and not coveringLane and remaining <= damage then
                             step = GetSupportLastHitStep(bot, creep, distance, tower, enemies)
                         end
                         if core or coveringLane or step then
                             approach, approachScore, supportStep = creep, score, step
-                            urgentApproach = remaining <= damage
+                            urgentApproach = lethalOnArrival
                         end
                     end
                 end
@@ -1808,6 +1814,16 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
     end
     if best ~= nil then return best, false end
     return approach, approach ~= nil, holdsAttack, urgentApproach, supportStep
+end
+
+-- Optional lane spells contend for the same time as the next farm order.
+-- Kill, peel, heal and recovery decisions use their own urgency checks.
+function J.CanSpendLaneTradeTime(bot, tower, enemies, seconds)
+    if J.HasPendingLaningLastHit(bot) then return false end
+    local reach = math.min(1600, bot:GetAttackRange() + (J.IsCore(bot) and 425 or 120))
+    local hit, approach, reserve, urgent = J.GetLaningLastHitTarget(bot,
+        bot:GetNearbyLaneCreeps(reach, true), tower, J.GetLaningAttackDamage(bot), enemies, false, seconds + 0.12)
+    return not reserve and (not hit or approach and not urgent)
 end
 
 -- Drag nearby enemy melee creeps backwards with an attack order that never
@@ -1899,12 +1915,66 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
     return best, reserve, urgent
 end
 
--- An enemy about to take a creep is a trading window even at full HP.
--- Use a visible attack target, not the estimated enemy role or future order.
-local function IsContestForLaneCreep(enemy, ourTeam)
+local function IsContestForLaneCreep(bot, enemy, enemies)
     local target = enemy:GetAttackTarget()
-    return J.IsValid(target) and target:IsCreep() and target:GetTeam() == ourTeam
-        and J.IsAttacking(enemy)
+    if not J.IsValid(target) or not target:IsCreep() or not J.IsAttacking(enemy)
+        or not (J.IsKeyWordUnit('npc_dota_creep_', target) or J.IsKeyWordUnit('_siege', target))
+        or not J.IsInRange(enemy, target, enemy:GetAttackRange() + 40) then return false end
+    local impact, release = J.GetAttackProDelayTime(enemy, target)
+    if release <= 0 then return false end -- a projectile already in flight cannot be interrupted
+    local denying = target:GetTeam() == enemy:GetTeam()
+    if denying and J.GetHP(target) >= 0.5 then return false end
+    local targetsOurCreep = target:GetTeam() == bot:GetTeam()
+    local tower = bot:GetNearbyTowers(1600, targetsOurCreep)[1]
+    local allies = bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE)
+    local hp = GetLaneCreepHealthAt(target, impact, GetLaneAttackers(bot, tower, enemies, allies), enemy)
+    if hp > 0 and hp <= LaneAttackDamage(enemy, target, enemy:GetAttackDamage()) then return release end
+    return false
+end
+
+-- Keep both lane partners in range of the wave. A health advantage is useful
+-- only if it can be spent without standing in the opposing pair's damage.
+function J.GetSideLaneSpellTradeTarget(bot, enemies, tower, range, disableCastPoint, projectileSpeed)
+    local lane = bot:GetAssignedLane()
+    if lane ~= LANE_TOP and lane ~= LANE_BOT or not J.IsInLaningPhase(bot)
+        or J.GetHP(bot) < 0.65 or J.IsRetreating(bot) or #enemies > 2
+        or J.IsLaningUnderPressure(bot, enemies, tower) then return nil end
+    if not J.IsValidBuilding(tower) then
+        local enemyTeam = GetOpposingTeam()
+        tower = GetTower(enemyTeam, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+        if not J.IsValidBuilding(tower) then tower = GetTower(enemyTeam, lane == LANE_TOP and TOWER_TOP_2 or TOWER_BOT_2) end
+    end
+    if J.IsValidBuilding(tower) and J.IsInRange(bot, tower, 900) then return nil end
+    local friend = J.GetLanePartner(bot)
+    if not J.IsValidHero(friend) or not J.IsInRange(bot, friend, 850) or J.GetHP(friend) < 0.60
+        or J.IsRetreating(friend) then return nil end
+    local wave = bot:GetNearbyLaneCreeps(750, false)
+    if #wave < 2 or #wave + 1 < #bot:GetNearbyLaneCreeps(650, true)
+        or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
+    local best, score = nil, -math.huge
+    for _, enemy in ipairs(enemies) do
+        if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
+            and not enemy:IsInvulnerable() and J.IsInRange(bot, enemy, range)
+            and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 900)) then
+            local victim = enemy:GetAttackTarget()
+            local hitsCore = (victim == bot and J.IsCore(bot) or victim == friend and J.IsCore(friend))
+                and J.IsAttacking(enemy) and J.IsInRange(enemy, victim, enemy:GetAttackRange() + 40)
+            local contest = IsContestForLaneCreep(bot, enemy, enemies)
+            local worthwhile = hitsCore or contest
+            if disableCastPoint then
+                local flight = projectileSpeed and projectileSpeed > 0
+                    and GetUnitToUnitDistance(bot, enemy) / projectileSpeed or 0
+                worthwhile = contest and disableCastPoint + flight + 0.08 < contest and not J.IsDisabled(enemy)
+            end
+            if worthwhile then
+                local valuable = contest and (J.IsKeyWordUnit('_ranged', victim)
+                    or J.IsKeyWordUnit('_siege', victim) or J.IsKeyWordUnit('_flagbearer', victim))
+                local priority = (hitsCore and 2 or 0) + (valuable and 1 or 0) - J.GetHP(enemy)
+                if priority > score then best, score = enemy, priority end
+            end
+        end
+    end
+    if best and J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 1.5) < bot:GetHealth() * 0.30 then return best end
 end
 
 function J.GetSideLaneCoverAttack(bot, enemies, tower)
@@ -1960,7 +2030,7 @@ local function LaneTradeAgainst(bot, enemy, enemies, tower, range, step)
     local victim = enemy:GetAttackTarget()
     if not J.IsValid(victim) or not J.IsInRange(victim, enemy, enemy:GetAttackRange() + 50)
         or not J.IsInRange(bot, victim, 800) or #bot:GetNearbyLaneCreeps(650, false) == 0 then return nil end
-    local onWave = victim:IsCreep() and (J.IsKeyWordUnit('npc_dota_creep_', victim) or J.IsKeyWordUnit('_siege', victim))
+    local onWave = IsContestForLaneCreep(bot, enemy, enemies)
     if not onWave and not (J.IsValidHero(victim) and victim == J.GetLanePartner(bot) and J.IsCore(victim)) then return nil end
     local origin, target = bot:GetLocation(), enemy:GetLocation()
     if step and not enemy:IsFacingLocation(victim:GetLocation(), 60) then return nil end
@@ -2021,13 +2091,15 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
     if not J.IsValidHero(ally) or not J.IsCore(ally) or not J.IsInRange(bot, ally, 850) then return nil end
     local best, score = nil, math.huge
     for _, enemy in ipairs(enemies) do
+        local contest = J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy)
+            and J.IsInRange(bot, enemy, range) and IsContestForLaneCreep(bot, enemy, enemies)
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
             and not enemy:IsInvulnerable() and enemy:GetAttackRange() < 310
             and J.IsInRange(bot, enemy, range)
             and HasLaneTradeSpace(enemy, enemies, bot:GetLocation())
             and (HasCoveredSideLaneAngle(bot, ally, enemy, enemies, allyCreeps)
                 or evenWave and (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(ally) >= 0.70
-                    and IsContestForLaneCreep(enemy, bot:GetTeam()))) and J.CanFollowLaneFight(ally, enemy))
+                    and contest)) and J.CanFollowLaneFight(ally, enemy))
             and (not J.IsValidBuilding(tower) or not (J.IsInRange(enemy, tower, 900) or J.IsInRange(bot, tower, 850)))
             and GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(enemy:GetLocation()) then
             local onWave = false
@@ -2035,7 +2107,7 @@ function J.GetSideLanePressureTarget(bot, enemies, tower, range)
                 if J.IsValid(creep) and J.IsInRange(creep, enemy, 375) then onWave = true; break end
             end
             if onWave and #J.GetEnemiesNearLoc(enemy:GetLocation(), 900) <= 2 then
-                local priority = J.GetHP(enemy) - (IsContestForLaneCreep(enemy, bot:GetTeam()) and 1 or 0)
+                local priority = J.GetHP(enemy) - (contest and 1 or 0)
                 if priority < score then best, score = enemy, priority end
             end
         end
@@ -2069,7 +2141,7 @@ function J.GetSideLanePressureStep(bot, enemies, tower)
             and not J.IsInRange(bot, enemy, range) and J.IsInRange(bot, enemy, range + 220)
             and (HasCoveredSideLaneAngle(bot, core, enemy, enemies, wave)
                 or (J.GetHP(enemy) <= 0.72 or (J.GetHP(bot) >= 0.74 and J.GetHP(core) >= 0.70
-                    and IsContestForLaneCreep(enemy, bot:GetTeam()))) and J.CanFollowLaneFight(core, enemy))
+                    and IsContestForLaneCreep(bot, enemy, enemies))) and J.CanFollowLaneFight(core, enemy))
             and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 1000)) then
             for _, creep in ipairs(wave) do
                 if J.IsValid(creep) and J.IsInRange(creep, enemy, 375) then
@@ -2122,7 +2194,9 @@ end
 function J.GetLaningHarassTarget(bot, enemies, tower, enemyCreepCount)
     local range = bot:GetAttackRange()
     local core = J.IsCore(bot)
-    local rangedMid = bot:GetAssignedLane() == LANE_MID and range >= 400
+    local lane = bot:GetAssignedLane()
+    local rangedMid = lane == LANE_MID and range >= 400
+    local side = lane == LANE_TOP or lane == LANE_BOT
     local hp = J.GetHP(bot)
     if hp < 0.6 or (J.IsValidBuilding(tower) and J.IsInRange(bot, tower, 850))
         or (enemyCreepCount >= 2 and bot:WasRecentlyDamagedByCreep(1.5)) then return nil end
@@ -2138,6 +2212,7 @@ function J.GetLaningHarassTarget(bot, enemies, tower, enemyCreepCount)
         end
     end
     if nearbyEnemies > alliedHeroes then return nil end
+    if side and nearbyEnemies > 1 and J.GetVisibleThreatAt(bot, enemies, location, 1.5) >= bot:GetHealth() * 0.30 then return nil end
 
     local best, bestScore = nil, -math.huge
     for _, enemy in ipairs(enemies) do
@@ -2152,11 +2227,13 @@ function J.GetLaningHarassTarget(bot, enemies, tower, enemyCreepCount)
             local uphill = range >= 400 and terrain < 0
             local covered = alliedCreeps >= math.max(2, enemyCreepCount - 1)
             local strongWave = enemyCreepCount >= 4 and not covered
-            local freeTrade = onCreep and (covered or enemyCreepCount <= 2)
+            local contest = side and onCreep and IsContestForLaneCreep(bot, enemy, enemies)
+            local freeTrade = (contest or not side and onCreep) and (covered or enemyCreepCount <= 2)
             local sinceEnemyShot = GameTime() - enemy:GetLastAttackTime()
             local enemyRecovering = rangedMid and covered and sinceEnemyShot >= 0 and sinceEnemyShot < 0.35
                 and ((enemyTarget ~= bot and not bot:WasRecentlyDamagedByAnyHero(1)) or hp >= 0.72)
             if not uphill and (not strongWave or (reachAdvantage and distance > 500 and enemyCreepCount <= 4))
+                and (not side or core or freeTrade or reachAdvantage and covered)
                 and (not core or (rangedMid and (freeTrade or enemyRecovering or reachAdvantage or terrain > 0 or enemyCreepCount <= 1))
                     or (hp >= 0.7 and freeTrade)) then
                 local peel = 0
@@ -2168,7 +2245,8 @@ function J.GetLaningHarassTarget(bot, enemies, tower, enemyCreepCount)
                         end
                     end
                 end
-                local score = peel + (onCreep and 2 or 0) + (reachAdvantage and 1 or 0) - J.GetHP(enemy)
+                local score = peel + ((freeTrade or not side and onCreep) and 2 or 0)
+                    + (reachAdvantage and 1 or 0) - J.GetHP(enemy)
                 if score > bestScore then best, bestScore = enemy, score end
             end
         end

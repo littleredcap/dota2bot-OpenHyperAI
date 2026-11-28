@@ -613,9 +613,12 @@ do
     warlockBot.GetHealth, warlockBot.GetMaxHealth = function() return 540 end, function() return 600 end
     warlockBot.ActionQueue_UseAbilityOnEntity = function(_, spell, target) orders[#orders + 1] = {spell, target} end
     local word, bonds = ability({}), ability({})
+    word.GetManaCost = function() return 100 end
+    local freeToTrade = true
     local warlock = loadHero('warlock', {warlock_shadow_word = word, warlock_fatal_bonds = bonds}, warlockBot, {
         IsInLaningPhase = function() return laning end, IsInTeamFight = no, IsGoingOnSomeone = no, IsDefending = no,
-        GetSideLanePressureTarget = function() return pressLane and pressureEnemy or nil end,
+        GetSideLaneSpellTradeTarget = function() return pressLane and pressureEnemy or nil end,
+        CanSpendLaneTradeTime = function() return freeToTrade end,
         CanCastOnNonMagicImmune = yes, CanCastOnTargetAdvanced = yes,
         IsValidHero = yes, GetHP = function(unit) return unit.hp end, IsCore = function(unit) return unit.core end,
         GetNearbyHeroes = function(_, _, hostile)
@@ -651,7 +654,15 @@ do
     laneCore.hp = 0.95
     warlock.SkillsComplement()
     assert(orders[7][1] == word and orders[7][2] == pressureEnemy,
-        'apply Shadow Word to a returning melee opponent instead of pushing the wave with Bonds')
+        'apply Shadow Word to the exposed opponent instead of pushing the wave with Bonds')
+    freeToTrade = false
+    warlock.ConsiderQ = function() return NONE end
+    assert(warlock.ConsiderW() == NONE, 'protect an upcoming last hit from an optional Shadow Word')
+    freeToTrade = true
+    warlockBot.GetMana = function() return 150 end
+    assert(warlock.ConsiderW() == NONE, 'reserve a second Shadow Word to heal the core')
+    laneCore.hp = 0.5
+    assert(select(2, warlock.ConsiderW()) == laneCore, 'a needed heal keeps priority over resource protection')
 end
 print('PASS: Warlock learns and prioritizes useful lane healing')
 
@@ -940,10 +951,11 @@ do
     common.IsValidHero=function(unit) return unit==ally or unit==foe end
     common.GetLanePartner=function() return ally end
     common.IsCore,common.HasPendingLaningLastHit,common.IsLateGame=no,no,no
-    common.GetSideLanePressureTarget=function(partner,enemies)
-        assert(partner==ally and enemies[1]==foe)
+    common.GetSideLaneSpellTradeTarget=function(caster,enemies)
+        assert(caster==dragon and enemies[1]==foe)
         return foe
     end
+    common.CanSpendLaneTradeTime=function() return not common.HasPendingLaningLastHit() end
     common.CanCastOnNonMagicImmune,common.GetCorrectLoc=yes,function(unit) return unit.x end
     dragon.GetNearbyCreeps=empty
     dragon.GetNearbyHeroes=function(_,_,hostile) return hostile and {foe} or {ally} end
@@ -1018,7 +1030,8 @@ do
     local support = {x=160, GetAttackRange=function() return 580 end, GetAttackTarget=function() return follow end}
     local bot = {x=0, GetMana=function() return mana end, GetCurrentMovementSpeed=function() return 300 end,
         GetNearbyTowers=empty, WasRecentlyDamagedByAnyHero=no}
-    local tail = {GetCastRange=function() return 200 end, GetManaCost=function() return 90 end, GetSpecialValueInt=function() return 0 end}
+    local tail = {GetCastRange=function() return 200 end, GetCastPoint=function() return 0.3 end,
+        GetManaCost=function() return 90 end, GetSpecialValueInt=function() return 0 end}
     local breath = {GetManaCost=function() return 100 end}
     local distance = function(a,b) return math.abs(a.x-b.x) end
     local env = setmetatable({X={}, bot=bot, DragonTail=tail, BreatheFire=breath, nEnemyHeroes={target},
@@ -1029,6 +1042,7 @@ do
             CanCastOnNonMagicImmune=yes, CanCastOnTargetAdvanced=yes, IsLaning=yes, IsRetreating=no,
             HasPendingLaningLastHit=function() return pending end, GetLanePartner=function() return support end,
             GetSideLanePressureTarget=function(unit) assert(unit == support); return target end,
+            GetSideLaneSpellTradeTarget=no, CanSpendLaneTradeTime=yes,
             IsDisabled=no, IsInTeamFight=no, IsGoingOnSomeone=no, IsDoingRoshan=no, IsDoingTormentor=no},
     }, {__index=_G})
     setfenv(assert(loadstring(source:sub(start,finish-1))),env)()

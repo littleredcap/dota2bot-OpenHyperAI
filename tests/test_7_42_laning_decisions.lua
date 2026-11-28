@@ -28,7 +28,7 @@ local function fixture(core, overridden, startMid)
         GetItemSlotType = function() return 0 end, FindItemSlot = function() return -1 end,
         GetUnitName = function() return 'npc_dota_hero_partner' end, GetSecondsPerAttack = function() return 1.5 end}
     local bot = {x = 0}
-    local enemy = {x = 260, IsCreep = no, GetAttackRange = function() return 500 end,
+    local enemy = {x = 260, IsCreep = no, GetTeam = function() return 3 end, GetAttackRange = function() return 500 end,
         GetLocation = function(self) return self.x end,
         GetAttackTarget = function()
             return state.pressure and not state.betweenAttacks and bot or state.enemyCreep
@@ -159,7 +159,9 @@ local function expect(state, mode, kind, target)
     mode.Think()
     if kind == nil then assert(#state.orders == 0); return end
     assert(#state.orders == 1, 'there must be one lane order per tick')
-    assert(state.orders[1][1] == kind and state.orders[1][2] == target, 'unexpected lane order')
+    local order = state.orders[1]
+    assert(order[1] == kind and order[2] == target,
+        ('expected %s %s, got %s %s'):format(kind, tostring(target), order[1], tostring(order[2])))
     -- The next decision scenario starts after any pending order's windup.
     state.time = math.max(state.time, mode.GetBot().ohaLaningAttackUntil or state.time)
 end
@@ -400,15 +402,17 @@ do
 end
 
 do
-    local state, mode, _, enemy = fixture(false, true)
+    local state, mode, creep, enemy = fixture(false, true)
     state.partner, state.enemy = true, true
+    state.allies = {creep, creep, creep}
+    enemy.GetAttackRange = function() return 150 end
     mode.GetDesire()
     expect(state, mode, 'attack', enemy)
     state.manyCreeps = true
     expect(state, mode, 'attack', enemy)
     state.time = state.time + 0.2
     state.creepAggro = true
-    expect(state, mode, 'move', -500)
+    expect(state, mode, 'move', -1200)
     state.creepAggro = false
     expect(state, mode, 'attack', enemy)
 end
@@ -428,6 +432,8 @@ end
 do
     local state, mode, creep, enemy = fixture(false, false)
     state.partner, state.enemy = true, true
+    state.allies = {creep, creep, creep}
+    enemy.GetAttackRange = function() return 150 end
     mode.GetDesire()
     expect(state, mode, 'attack', enemy)
     state.partnerDisarmed = true
@@ -439,10 +445,10 @@ do
     state.manyCreeps = true
     expect(state, mode, 'attack', enemy)
     state.creepAggro = true
-    expect(state, mode, 'move', -500)
+    expect(state, mode, 'move', -450)
     state.creepAggro = false
     state.towerIdle = true
-    expect(state, mode, 'move', -500)
+    expect(state, mode, 'move', -450)
 end
 print('PASS: lane last hits resume after pressure, support yields farm, and unsafe harass does not replace positioning')
 
@@ -527,7 +533,7 @@ do
     state.allies = {creep}
     assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'no pressure without a friendly wave')
 
-    local friendly = setmetatable({GetTeam=function() return 2 end}, {__index=creep})
+    local friendly = setmetatable({GetTeam=function() return 2 end, GetHealth=function() return 30 end}, {__index=creep})
     state.allies, state.enemyCreep = {friendly, friendly}, friendly
     j.GetHP = function(unit) if unit == enemy then return 0.97 end; return hp(unit) end
     assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'do not hit the full-health target just for standing nearby')
@@ -1014,7 +1020,8 @@ do
     enemy.GetAttackRange = function() return 400 end
     enemy.x = 525
     state.creepHP, state.enemy, state.enemyWindup = 320, true, true
-    state.enemyCreep, state.allies = creep, {creep, creep}
+    state.enemyCreep = setmetatable({GetHealth=function() return 35 end}, {__index=creep})
+    state.deniable, state.allies = true, {creep, creep}
     assert(mode.GetDesire() == 0.71, 'contest a ranged deny while the allied core is away')
     expect(state, mode, 'attack', enemy)
     state.enemyWindup = false
@@ -1056,7 +1063,8 @@ print('PASS: a covered support can contest a ranged attack on its core from a sh
 do
     local state, mode, creep, enemy, bot = fixture(false, false)
     state.partner, state.enemyWindup, state.allies = true, true, {creep,creep}
-    state.enemyCreep, state.creepHP = creep, 300
+    state.enemyCreep = setmetatable({GetTeam=function() return 2 end, GetHealth=function() return 35 end}, {__index=creep})
+    state.creepHP = 300
     enemy.x, creep.x = 515, 485
     enemy.GetAttackRange, bot.GetAttackRange = function() return 150 end, function() return 600 end
     local other=setmetatable({x=1250}, {__index=enemy})
@@ -1067,3 +1075,40 @@ do
     assert(not mode.J.GetSideLanePressureTarget(bot,{enemy,other},nil,600),
         'a second defender in contact makes that same shot unsafe')
 end
+
+do
+    local state, mode, creep, enemy, bot = fixture(true, false)
+    local j = mode.J
+    state.partner, state.partnerHP, state.enemy, state.enemyWindup = true, 0.90, true, true
+    state.creepHP, state.allies = 80, {creep, creep}
+    bot.x, enemy.x, creep.x = 0, 560, 280
+    enemy.GetAttackRange = function() return 400 end
+    local creepHealth = 85
+    state.enemyCreep = setmetatable({GetTeam=function() return 2 end, GetHealth=function() return creepHealth end}, {__index=creep})
+    state.enemyEta, state.enemyRelease = 0.55, 0.45
+    assert(not j.GetSideLaneSpellTradeTarget(bot, {enemy}, nil, 600), 'do not spend mana on a nonlethal prep hit')
+    creepHealth = 41
+    assert(j.GetSideLaneSpellTradeTarget(bot, {enemy}, nil, 600) == enemy, 'cast from our position against a real enemy last hit')
+    assert(j.GetSideLaneSpellTradeTarget(bot, {enemy}, nil, 600, 0.15) == enemy, 'an instant stun can interrupt before release')
+    assert(not j.GetSideLaneSpellTradeTarget(bot, {enemy}, nil, 600, 0.15, 1600),
+        'flight makes the same stun arrive after release')
+    state.enemyRelease = 0
+    assert(not j.GetSideLaneSpellTradeTarget(bot, {enemy}, nil, 600, 0.15), 'never mistake a projectile in flight for an interrupt')
+    state.enemyRelease, state.partnerHP = 0.45, 0.48
+    assert(not j.GetSideLaneSpellTradeTarget(bot, {enemy}, nil, 600), 'a wounded lane partner needs cover, not optional pressure')
+    state.partnerHP, state.incomingDamage, state.incomingDamageAt = 0.9, 35, 0.93
+    assert(j.CanSpendLaneTradeTime(bot, nil, {enemy}, 0.20), 'a short spell fits before the next creep becomes lethal')
+    assert(not j.CanSpendLaneTradeTime(bot, nil, {enemy}, 0.65), 'a longer cast would consume the next last-hit window')
+    state.creepHP, state.incomingDamage = 30, 0
+    assert(not j.CanSpendLaneTradeTime(bot, nil, {enemy}, 0.20), 'keep an available last hit for the core')
+    state.attackWait = 0.60
+    assert(j.CanSpendLaneTradeTime(bot, nil, {enemy}, 0.20), 'a short cast can fit inside attack recovery')
+    assert(not j.CanSpendLaneTradeTime(bot, nil, {enemy}, 0.65), 'a long cast cannot postpone the attack after recovery')
+    state.attackWait = 0
+    bot.GetAttackRange = function() return 150 end
+    local ranged = setmetatable({x=260, GetHealth=function() return 65 end,
+        GetUnitName=function() return 'npc_dota_creep_badguys_ranged' end}, {__index=creep})
+    local hit, approach, _, urgent = j.GetLaningLastHitTarget(bot, {ranged, creep}, nil, 50, {})
+    assert(hit == creep and approach and urgent, 'walk for the real last hit before a healthier priority creep')
+end
+print('PASS: side-lane spells distinguish setup, lethal windups, released shots and competing farm windows')

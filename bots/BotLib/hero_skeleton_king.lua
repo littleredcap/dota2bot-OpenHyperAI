@@ -330,18 +330,12 @@ function X.ConsiderQ()
 			end
 		end
 		if laneShot and not J.IsRetreating(bot) then return BOT_ACTION_DESIRE_NONE end
-		for _, npcEnemy in pairs( nEnemysHerosInBonus )
-		do
-			if J.IsValid( npcEnemy )
-				and J.CanCastOnNonMagicImmune( npcEnemy )
-				and J.CanCastOnTargetAdvanced( npcEnemy )
-				and not J.IsDisabled( npcEnemy )
-				and J.IsInRange(bot, npcEnemy, nCastRange)
-				and J.GetAttackEnemysAllyCreepCount( npcEnemy, 1400 ) >= 4
-				and (J.IsInRange(bot, npcEnemy, bot:GetAttackRange() + 160)
-					or J.GetAvailableFightAllies(bot, npcEnemy:GetLocation(), 650) >= 1)
-			then
-				return BOT_ACTION_DESIRE_HIGH, npcEnemy
+		if canSpareStun and #nEnemysHerosInRange > 0 and not J.IsRetreating(bot) then
+			local tower = bot:GetNearbyTowers(1500, true)[1]
+			local deny = J.GetSideLaneSpellTradeTarget(bot, nEnemysHerosInRange, tower, abilityQ:GetCastRange(), nCastPoint, blastSpeed)
+			if deny and canLandStun(deny) and J.CanCastOnNonMagicImmune(deny) and J.CanCastOnTargetAdvanced(deny)
+				and J.CanSpendLaneTradeTime(bot, tower, nEnemysHerosInRange, nCastPoint) then
+				return BOT_ACTION_DESIRE_HIGH, deny
 			end
 		end
 	end

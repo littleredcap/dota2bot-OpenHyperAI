@@ -421,9 +421,11 @@ function X.ConsiderBreatheFire()
 	end
 
 	if J.IsLaning(bot) and fManaAfter > fManaThreshold2 then
+		local enemyTower = bot:GetNearbyTowers(1500, true)[1]
 		for _, creep in ipairs(nEnemyCreeps) do
 			if  J.IsValid(creep)
 			and J.CanBeAttacked(creep)
+			and J.IsInRange(bot, creep, nCastRange)
 			and (string.find(creep:GetUnitName(), 'range') or string.find(creep:GetUnitName(), 'flagbearer') or string.find(creep:GetUnitName(), 'siege'))
 			then
 				local eta = (GetUnitToUnitDistance(bot, creep) / nSpeed) + nCastPoint
@@ -438,14 +440,11 @@ function X.ConsiderBreatheFire()
 			end
 		end
 
-		local partner = J.GetLanePartner(bot)
-		if J.IsValidHero(partner) and not J.IsCore(partner) and J.IsInRange(bot, partner, 800)
-			and not J.HasPendingLaningLastHit(bot) then
-			local target = J.GetSideLanePressureTarget(partner, nEnemyHeroes, bot:GetNearbyTowers(1500, true)[1], partner:GetAttackRange())
-			if target and J.IsInRange(bot, target, nCastRange) and J.CanCastOnNonMagicImmune(target)
-				and not target:HasModifier('modifier_dragonknight_breathefire_reduction') then
-				return BOT_ACTION_DESIRE_HIGH, J.GetCorrectLoc(target, nCastPoint)
-			end
+		local target = J.GetSideLaneSpellTradeTarget(bot, nEnemyHeroes, enemyTower, nCastRange)
+		if target and J.CanCastOnNonMagicImmune(target)
+			and not target:HasModifier('modifier_dragonknight_breathefire_reduction')
+			and J.CanSpendLaneTradeTime(bot, enemyTower, nEnemyHeroes, nCastPoint) then
+			return BOT_ACTION_DESIRE_HIGH, J.GetCorrectLoc(target, nCastPoint)
 		end
 		local nLocationAoE = bot:FindAoELocation(true, false, bot:GetLocation(), nCastRange, nRadius, 0, nDamage)
 		if not J.IsInLaningPhase() and nLocationAoE.count >= 2 then
@@ -555,12 +554,21 @@ function X.ConsiderDragonTail()
 	-- Do not give up our own last hit or the next Breathe Fire to do it.
 	if J.IsLaning(bot) and not J.IsRetreating(bot) and not J.HasPendingLaningLastHit(bot)
 		and BreatheFire and bot:GetMana() >= nManaCost + BreatheFire:GetManaCost() then
+		local enemyTower = bot:GetNearbyTowers(1500, true)[1]
+		local castPoint = DragonTail:GetCastPoint()
+		local deny = J.GetSideLaneSpellTradeTarget(bot, nEnemyHeroes, enemyTower, nCastRange,
+			castPoint, bInDragonForm and nSpeed or nil)
+		if deny and J.CanCastOnNonMagicImmune(deny) and J.CanCastOnTargetAdvanced(deny)
+			and J.CanSpendLaneTradeTime(bot, enemyTower, nEnemyHeroes, castPoint) then
+			return BOT_ACTION_DESIRE_HIGH, deny
+		end
 		local support = J.GetLanePartner(bot)
 		if J.IsValidHero(support) and J.IsInRange(bot, support, 800) then
-			local target = J.GetSideLanePressureTarget(support, nEnemyHeroes, bot:GetNearbyTowers(1500, true)[1], support:GetAttackRange())
+			local target = J.GetSideLanePressureTarget(support, nEnemyHeroes, enemyTower, support:GetAttackRange())
 			if target and J.IsInRange(bot, target, nCastRange) and support:GetAttackTarget() == target
 				and J.CanCastOnNonMagicImmune(target) and J.CanCastOnTargetAdvanced(target)
-				and not J.IsDisabled(target) and not target:HasModifier('modifier_necrolyte_reapers_scythe') then
+				and not J.IsDisabled(target) and not target:HasModifier('modifier_necrolyte_reapers_scythe')
+				and J.CanSpendLaneTradeTime(bot, enemyTower, nEnemyHeroes, castPoint) then
 				return BOT_ACTION_DESIRE_HIGH, target
 			end
 		end

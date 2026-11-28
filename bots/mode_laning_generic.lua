@@ -145,6 +145,7 @@ function GetDesire()
 			if GetUnitToUnitDistance(bot, hitCreep) <= botAttackRange then return 0.55 end
 		end
 		if supportStep then return 0.55 end
+		if reserve and botAssignedLane ~= LANE_MID then return J.IsCore(bot) and 0.78 or 0.55 end
 		if urgentApproach and J.IsCore(bot)
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
 		local deny, reserveDeny, urgentDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
@@ -302,6 +303,7 @@ local function ThinkLane()
 		return
 	end
 	if reserve then
+		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'last-hit-window') end
 		J.HoldLaningAttack(bot, attackTarget)
 		return
 	end
@@ -352,9 +354,17 @@ local function ThinkLane()
 	-- optional support deny, and only move a short distance with lane cover.
 	if not J.IsCore(bot) and not J.IsFinishingLaningAttack(bot, attackTarget) then
 		local press = J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
-		if press ~= nil then bot:Action_AttackUnit(press, true); return end
+		if press ~= nil then
+			TraceLaneDecision('side-pressure-shot', press)
+			bot:Action_AttackUnit(press, true)
+			return
+		end
 		local step = J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower)
-		if step ~= nil then bot:Action_MoveToLocation(step); return end
+		if step ~= nil then
+			TraceLaneDecision('side-pressure-step')
+			bot:Action_MoveToLocation(step)
+			return
+		end
 	end
 	if firingPosition == nil and J.RunSideLaneCreepDrag(bot, nInRangeEnemy, enemyTower, false) then return end
 	if J.IsValid(denyCreep) then

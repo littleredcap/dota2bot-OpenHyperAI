@@ -391,18 +391,13 @@ function X.ConsiderQ()
 		then
 			local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange + aetherRange, true)
 			if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'Q-LaneCover' end
-			for _, npcEnemy in pairs( nInRangeEnemyList )
-			do
-				if J.IsValid( npcEnemy )
-					and J.CanCastOnNonMagicImmune( npcEnemy )
-					and J.CanCastOnTargetAdvanced( npcEnemy )
-					and (J.GetAttackEnemysAllyCreepCount(npcEnemy, 1400) >= 3
-						or J.HasLaneFightFollowUp(bot, npcEnemy)
-							and bot:GetMana() - nManaCost >= 100
-							and (not J.HasPendingLaningLastHit or not J.HasPendingLaningLastHit(bot)))
-				then
-					return BOT_ACTION_DESIRE_HIGH, npcEnemy, "Q-Laning:"..J.Chat.GetNormName( npcEnemy )
-				end
+			local tower = bot:GetNearbyTowers(1500, true)[1]
+			local pressure = J.GetSideLaneSpellTradeTarget(bot, nInRangeEnemyList, tower, nCastRange + aetherRange)
+			local reserve = abilityE and abilityE:IsTrained() and abilityE:GetManaCost() or nManaCost
+			if pressure and J.CanCastOnNonMagicImmune(pressure) and J.CanCastOnTargetAdvanced(pressure)
+				and bot:GetMana() - nManaCost >= reserve
+				and J.CanSpendLaneTradeTime(bot, tower, nInRangeEnemyList, nCastPoint) then
+				return BOT_ACTION_DESIRE_HIGH, pressure, 'Q-LanePressure'
 			end
 		end
 

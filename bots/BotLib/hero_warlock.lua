@@ -486,10 +486,12 @@ function X.ConsiderW()
 	if healTarget ~= nil then return BOT_ACTION_DESIRE_HIGH, healTarget end
 
 	if laning then
-		local pressureTarget = J.GetSideLanePressureTarget(bot,
-			hEnemyHeroList, bot:GetNearbyTowers(1500, true)[1], nCastRange)
+		local tower = bot:GetNearbyTowers(1500, true)[1]
+		local pressureTarget = J.GetSideLaneSpellTradeTarget(bot, hEnemyHeroList, tower, nCastRange)
 		if pressureTarget and J.CanCastOnNonMagicImmune(pressureTarget) and J.CanCastOnTargetAdvanced(pressureTarget)
-			and not pressureTarget:HasModifier('modifier_warlock_shadow_word') then
+			and not pressureTarget:HasModifier('modifier_warlock_shadow_word')
+			and bot:GetMana() >= 2 * abilityW:GetManaCost()
+			and J.CanSpendLaneTradeTime(bot, tower, hEnemyHeroList, abilityW:GetCastPoint()) then
 			return BOT_ACTION_DESIRE_HIGH, pressureTarget, true
 		end
 	end
@@ -547,11 +549,14 @@ function X.ConsiderQ()
 	local nRadius = abilityQ:GetSpecialValueInt( "search_aoe" )
 	local candidates = hEnemyHeroList or {}
 	if #candidates == 0 then return BOT_ACTION_DESIRE_NONE, nil end
-	if J.IsLaning(bot) then
-		if J.HasPendingLaningLastHit(bot) or bot:GetMana() - manaCost < abilityW:GetManaCost() then
+	local laning = J.IsLaning(bot)
+	if laning then
+		local tower = bot:GetNearbyTowers(1500, true)[1]
+		if bot:GetMana() - manaCost < abilityW:GetManaCost()
+			or not J.CanSpendLaneTradeTime(bot, tower, candidates, abilityQ:GetCastPoint()) then
 			return BOT_ACTION_DESIRE_NONE, nil
 		end
-		local press = J.GetSideLanePressureTarget(bot, candidates, bot:GetNearbyTowers(1500, true)[1], nCastRange)
+		local press = J.GetSideLaneSpellTradeTarget(bot, candidates, tower, nCastRange)
 		candidates = press and {press} or {}
 	elseif not (J.IsDefending(bot) or J.IsInTeamFight(bot, 1200) or J.IsGoingOnSomeone(bot) or J.IsRetreating(bot)) then
 		return BOT_ACTION_DESIRE_NONE, nil
@@ -571,7 +576,7 @@ function X.ConsiderQ()
 				if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsInRange(target, creep, nRadius) then units = units + 1 end
 			end
 			local score = heroes * 4 + math.min(3, units)
-			if (heroes >= 2 or units >= 2) and score > bestScore then best, bestScore = target, score end
+			if (heroes >= 2 or not laning and units >= 2) and score > bestScore then best, bestScore = target, score end
 		end
 	end
 	if best then return BOT_ACTION_DESIRE_HIGH, best end
