@@ -1035,8 +1035,11 @@ export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
                 || localThreat.score <= 0 || localThreat.waveSize === 0) return BotModeDesire.VeryLow;
         }
     }
-    if (teamIsPushing && !laneAlarm && buildingTier < 3 && pingFloor === 0) {
-        return BotModeDesire.VeryLow;
+    if (buildingTier <= 2 && !laneAlarm && pingFloor === 0) {
+        // Only the explicit assignments above can send a remote responder.
+        const walkReach = 450 + 8 * math.max(250, bot.GetCurrentMovementSpeed());
+        if (GetUnitToLocationDistance(bot, hub) > walkReach) return BotModeDesire.None;
+        if (teamIsPushing) return BotModeDesire.VeryLow;
     }
 
     // Bail-outs to avoid feed / conflicts

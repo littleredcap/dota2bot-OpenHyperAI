@@ -272,7 +272,7 @@ end)
 test("generated mode checks emergency before team-pushing and hero-only early exits", function()
     local ts=read("typescript/bots/FunLib/aba_defend.ts")
     local x=assert(ts:find("const creepBaseDesire = GetCreepBaseDefenseDesire(bot, lane, ancient);",1,true))
-    local y=assert(ts:find("if (teamIsPushing &&",x,true))
+    local y=assert(ts:find("if (teamIsPushing) return",x,true))
     assert(x<y,"Creep-only Ancient emergency must bypass normal pushing heuristic")
     assert(ts:find("bot.Action_AttackUnit(baseCreep, true);",1,true),
         "DefendThink must target the actual threatening creep")

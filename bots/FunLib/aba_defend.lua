@@ -1283,8 +1283,11 @@ function ____exports.GetDefendDesireHelper(bot, lane)
                 or localThreat.score <= 0 or localThreat.waveSize == 0 then return BotModeDesire.VeryLow end
         end
     end
-    if teamIsPushing and not laneAlarm and buildingTier < 3 and pingFloor == 0 then
-        return BotModeDesire.VeryLow
+    if buildingTier <= 2 and not laneAlarm and pingFloor == 0 then
+        -- Only the explicit assignments above can send a remote responder.
+        local walkReach = 450 + 8 * math.max(250, bot:GetCurrentMovementSpeed())
+        if GetUnitToLocationDistance(bot, hub) > walkReach then return BotModeDesire.None end
+        if teamIsPushing then return BotModeDesire.VeryLow end
     end
     local pos = jmz.GetPosition(bot)
     local bMyLane = bot:GetAssignedLane() == lane

@@ -34,7 +34,8 @@ local j={
     GetEnemyReinforcementWindow=function() return reinforcement end,
     GetLocationToLocationDistance=function(a,b) return math.abs(a-b) end,
     VectorTowards=function(a,b,d) return a + (b >= a and d or -d) end,
-    GetItem2=function() end, CanCastAbility=no,
+    GetItem2=function() end, CanCastAbility=no, ShouldKeepLaningWave=no,
+    GetLastSeenEnemiesNearLoc=function() return {} end,
     Utils={GetCachedVars=function() end, SetCachedVars=no},
 }
 local env=setmetatable({J=j, LANE_MID=2, TOWER_MID_3=23, BARRACKS_MID_MELEE=10,
@@ -142,6 +143,13 @@ do
     local active=j.GetPostFightCoverage(2)
     assert(active.deadline==8 and active.primary and active.primary.teleport==-550 and active.backup,
         'a wave already hitting a healthy tower leaves time for a real teleport, cast and screen')
+    j.ShouldKeepLaningWave=yes
+    assert(not j.GetPostFightCoverage(2).primary,'do not assume a remote defender will abandon a protected lane wave')
+    j.ShouldKeepLaningWave=no
+    local oldSeen=j.GetLastSeenEnemiesNearLoc
+    j.GetLastSeenEnemiesNearLoc=function(point, radius) return point<=-5000 and radius==1600 and {foe.id} or {} end
+    assert(not j.GetPostFightCoverage(2).primary,'do not plan a channel with recently seen enemies at the departure')
+    j.GetLastSeenEnemiesNearLoc=oldSeen
     tower.GetHealth=function() return 60 end
     local dying=j.GetPostFightCoverage(2)
     assert(dying.deadline==2 and not dying.primary,'the same trip cannot save a tower about to fall')

@@ -5108,9 +5108,10 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 			'planned-lane-defense:' .. tostring(defense.waveClearLane), RememberDefense(defense.waveClearLane)
 	end
 
-	if not laning and postFightDuty and nEnemyCount == 0 then
+	if postFightDuty and nEnemyCount == 0 then
 		local assignment = postFightDuty == 'clear' and postFightPlan.primary or postFightPlan.backup
-		if assignment and assignment.teleport and J.CanCommitToLaneTeleport(bot, assignment.teleport, true, 1050) then
+		if assignment and assignment.teleport and not J.ShouldKeepLaningWave(bot, postFightPlan.lane)
+			and J.CanCommitToLaneTeleport(bot, assignment.teleport, true, 1050) then
 			return BOT_ACTION_DESIRE_ABSOLUTE, assignment.teleport, sCastType, 'post-fight-cover'
 		end
 	end

@@ -8115,7 +8115,10 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 					arrival = 0
 				elseif tp and not unsafe then
 					arrival = tp.time_remaining + math.max(0, J.GetLocationToLocationDistance(tp.location, hold) - 550) / speed * 1.25
-				elseif not demand.watch and not unsafe and arrival > deadline and J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll')) then
+				elseif not demand.watch and not unsafe and arrival > deadline
+					and J.CanCastAbility(J.GetItem2(ally, 'item_tpscroll'))
+					and #J.GetLastSeenEnemiesNearLoc(point, 1600) == 0
+					and not J.ShouldKeepLaningWave(ally, lane, sight) then
 					local landing = J.GetHighGroundResponseTeleport(ally, hold, anchors)
 					if landing then
 						local tpETA = 4 + math.max(0, J.GetLocationToLocationDistance(landing, hold) - 550) / speed * 1.25
