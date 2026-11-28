@@ -272,6 +272,15 @@ function X.ConsiderQ()
 		end
 	end
 
+	-- A siege attacker can be interrupted while the tower still covers us.
+	-- Check the real cast range so this order cannot turn into a chase.
+	if J.IsDefending(bot) then
+		local poke = J.GetMidDefensePokeTarget(bot, abilityQ:GetCastRange() - 20)
+		if poke and not J.IsDisabled(poke) and canLandStun(poke)
+			and J.CanCastOnNonMagicImmune(poke) and J.CanCastOnTargetAdvanced(poke)
+			and bot:GetMana() >= 2 * nManaCost then return BOT_ACTION_DESIRE_HIGH, poke end
+	end
+
 	--团战中对战力最高的敌人使用
 	if J.IsInTeamFight( bot, 1200 )
 	then

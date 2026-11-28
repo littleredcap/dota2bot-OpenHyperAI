@@ -446,6 +446,7 @@ end
 
 local shelterFarmSince, shelterFarmTask, shelterFarmScanAt = nil, nil, 0
 local shelterFarmActive = false
+local idleCamp
 local function GetShelterCampCreeps(camp, neutrals)
 	local loc, creeps = camp.cattr.location, {}
 	local health = 0
@@ -540,20 +541,20 @@ local function GetShelteredResourceDesire()
 	return 0.84
 end
 
+local function WorkVisibleCamp(camp)
+	if not CanFarmCamp(camp) then return false end
+	local target = J.Site.FindFarmNeutralTarget(GetShelterCampCreeps(camp, bot:GetNearbyNeutralCreeps(1600)))
+	if not J.IsValid(target) then return false end
+	bot.ohaFarmCampClaim = {location=camp.cattr.location, expires=DotaTime()+3}
+	if J.IsInRange(bot, target, bot:GetAttackRange() + 100) then AttackFarmTarget(target)
+	else MoveToFarm(target:GetLocation()) end
+	return true
+end
+
 local function ThinkShelteredResource(task)
 	recoveringLane = true
 	if DotaTime() >= task.expires or not CanUseShelteredResource(task.tower, task.lane, shelterFarmSince, task.camp)
-		or not CanFarmCamp(task.camp) then
-		shelterFarmTask, shelterFarmSince, bot.ohaFarmCampClaim = nil, nil, nil
-		CancelFarmOrder()
-		return
-	end
-	local target = J.Site.FindFarmNeutralTarget(GetShelterCampCreeps(task.camp, bot:GetNearbyNeutralCreeps(1600)))
-	if J.IsValid(target) then
-		bot.ohaFarmCampClaim = {location=task.camp.cattr.location, expires=DotaTime()+3}
-		if J.IsInRange(bot, target, bot:GetAttackRange() + 100) then AttackFarmTarget(target)
-		else MoveToFarm(target:GetLocation()) end
-	else
+		or not WorkVisibleCamp(task.camp) then
 		shelterFarmTask, shelterFarmSince, bot.ohaFarmCampClaim = nil, nil, nil
 		CancelFarmOrder()
 	end
@@ -892,6 +893,7 @@ function GetDesire()
 end
 
 function GetDesireHelper()
+	idleCamp = nil
 	shelterFarmActive = false
 	idleRally, collectingWave = nil, false
 	sideWaveDesire = nil
@@ -951,6 +953,11 @@ function GetDesireHelper()
     local bAlive = bot:IsAlive()
 	local bNotClone = not bot:HasModifier('modifier_arc_warden_tempest_double') and not J.IsMeepoClone(bot)
 	local retreating = botActiveMode == BOT_MODE_RETREAT and botActiveModeDesire > 0
+	local localRecovery = (bot.ohaIdleRecoveryUntil or 0) > DotaTime() and J.GetHP(bot) >= 0.65
+		and not bot:WasRecentlyDamagedByAnyHero(3) and #J.GetEnemiesNearLoc(bot:GetLocation(), 1500) == 0
+		and #J.GetLastSeenEnemiesNearLoc(bot:GetLocation(), 1500) == 0
+		and not J.IsInTeamFight(bot, 1500)
+	if retreating and (J.GetHP(bot) < 0.80 or J.GetMP(bot) < 0.40) then localRecovery = false end
 	local readyAtBase = retreating and bot:DistanceFromFountain() < 1250 and J.GetHP(bot) >= 0.88 and J.GetMP(bot) >= 0.65
 		and #J.GetEnemiesNearLoc(bot:GetLocation(), 1800) == 0 and #J.GetLastSeenEnemiesNearLoc(bot:GetLocation(), 1800) == 0
 
@@ -960,7 +967,7 @@ function GetDesireHelper()
 	or (J.IsDoingTormentor(bot) and bNotClone)
     or DotaTime() < 50
     or (botActiveModeDesire > 0 and botActiveMode == BOT_MODE_SECRET_SHOP)
-    or (retreating and not readyAtBase)
+    or (retreating and not readyAtBase and not localRecovery)
     or (botActiveModeDesire > 0 and (bot.ohaIdleRecoveryUntil or 0) <= DotaTime()
 		and (botActiveMode == BOT_MODE_RUNE or botActiveMode == BOT_MODE_WARD or botActiveMode == BOT_MODE_OUTPOST))
     then
@@ -973,6 +980,24 @@ function GetDesireHelper()
 	if (bot.ohaOuterTowerHoldUntil or 0) > DotaTime()
 		or (J.GetPostFightDuty and J.GetPostFightDuty(bot)) then return BOT_MODE_DESIRE_NONE end
 	RefreshFarmCamps()
+	if localRecovery and J.IsCore(bot) then
+		recoveringLane = true
+		local neutrals = bot:GetNearbyNeutralCreeps(1400)
+		local gap = 1200
+		for _, camp in ipairs(J.Role.availableCampTable or {}) do
+			local point = camp.cattr.location
+			local distance = GetUnitToLocationDistance(bot, point)
+			if distance < gap and camp.cattr.team == team and IsLocationVisible(point)
+				and #GetShelterCampCreeps(camp, neutrals) > 0 and CanFarmCamp(camp) then
+				idleCamp, gap = camp, distance
+			end
+		end
+		if idleCamp then
+			bot.farmLocation = idleCamp.cattr.location
+			return 0.88
+		end
+		recoveringLane = false
+	end
 	local tradeDesire = GetOuterTowerRecoveryDesire()
 	if tradeDesire > BOT_MODE_DESIRE_NONE then return tradeDesire end
 	local now = DotaTime()
@@ -1291,6 +1316,7 @@ function OnStart()
 end
 
 function OnEnd()
+	idleCamp = nil
 	sideWaveTask, sideWaveDesire, bot.ohaRallySideWave = nil, nil, nil
 	bot.ohaWaveClaim = nil
 	if issuedFarmOrder and not bot:IsUsingAbility() and not bot:IsChanneling() then CancelFarmOrder() end
@@ -1386,6 +1412,14 @@ function Think()
 	end
 	if shelterFarmActive and shelterFarmTask then
 		ThinkShelteredResource(shelterFarmTask)
+		return
+	end
+	if idleCamp then
+		if (bot.ohaIdleRecoveryUntil or 0) <= DotaTime() or bot:WasRecentlyDamagedByAnyHero(3)
+			or not IsLocationVisible(idleCamp.cattr.location) or not WorkVisibleCamp(idleCamp) then
+			idleCamp, bot.ohaFarmCampClaim = nil, nil
+			CancelFarmOrder()
+		end
 		return
 	end
 	if sideWaveDesire then

@@ -665,13 +665,17 @@ do
     caster.GetHealth, caster.GetMaxHealth = function() return 800 end, function() return 900 end
     caster.GetMana, caster.GetMaxMana = function() return 400 end, function() return 600 end
     caster.ActionQueue_UseAbilityOnEntity=function(_, skill, other) assert(skill==spell);target=other end
-    local warlock=loadHero('warlock',{warlock_fatal_bonds=spell},caster,{
+    local tower
+    local offering=ability({})
+    offering.GetManaCost=function() return 240 end
+    local warlock=loadHero('warlock',{warlock_fatal_bonds=spell,warlock_rain_of_chaos=offering},caster,{
         CanNotUseAbility=no,IsItemAvailable=no,SetQueuePtToINT=no,IsLaning=no,IsDefending=yes,
+        GetAssignedOuterTower=function() return tower end,
         IsValidHero=yes,IsSuspiciousIllusion=no,IsValid=yes,CanBeAttacked=yes,
         CanCastOnNonMagicImmune=yes,CanCastOnTargetAdvanced=yes,
         IsInRange=function(a,b,r) return math.abs(a.x-b.x)<=r end,
         GetNearbyHeroes=function() return enemies end,
-    },{'warlock_fatal_bonds'})
+    },{'warlock_fatal_bonds',[6]='warlock_rain_of_chaos'})
     local env=getfenv(warlock.ConsiderQ)
     env.UNIT_LIST_ENEMY_CREEPS=7
     env.GetUnitList=function(team) assert(team==7);return creeps end
@@ -687,6 +691,16 @@ do
     creeps={unit(-250),unit(-240)}
     warlock.SkillsComplement()
     assert(target==isolated,'Bonds can link an actual tower attacker to its wave')
+    tower,creeps,enemies,target={}, {unit(680)}, {unit(1020)}, nil
+    creeps[1].GetAttackTarget=function() return tower end
+    caster.WasRecentlyDamagedByAnyHero=no
+    caster.GetNearbyLaneCreeps=function() return creeps end
+    warlock.SkillsComplement()
+    assert(target==creeps[1],'use the in-range tower creep to link the escort beyond direct cast range')
+    target=nil
+    caster.GetMana=function() return 300 end
+    warlock.SkillsComplement()
+    assert(not target,'the optional link cannot consume Offering mana')
 end
 
 do
@@ -954,7 +968,7 @@ do
         GetNearbyLaneCreeps = function() return {creep} end, WasRecentlyDamagedByAnyHero = no,
         ActionQueue_UseAbilityOnEntity = function(_, used, unit) assert(used == spell); target=unit end}
     local wk = loadHero('skeleton_king', {skeleton_king_hellfire_blast = spell}, wkBot, {
-        CanNotUseAbility = no, IsRetreating = no, IsFarming = no, IsValidHero = no, HasPendingLaningLastHit = yes,
+        CanNotUseAbility = no, IsDefending = no, IsRetreating = no, IsFarming = no, IsValidHero = no, HasPendingLaningLastHit = yes,
         GetLaningPeelTarget = function() end,
         GetNearbyHeroes = function(_, range, hostile)
             return visibleThreat and range == 1600 and hostile and {enemy} or {}
@@ -981,6 +995,17 @@ do
     visibleThreat, wkBot.ohaLaningAttackTarget = false, creep
     wk.SkillsComplement()
     assert(target == nil, 'do not interrupt a reserved last-hit windup with an optional stun')
+    local common = env.require('bots/FunLib/jmz_func')
+    local attacker = {x=500}
+    common.IsDefending=yes
+    common.GetMidDefensePokeTarget=function(_,reach) assert(reach<spell:GetCastRange()); return attacker end
+    common.IsDisabled=no
+    common.CanCastOnNonMagicImmune,common.CanCastOnTargetAdvanced=yes,yes
+    wkBot.GetMana=function() return 240 end
+    local desire, unit=wk.ConsiderQ()
+    assert(desire>0 and unit==attacker,'a covered in-range siege attacker can be stunned before a team attack starts')
+    common.IsDisabled=yes
+    assert(wk.ConsiderQ()==NONE,'do not overlap the existing disable for optional tower poke')
 end
 do
     local file = assert(io.open('bots/BotLib/hero_dragon_knight.lua','rb'))

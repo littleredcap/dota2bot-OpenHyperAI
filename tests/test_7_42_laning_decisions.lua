@@ -193,6 +193,13 @@ do
     env.J.IsTryingtoUseAbility = yes
     for t = 0, 12 do state.time = 1320 + t; env.J.CheckBotIdleState() end
     assert(not bot.ohaIdleRecoveryUntil, 'channeling and casting do not trigger recovery')
+    env.J.IsTryingtoUseAbility=no
+    env.BOT_ACTION_TYPE_ATTACK=4
+    bot.GetCurrentActionType=function() return 4 end
+    for t=0,12 do state.time,state.previousShot=1350+t,1350+t; env.J.CheckBotIdleState() end
+    assert(not bot.ohaIdleRecoveryUntil,'stationary farming with effective attacks is productive')
+    for t=0,12 do state.time=1370+t; env.J.CheckBotIdleState() end
+    assert(bot.ohaIdleRecoveryUntil>state.time,'a stuck attack order with no further shots can yield to recovery')
 end
 
 do

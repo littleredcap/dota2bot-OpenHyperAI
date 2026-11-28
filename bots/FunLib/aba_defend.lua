@@ -1695,7 +1695,13 @@ function ____exports.DefendThink(bot, lane)
     end
     if buildingTier >= 3 then
         local edgeInside = GetHighGroundEdgeWaitPoint(nTeam, lane)
-        jmz.RunOuterTowerHold(bot, edgeInside, attackRange, false)
+        if IsStandingHighGroundBuilding(bld) then
+            local threat = jmz.GetOuterTowerThreat(bld, lane)
+            local stage = jmz.GetSiegeFiringPosition(bot, bld, threat, edgeInside)
+            jmz.RunOuterTowerHold(bot, bld:GetLocation(), attackRange, false, stage or edgeInside)
+        else
+            jmz.RunOuterTowerHold(bot, edgeInside, attackRange, false)
+        end
         return
     end
     local released = bot.ohaOuterTowerTrade

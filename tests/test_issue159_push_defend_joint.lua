@@ -253,7 +253,7 @@ local function fixture(opts)
         GetIncomingTeleports=function() return opts.incoming or {} end, RandomFloat=function(first) return first end,
         GetTeamForPlayer=function(id) return id <= #members and 2 or 3 end,
         GetGlyphCooldown=function() return opts.glyphCooldown or 180 end,
-        IsLocationPassable=yes, TEAM_RADIANT=2, LANE_TOP=1, LANE_MID=2, LANE_BOT=3, UNIT_LIST_ENEMY_CREEPS=1, UNIT_LIST_ALLIED_CREEPS=3,
+        IsLocationPassable=yes, IsLocationVisible=yes, TEAM_RADIANT=2, LANE_TOP=1, LANE_MID=2, LANE_BOT=3, UNIT_LIST_ENEMY_CREEPS=1, UNIT_LIST_ALLIED_CREEPS=3,
         ABILITY_BEHAVIOR_UNIT_TARGET=8, ABILITY_BEHAVIOR_POINT=16,
         GetAmountAlongLane=function(lane, point)
             return {amount=point.x / 10000, distance=point.lane and point.lane ~= lane and 650 or point.y or 0}
@@ -376,7 +376,7 @@ local function fixture(opts)
             end
         end
         local lanes = {[Lan.Top] = loc(bot.x + 800), [Lan.Mid] = loc(bot.x + 1200), [Lan.Bot] = loc(bot.x + 1600)}
-        local closeCamp = {cattr = {location = loc(bot.x - (opts.closeCampDistance or 680))}}
+        local closeCamp = {cattr = {team=2, location = loc(bot.x - (opts.closeCampDistance or 680))}}
         local farCamp = {cattr = {location = loc(bot.x - 1500)}}
         local neutral = {x = closeCamp.cattr.location.x, IsAncientCreep = no, GetTeam = function() return 4 end,
             GetHealth = function() return opts.neutralHP or 300 end}
@@ -1094,6 +1094,21 @@ do
     opts.shelterWave, opts.shelterDanger = false, true
     farm.AdvanceTime(11)
     assert(farm.GetDesire() < 0.84, 'a genuinely threatened tower keeps its defender')
+end
+
+do
+    local opts = {farmBot=1, route=true, shelterTrial=true, direct=true, neutralCount=1,
+        closeCampDistance=850, farmPosition=1, farmLevel=9, time=840, fountainDistance=5000}
+    local _,_,members,orders,_,farm=fixture(opts)
+    members[1].GetNearbyHeroes=function() return {} end
+    members[1].ohaIdleRecoveryUntil=855
+    assert(farm.GetDesire()==0.88,'a recovered idle core may resume work at a nearby visible camp')
+    farm.Think()
+    same(orders[#orders].x,farm.camps[1].cattr.location.x,'walk to the observed neutral')
+    opts.campHidden=true
+    farm.Think()
+    assert(orders[#orders]=='cancel','loss of vision cancels the existing camp order')
+    assert(farm.GetDesire()~=0.88,'do not refresh an idle trip to a hidden camp')
 end
 
 do
@@ -2092,6 +2107,12 @@ do
     opts.incoming = {{playerid=members[2]:GetPlayerID(), location=tower:GetLocation(), time_remaining=2}}
     assert(not j.CanTakeLaneDefenseTeleport(members[1], lane.Top, tower:GetLocation(), tower),
         'a second optional TP may not follow a teammate already landing at the unescorted wave')
+    local escorted={count=2,waveSize=4,underAttack=true}
+    assert(j.CanTakeLaneDefenseTeleport(members[1],lane.Top,tower:GetLocation(),tower,nil,nil,nil,escorted),
+        'one inbound teammate leaves room to help against two escorts')
+    opts.incoming[2]={playerid=members[3]:GetPlayerID(),location=tower:GetLocation(),time_remaining=5.5}
+    assert(not j.CanTakeLaneDefenseTeleport(members[1],lane.Top,tower:GetLocation(),tower,nil,nil,nil,escorted),
+        'include the longer second channel when deciding whether a third optional TP is needed')
     opts.incoming = {}
     local front = {lane=lane.Top, building=tower, waveDefense=true, primary={hero=members[1], id=1}}
     j.GetPostFightCoverage = function() return front end

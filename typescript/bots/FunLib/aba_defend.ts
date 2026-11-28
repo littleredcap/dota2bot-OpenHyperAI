@@ -1338,7 +1338,13 @@ export function DefendThink(bot: Unit, lane: Lane) {
 
     if (buildingTier >= 3) {
         const edgeInside = GetHighGroundEdgeWaitPoint(nTeam, lane);
-        jmz.RunOuterTowerHold(bot, edgeInside, attackRange, false);
+        if (IsStandingHighGroundBuilding(bld)) {
+            const threat = jmz.GetOuterTowerThreat(bld, lane);
+            const stage = jmz.GetSiegeFiringPosition(bot, bld, threat, edgeInside);
+            jmz.RunOuterTowerHold(bot, bld.GetLocation(), attackRange, false, stage ?? edgeInside);
+        } else {
+            jmz.RunOuterTowerHold(bot, edgeInside, attackRange, false);
+        }
         return;
     }
 

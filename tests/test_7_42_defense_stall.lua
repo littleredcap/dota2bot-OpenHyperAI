@@ -17,7 +17,7 @@ bot.GetNearbyLaneCreeps = function(_, range) return gap(bot.x,creep.x)<=range an
 bot.HasModifier = function(_,name) return teleport and name=='modifier_teleporting' end
 bot.WasRecentlyDamagedByAnyHero = no
 bot.IsUsingAbility = function() return busy end
-bot.IsCastingAbility, bot.IsChanneling, bot.IsRooted = no,no,no
+bot.IsCastingAbility, bot.IsChanneling, bot.IsRooted, bot.IsDisarmed = no,no,no,no
 bot.GetAttackTarget = function() end
 bot.Action_AttackUnit = function(_,target) assert(target==creep); bot.order='attack' end
 bot.Action_MoveToLocation = function(_,point) bot.order=point end
@@ -54,6 +54,23 @@ hostileAtHold,bot.order,bot.x=false,nil,-800
 creep.CanBeSeen=no
 assert(not j.RunOuterTowerHold(bot,0,1200,false,-800) and not bot.order,'do not move toward a creep in fog')
 print('PASS: staged defender takes a bounded, safe step and shoots without dropping a cast or TP')
+
+do
+    local tower={x=0}
+    j.GetAssignedOuterTower=function() return tower end
+    j.GetAvailableFightAllies=function() return 1 end
+    j.GetVisibleThreatAt=function() return 80 end
+    bot.GetHealth=function() return 1000 end
+    creep.GetAttackTarget=function() return tower end
+    creep.CanBeSeen=yes
+    bot.x,bot.order=-450,nil
+    assert(j.RunOuterTowerHold(bot,0,1200,false,-1000) and bot.order=='attack',
+        'on landing, hit the creep already attacking this tower before walking back to the rally')
+    j.GetVisibleThreatAt=function() return 450 end
+    bot.order=nil
+    assert(j.RunOuterTowerHold(bot,0,1200,false,-1000) and bot.order==-1000,
+        'fall back when standing still for the attack is unsafe')
+end
 
 do
     local hero = {x=0, GetActiveMode=function() return 0 end, IsAlive=yes, HasModifier=no,

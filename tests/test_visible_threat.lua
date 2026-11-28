@@ -37,6 +37,8 @@ local b=assert(src:find('function J.IsLaningUnderPressure',a,true))
 env.J,env.VisibleThreat=j,threat
 setfenv(assert(loadstring(src:sub(a,b-1))),env)()
 j.GetNearbyHeroes=function() return enemies end
+j.GetCreepAttackProjectileWillRealDamage=value(0)
+j.GetHP=value(0.6)
 j.IsStunProjectileIncoming=no
 assert(not j.CanStartTeleportHere(bot),'4:37: a nonlethal melee stun can arrive during the scroll')
 bot.IsMagicImmune=yes
@@ -72,6 +74,26 @@ local damage,_,contacts=j.GetVisibleThreatAt(bot,enemies,0,4)
 assert(damage>=334 and contacts==2,'at the exposed wave two visible opponents can exhaust 334 HP')
 dk.mana,wl.mana=0,0
 assert(j.GetVisibleThreatAt(bot,enemies,0,4)<334,'out-of-mana opponents still contribute their reachable physical hits')
+do
+    local oldX,oldY=dk.x,wl.x
+    dk.x,wl.x=324,598
+    wl.GetAttackRange=value(500)
+    dk.GetAttackDamage,wl.GetAttackDamage=value(50),value(50)
+    bot.GetHealth,bot.GetHealthRegen,j.GetHP=value(162),value(0),value(162/890)
+    assert(not j.CanStartTeleportHere(bot),'a critical hero cannot channel through two reachable attackers on a narrow damage margin')
+    enemies={}
+    j.GetCreepAttackProjectileWillRealDamage=value(170)
+    assert(not j.CanStartTeleportHere(bot),'already released lethal shots remain even when no hero is in sight')
+    j.GetCreepAttackProjectileWillRealDamage=value(0)
+    assert(j.CanStartTeleportHere(bot),'allow a cleared escape point')
+    local shaman=caster(9,591,280,400,130,'shadow_shaman_shackles')
+    enemies={shaman}
+    assert(not j.CanStartTeleportHere(bot),'a visible shaman can step into Shackles range during the channel')
+    enemies={dk,wl}
+    dk.x,wl.x,wl.GetAttackRange=oldX,oldY,value(150)
+    dk.GetAttackDamage,wl.GetAttackDamage=value(62),value(62)
+    bot.GetHealth,bot.GetHealthRegen,j.GetHP=value(341),value(4),value(0.6)
+end
 dk.visible,wl.visible=false,false
 assert(j.GetVisibleThreatAt(bot,enemies,0,4)==0,'no enemy combat information from fog')
 dk.visible,wl.visible,dk.mana,wl.mana,dk.magic,wl.magic=true,true,200,350,200,240

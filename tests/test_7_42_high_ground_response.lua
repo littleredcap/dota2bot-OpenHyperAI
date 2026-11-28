@@ -66,4 +66,9 @@ do
     assert(not j.GetSiegeFiringPosition(bot,building,threat,deep),'do not advance through an occupied exit')
     seen={}; threat.underAttack=false
     assert(not j.GetSiegeFiringPosition(bot,building,threat,deep),'a quiet tower does not trigger an advance')
+    j.GetTeamFountain=function() return v(-6000,0) end
+    threat.waveSize,threat.eta=3,4
+    assert(j.GetSiegeFiringPosition(bot,building,threat,deep),'intercept a visible approaching wave before the first tower hit')
+    threat.clearAt=v(2600,0)
+    assert(not j.GetSiegeFiringPosition(bot,building,threat,deep),'do not walk past the tower for an incoming wave')
 end

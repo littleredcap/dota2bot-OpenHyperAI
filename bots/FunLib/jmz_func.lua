@@ -1227,9 +1227,15 @@ end
 function J.CanStartTeleportHere(bot)
     local projectile = J.IsStunProjectileIncoming(bot, 1600, bot:IsMagicImmune())
     local enemies = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE)
-    if #enemies == 0 and not projectile then return true end
-    local damage, interrupt = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 3, true)
-    if not projectile and not interrupt and damage < bot:GetHealth() + 3 * bot:GetHealthRegen() then return true end
+    local inFlight = J.GetCreepAttackProjectileWillRealDamage(bot, 3, true)
+    if #enemies == 0 and not projectile and inFlight == 0 then return true end
+    local damage, interrupt, contacts = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 3, true)
+    damage = damage + inFlight
+    local health = bot:GetHealth() + 3 * bot:GetHealthRegen()
+    -- Attack damage varies. Do not rely on surviving simultaneous attacks by
+    -- only a few HP when channeling in place at critical health.
+    if contacts >= 2 and J.GetHP(bot) <= 0.30 then health = health * 0.85 end
+    if not projectile and not interrupt and damage < health then return true end
     if J.Customize and J.Customize.TraceLaneDecisions and (bot.ohaTpDeniedLog or -100) + 2 <= DotaTime() then
         bot.ohaTpDeniedLog = DotaTime()
         local sources = {}
@@ -6612,13 +6618,13 @@ function J.CanTakeLaneDefenseTeleport(bot, lane, landing, tower, rear, planned, 
 		local role, plan = J.GetPostFightDuty(bot)
 		if role then return plan.lane == lane and plan.building == (rear or tower) end
 		if J.HasAssignedWaveDefense(plan, lane) then return false, 'already-covered' end
-		if (sight.count or 0) <= 1 then
-			for _, tp in ipairs(GetIncomingTeleports()) do
-				if tp.playerid ~= nil and tp.playerid ~= bot:GetPlayerID() and tp.location and tp.time_remaining
-					and tp.time_remaining >= 0 and tp.time_remaining <= 5 and GetTeamForPlayer(tp.playerid) == bot:GetTeam()
-					and J.GetLocationToLocationDistance(tp.location, landing) <= 1150 then return false, 'already-incoming' end
-			end
+		local inbound = 0
+		for _, tp in ipairs(GetIncomingTeleports()) do
+			if tp.playerid ~= nil and tp.playerid ~= bot:GetPlayerID() and tp.location and tp.time_remaining
+				and tp.time_remaining >= 0 and tp.time_remaining <= 7 and GetTeamForPlayer(tp.playerid) == bot:GetTeam()
+				and J.GetLocationToLocationDistance(tp.location, landing) <= 1150 then inbound = inbound + 1 end
 		end
+		if inbound >= math.max(1, sight.count or 0) then return false, 'already-incoming' end
 		return true
 	end
 	if not J.IsValidBuilding(tower) or landing == nil then return false end
@@ -7363,6 +7369,10 @@ function J.GetOuterTowerThreat(tower, lane)
 	end
 	local briefHold = not active and watch.lastHit ~= nil and now - watch.lastHit <= 10
 	local towerHP = health / math.max(1, tower:GetMaxHealth())
+	if underAttack and towerHP <= 0.55 and tower.IsTower and tower:IsTower() and tower:GetTeam() == GetTeam() then
+		J.recentlyBesiegedTowers = J.recentlyBesiegedTowers or {}
+		J.recentlyBesiegedTowers[tower] = {point=tower:GetLocation(), seen=now}
+	end
 	local enemies = {}
 	for _, enemy in pairs(visible) do enemies[#enemies + 1] = enemy end
 	if activeAttackers > 0 then eta = 0 end
@@ -7474,12 +7484,18 @@ end
 -- building, use a reachable firing position on our side of that wave.
 function J.GetSiegeFiringPosition(bot, tower, threat, stage)
     local wave = threat and threat.clearAt
-    if not wave or not threat.underAttack or not IsLocationVisible(wave)
+    if not wave or not (threat.underAttack or (threat.waveSize or 0) >= 2 and (threat.eta or 99) <= 5)
+        or not IsLocationVisible(wave)
         or J.GetHP(bot) < 0.55 or bot:WasRecentlyDamagedByAnyHero(2) then return nil end
     local _, spellReach, damage = GetWaveClearScore(bot, 0)
     local reach = math.max(bot:GetAttackRange(), damage > 0 and spellReach - 90 or 0)
     if reach < 350 or J.GetLocationToLocationDistance(stage, wave) <= reach then return nil end
+    local origin = bot:GetLocation()
+    if GetUnitToLocationDistance(bot, wave) <= reach and GetUnitToLocationDistance(tower, origin) <= 1400
+        and J.CanCommitToLaneTeleport(bot, origin, true, 650) then return origin end
     local point = J.AdjustLocationWithOffsetTowardsFountain(wave, math.max(250, reach - 45))
+    if not threat.underAttack and J.GetLocationToLocationDistance(point, J.GetTeamFountain()) >
+        GetUnitToLocationDistance(tower, J.GetTeamFountain()) then return nil end
     if GetUnitToLocationDistance(tower, point) > 1600 or not IsLocationVisible(point)
         or not IsLocationPassable(point) or not J.CanCommitToLaneTeleport(bot, point, true, 650)
         or J.GetLocationToLocationDistance(point, wave) > reach then return nil end
@@ -7497,12 +7513,16 @@ local function BuildDefenseLanePlan(team, demand, claimed, now)
 	-- When we cannot see the next wave, do not assume a long reset window.
 	local deadline = math.max(5, math.min(18, reinforcement + (enemies >= 2 and 5 or 8)))
 	if enemies >= 4 then deadline = math.min(deadline, 13) end
-	if (sight.waveSize or 0) > 0 then deadline = math.min(deadline, math.max(2, sight.eta + 2)) end
 	if sight.underAttack then
+		-- Once the wave arrives, ETA is zero. The remaining time to protect
+		-- this tower is set by its health and observed rate of damage.
 		local life = sight.damageRate and sight.damageRate > 0 and building:GetHealth() / sight.damageRate or 8
 		deadline = math.min(deadline, math.max(2, math.min(8, life)))
-	elseif (sight.count or 0) >= 2 then
-		deadline = math.min(deadline, math.max(6, math.min(12, (sight.eta or 0) + 2)))
+	else
+		if (sight.waveSize or 0) > 0 then deadline = math.min(deadline, math.max(2, sight.eta + 2)) end
+		if (sight.count or 0) >= 2 then
+			deadline = math.min(deadline, math.max(6, math.min(12, (sight.eta or 0) + 2)))
+		end
 	end
 	if demand.rear then deadline = math.min(12, deadline + 4) end
 	local waveSize = sight.waveSize or 0
@@ -8407,14 +8427,38 @@ local function GetCoveredMidPokeTarget(bot, tower, range)
 	return target
 end
 
-function J.GetMidDefensePokeTarget(bot, range)
+function J.GetMidDefensePokeTarget(bot, range, hold)
+	if not J.IsDefending(bot) then return nil end
+	local now = DotaTime()
+	local guard = bot.ohaMidCover
 	local state = bot._defend
-	if not state or state.waveClearLane ~= LANE_MID or state.waveClearRearTower ~= nil
-		or (bot.ohaOuterTowerHoldUntil or 0) <= DotaTime() or not J.IsDefending(bot)
-		or not J.IsValidBuilding(state.waveClearTower) then return nil end
-	local hub = state.waveClearTower:GetLocation()
+	local tower
+	if guard and now < guard.expires then
+		tower = guard.tower
+	elseif bot.ohaHighGroundResponse and now < bot.ohaHighGroundResponse.expires then
+		tower = bot.ohaHighGroundResponse.tower
+	elseif state and state.waveClearLane and not state.waveClearRearTower and (bot.ohaOuterTowerHoldUntil or 0) > now then
+		tower = state.waveClearTower
+	end
+	if not J.IsValidBuilding(tower) then return nil end
+	local hub = tower:GetLocation()
 	if GetUnitToLocationDistance(bot, hub) > 1350 or #J.GetEnemiesNearLoc(bot:GetLocation(), 700) >= 2 then return nil end
-	return GetCoveredMidPokeTarget(bot, state.waveClearTower, range)
+	local target = GetCoveredMidPokeTarget(bot, tower, range)
+	if target or not hold or bot:IsRooted() or bot:IsDisarmed() then return target end
+	target = GetCoveredMidPokeTarget(bot, tower, range + 150)
+	if not target or target:GetAttackTarget() ~= tower or J.GetHP(tower) < 0.25 then return nil end
+	local step = GetUnitToUnitDistance(bot, target) - range + 20
+	local origin = bot:GetLocation()
+	local point = J.VectorTowards(origin, target:GetLocation(), step)
+	local halfway = J.VectorTowards(origin, point, step * 0.5)
+	if J.GetLocationToLocationDistance(hold, point) > 220 or not IsLocationVisible(point)
+		or not IsLocationPassable(point) or not IsLocationPassable(halfway)
+		or GetUnitToLocationDistance(target, point) <= target:GetAttackRange() + 110
+		or GetUnitToLocationDistance(tower, J.GetTeamFountain()) < J.GetLocationToLocationDistance(point, J.GetTeamFountain()) then return nil end
+	local enemies = J.GetEnemiesNearLoc(point, 1500)
+	if J.GetAvailableFightAllies(bot, point, 900) == 0 or not J.CanCommitToLaneTeleport(bot, point, false, 850)
+		or J.GetVisibleThreatAt(bot, enemies, point, 1.5) >= bot:GetHealth() * 0.25 then return nil end
+	return nil, point
 end
 
 function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
@@ -8443,6 +8487,32 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 	local canStepUp = not cover and formation == nil and #J.GetLastSeenEnemiesNearLoc(hub, 1150) == 0
 		and #J.GetEnemiesNearLoc(hub, 1150) == 0
 	if awayFromHold and (not canStepUp or GetUnitToLocationDistance(bot, hub) > 700) then
+		-- A defender who has just landed may already have a safe shot. Do not
+		-- walk back to the rally before firing at a unit on the standing tower.
+		local range = bot:GetAttackRange()
+		if range >= 350 and not bot:IsDisarmed() and J.GetHP(bot) >= 0.60
+			and not bot:WasRecentlyDamagedByAnyHero(2) and GetUnitToLocationDistance(bot, hub) <= 1050 then
+			local tower = J.GetAssignedOuterTower(bot)
+			if tower and GetUnitToLocationDistance(tower, hub) <= 120 then
+				local enemies = J.GetEnemiesNearLoc(bot:GetLocation(), 1400)
+				if J.GetAvailableFightAllies(bot, bot:GetLocation(), 1000) > 0
+					and J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 1.5) < bot:GetHealth() * 0.25 then
+					local target = J.GetMidDefensePokeTarget(bot, range - 25)
+					if not target then
+						for _, creep in ipairs(bot:GetNearbyLaneCreeps(range - 15, true)) do
+							if J.IsValid(creep) and J.CanBeAttacked(creep) and creep:GetAttackTarget() == tower then
+								target = creep
+								break
+							end
+						end
+					end
+					if target then
+						if bot:GetAttackTarget() ~= target then bot:Action_AttackUnit(target, true) end
+						return true
+					end
+				end
+			end
+		end
 		bot:Action_MoveToLocation(hold)
 		return true
 	end
@@ -8510,8 +8580,11 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 		bot:Action_MoveToLocation(nextPoint)
 		return true
 	end
-	local poke = range >= 425 and J.GetMidDefensePokeTarget(bot, range - 25) or nil
-	if poke then bot:Action_AttackUnit(poke, true); return true end
+	if range >= 425 and not bot:IsDisarmed() then
+		local poke, point = J.GetMidDefensePokeTarget(bot, range - 25, hold)
+		if poke then bot:Action_AttackUnit(poke, true); return true end
+		if point then bot:Action_MoveToLocation(point); return true end
+	end
 	if awayFromHold then
 		bot:Action_MoveToLocation(hold)
 		return true
@@ -8692,9 +8765,41 @@ function J.ShouldPreserveCoreFightTrade(bot, enemies)
 	return count >= 2 and damage >= bot:GetHealth() * 0.42 and CanFinishValuableFightTrade(bot)
 end
 
+function J.ShouldDisengageAtLostTower(bot, now)
+	for tower, front in pairs(J.recentlyBesiegedTowers or {}) do
+		if now - front.seen > 8 or now < front.seen then
+			J.recentlyBesiegedTowers[tower] = nil
+		elseif (tower:IsNull() or not tower:IsAlive()) and GetUnitToLocationDistance(bot, front.point) <= 1800 then
+			local enemies = J.GetEnemiesNearLoc(front.point, 1250)
+			if #enemies >= 2 then
+				local nearest, gap = nil, math.huge
+				for _, enemy in ipairs(enemies) do
+					local distance = GetUnitToUnitDistance(bot, enemy)
+					if distance < gap then nearest, gap = enemy, distance end
+				end
+				if nearest and gap <= 1400 and (gap <= nearest:GetAttackRange() + 180
+					or bot:IsFacingLocation(nearest:GetLocation(), 50) and J.IsMoving(bot)) then
+					local point = J.VectorTowards(bot:GetLocation(), nearest:GetLocation(),
+						math.min(350, math.max(0, gap - bot:GetAttackRange())))
+					local allies = J.GetAlliesNearLoc(point, 1000)
+					local ready = J.GetLocalFightReadiness(bot, allies, enemies)
+					local incoming = J.GetVisibleThreatAt(bot, enemies, point, 2.5)
+					if ready ~= true and incoming >= bot:GetHealth() * 0.50
+						and (ready == false or J.GetAvailableFightAllies(bot, point, 850) < #enemies) then return true end
+				end
+			end
+		end
+	end
+	return false
+end
+
 function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local now = DotaTime()
 	if now < 0 or not bot:IsAlive() or bot:HasModifier('modifier_fountain_invulnerability') then return false end
+	if J.recentlyBesiegedTowers and J.ShouldDisengageAtLostTower(bot, now) then
+		bot.ohaReinforcementRetreatAt = now
+		return true
+	end
 
 	local enemyTeam = GetOpposingTeam()
 	if now >= 8 * 60 then
@@ -10175,21 +10280,30 @@ function J.CheckBotIdleState()
 	if (bot.ohaIdleRecoveryUntil or 0) > now then return true end
 	local action = bot:GetCurrentActionType()
 	local travelling = action == BOT_ACTION_TYPE_MOVE_TO or action == BOT_ACTION_TYPE_PICK_UP_RUNE
-	if not (travelling or action == BOT_ACTION_TYPE_IDLE or bot:GetActiveMode() == BOT_MODE_FARM)
+	local inactive = action == BOT_ACTION_TYPE_NONE or action == BOT_ACTION_TYPE_IDLE or action == BOT_ACTION_TYPE_ATTACK
+	local recovering = J.IsRetreating(bot)
+	local needsRecovery = recovering and (J.GetHP(bot) < 0.80 or J.GetMP(bot) < 0.40
+		or #J.GetLastSeenEnemiesNearLoc(bot:GetLocation(), 1600) > 0)
+	if not (travelling or inactive or bot:GetActiveMode() == BOT_MODE_FARM)
 		or bot:DistanceFromFountain() < 850 or J.CanNotUseAction(bot) or bot:IsRooted()
-		or J.IsTryingtoUseAbility(bot) or J.IsAttacking(bot) or J.IsDefending(bot) or J.IsRetreating(bot)
+		or J.IsTryingtoUseAbility(bot) or J.IsAttacking(bot) or J.IsDefending(bot) or needsRecovery
 		or J.IsDoingRoshan(bot) or J.IsDoingTormentor(bot) or bot:WasRecentlyDamagedByAnyHero(3)
 		or (bot.ohaOuterTowerHoldUntil or 0) > now then
 		bot.ohaMoveSample = nil
 		return false
 	end
 	local sample = bot.ohaMoveSample
-	if sample == nil or GetUnitToLocationDistance(bot, sample.location) > 180 then
-		bot.ohaMoveSample = {location = bot:GetLocation(), time = now}
+	local attack = bot:GetLastAttackTime()
+	if sample == nil or sample.attack ~= attack or GetUnitToLocationDistance(bot, sample.location) > 180 then
+		bot.ohaMoveSample = {location = bot:GetLocation(), time = now, attack = attack}
 	elseif now - sample.time >= 9 and #J.GetEnemiesNearLoc(bot:GetLocation(), 1400) == 0 then
 		bot.ohaMoveSample = nil
 		bot.ohaIdleRecoveryUntil = now + 15
 		bot.ohaIdleRecoveryOrigin = bot:GetLocation()
+		if J.Customize and J.Customize.TraceLaneDecisions then
+			print('[OHA idle]', now, bot:GetUnitName(), 'mode', bot:GetActiveMode(), 'action', action,
+				'stationary', now - sample.time, 'lastAttack', attack)
+		end
 		return true
 	end
 	return false

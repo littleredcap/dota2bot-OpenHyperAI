@@ -575,6 +575,24 @@ function X.ConsiderQ()
 		end
 	end
 	if best then return BOT_ACTION_DESIRE_HIGH, best end
+	local tower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot)
+	if tower and not bot:WasRecentlyDamagedByAnyHero(2)
+		and (not abilityR:IsFullyCastable() or bot:GetMana() - manaCost >= abilityR:GetManaCost()) then
+		-- A creep under fire can spread Bonds to the escort without taking
+		-- a step toward the hero. The heal and Offering decisions run first.
+		for _, creep in ipairs(bot:GetNearbyLaneCreeps(math.min(1600, nCastRange), true)) do
+			if J.IsValid(creep) and J.CanBeAttacked(creep) and creep:GetAttackTarget() == tower
+				and not creep:HasModifier('modifier_warlock_fatal_bonds')
+				and not creep:HasModifier('modifier_fountain_glyph') and J.CanCastOnNonMagicImmune(creep) then
+				for _, enemy in ipairs(candidates) do
+					if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanCastOnNonMagicImmune(enemy)
+						and not enemy:HasModifier('modifier_warlock_fatal_bonds') and J.IsInRange(creep, enemy, nRadius) then
+						return BOT_ACTION_DESIRE_HIGH, creep
+					end
+				end
+			end
+		end
+	end
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 

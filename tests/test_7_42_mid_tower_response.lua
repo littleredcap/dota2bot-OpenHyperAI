@@ -57,9 +57,76 @@ assert(not j.GetMidDefensePokeTarget(bot,800),'do not poke without another avail
 cover,danger=true,true
 assert(not j.GetMidDefensePokeTarget(bot,800),'do not poke into a group already at the defender')
 danger=false
+do
+    bot.IsRooted,bot.IsDisarmed=no,no
+    bot.GetHealth=function() return 900 end
+    env.GetUnitToUnitDistance=function(a,b) return math.abs(a.x-b.x) end
+    env.IsLocationPassable,env.IsLocationVisible=yes,yes
+    j.GetTeamFountain=function() return -7000 end
+    j.GetVisibleThreatAt=function() return 150 end
+    local target,step=j.GetMidDefensePokeTarget(bot,650,-700)
+    assert(target==nil and step==-630,'close the small gap on our side without issuing a chasing attack')
+    j.GetVisibleThreatAt=function() return 400 end
+    target,step=j.GetMidDefensePokeTarget(bot,650,-700)
+    assert(not target and not step,'an unaffordable step stays blocked')
+    env.IsLocationPassable=no
+    j.GetVisibleThreatAt=function() return 0 end
+    target,step=j.GetMidDefensePokeTarget(bot,650,-700)
+    assert(not target and not step,'never step through impassable terrain')
+    env.IsLocationPassable=yes
+end
+do
+    extract('function J.ShouldDisengageAtLostTower','function J.ShouldRetreatFromEnemyReinforcements',env)
+    local foes, readiness, loss = j.GetEnemiesNearLoc,nil,false
+    local other=unit(50,1,12)
+    other.CanBeSeen,foe.CanBeSeen=yes,yes
+    tower.IsNull=no
+    tower.IsAlive=function() return not loss end
+    bot.IsFacingLocation,j.IsMoving=yes,yes
+    j.GetEnemiesNearLoc=function() return {foe,other} end
+    j.GetLocalFightReadiness=function() return readiness end
+    j.GetVisibleThreatAt=function() return 600 end
+    j.recentlyBesiegedTowers={[tower]={seen=now,point=0}}
+    assert(not j.ShouldDisengageAtLostTower(bot,now),'keep living tower protection')
+    loss=true
+    assert(j.ShouldDisengageAtLostTower(bot,now+1),'stop an unsupported advance through the newly lost tower')
+    readiness=true
+    assert(not j.ShouldDisengageAtLostTower(bot,now+1),'retain a supported counterattack')
+    readiness=nil
+    assert(not j.ShouldDisengageAtLostTower(bot,now+9) and not next(j.recentlyBesiegedTowers),'expire the siege')
+    j.GetEnemiesNearLoc=foes
+end
+do
+    local state, expiry = bot._defend, bot.ohaOuterTowerHoldUntil
+    bot._defend, bot.ohaOuterTowerHoldUntil = {}, nil
+    bot.ohaMidCover = {lane=2,tower=tower,cover=false,expires=now+1}
+    assert(j.GetMidDefensePokeTarget(bot,800)==foe,
+        'a live shared defense assignment can poke the tower attacker before the tower falls')
+    bot.ohaMidCover.expires=now
+    assert(not j.GetMidDefensePokeTarget(bot,800),'expired cover cannot authorize an attack')
+    bot.ohaMidCover,bot._defend,bot.ohaOuterTowerHoldUntil=nil,state,expiry
+end
 env.LaneTeleportPolicy = dofile('bots/FunLib/lane_teleport_policy.lua')
 extract('local function BuildDefenseLanePlan','local function GetOuterTowerHoldPoint',env)
 local spare=unit(-1000,.90,3)
+do
+    local savedWave,savedBot,savedAlly=wave,bot.x,ally.x
+    towers[env.TOWER_MID_1]=tower
+    tower.GetHealth=function() return 1200 end
+    wave={waveSize=5,eta=0,count=3,underAttack=true,damageRate=40,clearAt=0}
+    bot.x,ally.x=-5300,-5000
+    j.CanCastAbility=yes
+    j.GetHighGroundResponseTeleport=function() return -550 end
+    local active=j.GetPostFightCoverage(2)
+    assert(active.deadline==8 and active.primary and active.primary.teleport==-550 and active.backup,
+        'a wave already hitting a healthy tower leaves time for a real teleport, cast and screen')
+    tower.GetHealth=function() return 60 end
+    local dying=j.GetPostFightCoverage(2)
+    assert(dying.deadline==2 and not dying.primary,'the same trip cannot save a tower about to fall')
+    j.CanCastAbility=no
+    towers[env.TOWER_MID_1]=nil
+    wave,bot.x,ally.x=savedWave,savedBot,savedAlly
+end
 local guard, building, reach=j.GetExposedMidCover(2)
 assert(guard==bot and building==tower and reach==1000, 'retain one nearby clearer when the window is safe')
 assert(j.CanTakePostFightTrip(spare,6500,true), 'other heroes are not locked at base')
