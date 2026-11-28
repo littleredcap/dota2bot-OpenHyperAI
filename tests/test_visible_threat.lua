@@ -116,6 +116,11 @@ do
     assert(not j.CanStartTeleportHere(bot),'a recent dangerous attacker slipping out of sight does not make the same position safe')
     now=now+2
     assert(j.CanStartTeleportHere(bot),'allow a cleared escape point after brief lost contact')
+    bot.WasRecentlyDamagedByAnyHero = yes
+    j.GetLastSeenEnemiesNearLoc = function() return {8} end
+    assert(not j.CanStartTeleportHere(bot),'a critical hero leaves the nearby last-seen chase position before channeling')
+    j.GetLastSeenEnemiesNearLoc = function() return {} end
+    assert(j.CanStartTeleportHere(bot),'the same critical hero may channel after moving away from the chase')
     enemies={dk}
     dk.x, dk.GetAttackDamage = 140, value(94)
     bot.WasRecentlyDamagedByAnyHero = yes
@@ -159,6 +164,10 @@ do
     golem.GetExtrapolatedLocation = value(100)
     bot.WasRecentlyDamagedByAnyHero = yes
     assert(not j.CanStartTeleportHere(bot),'a visible closing summon can reach an injured caster without an attack target yet')
+    bot.WasRecentlyDamagedByAnyHero = no
+    bot.HasModifier = function(_, name) return name == 'modifier_warlock_golem_permanent_immolation_debuff' end
+    assert(not j.CanStartTeleportHere(bot),'the same lethal summon prevents a scroll when only the summon dealt damage')
+    bot.HasModifier = no
     golem.GetExtrapolatedLocation, bot.WasRecentlyDamagedByAnyHero = value(410), no
     assert(j.CanStartTeleportHere(bot),'a departing summon is not an immediate threat')
     local shaman=caster(9,591,280,400,130,'shadow_shaman_shackles')

@@ -1281,7 +1281,9 @@ function J.CanStartTeleportHere(bot)
     if bot.GetNearbyNeutralCreeps then
         focused = focused + GetNonHeroDamageAt(bot, bot:GetNearbyNeutralCreeps(850), location, channel, seen)
     end
-    if J.GetHP(bot) <= 0.40 and bot:WasRecentlyDamagedByAnyHero(3) then
+    local hp = J.GetHP(bot)
+    local inGolemAura = bot:HasModifier('modifier_warlock_golem_permanent_immolation_debuff')
+    if hp <= 0.40 and (inGolemAura or bot:WasRecentlyDamagedByAnyHero(3)) then
         focused = focused + GetNonHeroDamageAt(bot, GetUnitList(UNIT_LIST_ENEMY_CREEPS), location, channel, seen, false, true)
     end
     if not immune and bot:HasModifier('modifier_item_urn_damage') then
@@ -1294,16 +1296,20 @@ function J.CanStartTeleportHere(bot)
     local denied = bot.ohaUnsafeChannel
     if #enemies == 0 and denied and now < denied.expires
         and J.GetLocationToLocationDistance(location, denied.point) <= 475 then return false end
+    local recentlyHit = bot:WasRecentlyDamagedByAnyHero(2)
+    if #enemies == 0 and hp <= 0.25 and recentlyHit and #J.GetLastSeenEnemiesNearLoc(location, 750) > 0 then
+        return false
+    end
     if #enemies == 0 and not projectile and inFlight == 0 and focused == 0 then return true end
     local damage, interrupt, contacts = J.GetVisibleThreatAt(bot, enemies, location, channel, true)
     damage = damage + inFlight + focused
     local health = bot:GetHealth() + channel * bot:GetHealthRegen()
     -- Keep a margin for attack variance and damage already ticking in a contested lane.
-    if bot:HasModifier('modifier_warlock_fatal_bonds') and bot:WasRecentlyDamagedByAnyHero(2) then
+    if inGolemAura or (bot:HasModifier('modifier_warlock_fatal_bonds') and recentlyHit) then
         health = health * 0.80
-    elseif contacts >= 2 and J.GetHP(bot) <= 0.30 then
+    elseif contacts >= 2 and hp <= 0.30 then
         health = health * 0.85
-    elseif focused > 0 or contacts >= 2 and bot:WasRecentlyDamagedByAnyHero(2) then
+    elseif focused > 0 or contacts >= 2 and recentlyHit then
         health = health * 0.90
     end
     if not projectile and not interrupt and damage < health then return true end
@@ -11324,23 +11330,22 @@ function J.GetStalledWatcherExit(bot, destination)
 			and #J.GetEnemiesNearLoc(point, 1300) == 0 and #J.GetLastSeenEnemiesNearLoc(point, 1250) == 0
 			and J.CanTakePostFightTrip(bot, point, false, true)
 	end
-	if destination then
-		if SafeExit(destination) then return destination end
-		if not stuckAt or J.GetLocationToLocationDistance(origin, destination) >= 120 then return nil end
-	end
+	if destination and SafeExit(destination) then return destination end
 
 	local ally = not rally and J.GetClosestAlly(bot, 3000, true)
 	local anchor = rally or (ally and J.GetHP(bot) >= 0.55 and GetUnitToUnitDistance(bot, ally) > 700
 		and ally:GetActiveMode() ~= (BOT_MODE_WATCHER or 28) and ally:GetLocation()) or J.GetTeamFountain()
 	local distance = J.GetLocationToLocationDistance(origin, anchor)
 	if distance < (rally and 280 or 450) then return nil end
-	local ahead = J.VectorTowards(origin, anchor, math.min(distance, 700))
-	local dx, dy = ahead.x - origin.x, ahead.y - origin.y
-	for _, side in ipairs({0, 1, -1}) do
-		local point = side == 0 and ahead or Vector(origin.x + dx * 0.82 - dy * side * 0.58,
-			origin.y + dy * 0.82 + dx * side * 0.58, origin.z)
-		if (not stuckAt or J.GetLocationToLocationDistance(point, stuckAt) >= cleared + 180)
-			and SafeExit(point) then return point end
+	for _, reach in ipairs({700, 365}) do
+		local ahead = J.VectorTowards(origin, anchor, math.min(distance, reach))
+		local dx, dy = ahead.x - origin.x, ahead.y - origin.y
+		for _, side in ipairs({0, 1, -1}) do
+			local point = side == 0 and ahead or Vector(origin.x + dx * 0.82 - dy * side * 0.58,
+				origin.y + dy * 0.82 + dx * side * 0.58, origin.z)
+			if (not stuckAt or J.GetLocationToLocationDistance(point, stuckAt) >= cleared + 180)
+				and SafeExit(point) then return point end
+		end
 	end
 end
 

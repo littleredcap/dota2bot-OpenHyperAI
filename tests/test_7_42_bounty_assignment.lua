@@ -355,6 +355,28 @@ end
 
 do
     local s, h, m = fixture()
+    s.time, s.spots[bounty1], s.spots[bounty2], s.status[bounty2] = 944, -5000, 4450, unknown
+    h[1].x, h[2].role = -6500, 3
+    assert(m[2].GetDesire() == 0.76, 'start the safe walk to the next home bounty before it spawns')
+    m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    s.time, h[2].x = 960.5, 2750
+    assert(m[2].GetDesire() == 0.76, 'an assigned core can finish its safe walk while the new rune status is unknown')
+    m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    s.time, h[2].x = 961, 4395
+    m[2].Think()
+    assert(#h[2].orders == 2, 'hold the prepared position briefly for the actual status update')
+    s.time, s.status[bounty2] = 962, available
+    assert(m[2].GetDesire() == 0.86)
+    m[2].Think()
+    order(h[2], 'pick', bounty2)
+    s.status[bounty2] = missing
+    assert(m[2].GetDesire() == 0, 'release the rune when the visible spot is empty')
+end
+
+do
+    local s, h, m = fixture()
     s.time, s.spots[bounty1], s.spots[bounty2], s.status[bounty2] = 961, -5000, 1600, unknown
     h[1].x = -6500
     h[2].ohaBountyChecked = {spot=bounty2, time=951}

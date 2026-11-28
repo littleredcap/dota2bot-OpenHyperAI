@@ -424,7 +424,8 @@ function Think()
 				bot:Action_MoveToLocation(location)
 			elseif status == RUNE_STATUS_AVAILABLE then
 				if not picking or issuedBountySpot ~= assigned then bot:Action_PickUpRune(assigned) end
-			elseif BountySpawnApproaching(now) then
+			elseif BountySpawnApproaching(now)
+				or status == RUNE_STATUS_UNKNOWN and prepare and BountyJustSpawned(now) then
 				issuedBountySpot = assigned
 				return
 			else
@@ -607,8 +608,11 @@ function X.GetBountyAssignment()
 					local support = not J.IsCore(member)
 						and (not member.ohaWaveClaim or member.ohaWaveClaim.expires <= DotaTime())
 					local creeps = member:GetNearbyLaneCreeps(850, true)
+					local trip = member.ohaBountyTask
+					local continuing = status == RUNE_STATUS_UNKNOWN and BountyJustSpawned(now)
+						and trip and trip.spot == spot and trip.expires > now and distance <= BountyScoutRange(member)
 					local localTrip = spot == ownSpot and (available and distance <= 3600
-						or not available and CanPrepareBounty(member, spot, distance, now))
+						or not available and (continuing or CanPrepareBounty(member, spot, distance, now)))
 						and J.GetHP(member) >= 0.68 and not J.HasPendingLaningLastHit(member)
 						and (J.IsCore(member) or support and J.CanLeaveLane(member))
 						and CanLeaveBountyWave(member, creeps)

@@ -347,6 +347,10 @@ do
     env.IsLocationVisible, state.time = yes, 86
     local exit = j.GetStalledWatcherExit(bot)
     assert(exit and exit.x == -700 and #state.orders == 0, 'find a short safe exit without issuing orders from desire')
+    env.IsLocationPassable = function(p) return p.x >= -400 end
+    local shorter = j.GetStalledWatcherExit(bot, exit)
+    assert(shorter and shorter.x == -365, 'replace a blocked route with a nearer visible waypoint')
+    env.IsLocationPassable = yes
     bot.GetActiveMode = function() return 8 end
     bot.GetLocation = function() return point(-300) end
     assert(j.GetStalledWatcherExit(bot, exit) == exit, 'maintain the destination when another mode takes over')
