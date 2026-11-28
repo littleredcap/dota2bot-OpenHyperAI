@@ -339,14 +339,19 @@ local function ThinkLane()
 		local pending = J.HasPendingLaningLastHit(bot) and bot.ohaLaningAttackTarget or nil
 		if pending and not underPressure and pending:GetTeam() == bot:GetTeam()
 			and J.IsInRange(pending, holdTower, 875) then return end
+		local creep, approach, reserve
 		if #wave > 0 then
 			if pending or J.IsFinishingLaningAttack(bot, current) then
 				for _, creep in ipairs(wave) do if (pending or current) == creep then return end end
 			end
-			local creep, approach, reserve = J.GetLaningLastHitTarget(bot, wave, nil, J.GetLaningAttackDamage(bot), nInRangeEnemy, true)
+			creep, approach, reserve = J.GetLaningLastHitTarget(bot, wave, nil, J.GetLaningAttackDamage(bot), nInRangeEnemy, true)
 			if creep ~= nil and not approach then J.IssueLaningAttack(bot, creep); return end
 			local together = not underPressure and J.GetLaningTowerJointHit(bot, holdTower, nInRangeEnemy)
 			if together then TraceLaneDecision('joint-tower-hit', together); J.IssueLaningAttack(bot, together); return end
+		end
+		if not underPressure and not pending and not J.IsFinishingLaningAttack(bot, current)
+			and J.TryClearTowerSiege(bot, holdTower) then return end
+		if #wave > 0 then
 			if reserve then J.HoldLaningAttack(bot, current); return end
 			if approach and bot:GetAttackRange() < 310 and not J.IsLaningUnderPressure(bot, nInRangeEnemy, nil)
 				and #J.GetEnemiesNearLoc(creep:GetLocation(), 750) == 0 then

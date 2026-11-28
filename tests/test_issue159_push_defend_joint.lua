@@ -9,6 +9,7 @@ local function fixture(opts)
         return {x=x, IsAlive=yes, IsBuilding=yes, CanBeSeen=no, HasModifier=no, GetAttackTarget = function() return opts.towerTarget end,
             GetLocation=function() return loc(x) end, GetHealth=function() return hp end,
             GetUnitName=function() return 'npc_dota_tower_' .. x end,
+            IsTower=function(self) return self:GetUnitName():find('_tower', 1, true) ~= nil end,
             GetMaxHealth=function() return 1000 end, GetActualIncomingDamage=function(_, dmg) return dmg * 0.65 end}
     end
     local Lan = {Top=1, Mid=2, Bot=3}

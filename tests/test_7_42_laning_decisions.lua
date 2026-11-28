@@ -97,7 +97,7 @@ local function fixture(core, overridden, startMid, nativeSideTrial)
         IsSuspiciousIllusion = no, IsChasingTarget = no, IsThereNonSelfCoreNearby = no,
         GetHP = function(unit) return unit == bot and state.hp or (unit == partner and state.partnerHP)
             or (unit.IsCreep and state.deniable and 0.4 or 0.75) end,
-        CanNotUseAction = no, CanBeAttacked = yes, CannotBeKilled = function() return state.enemyProtected end,
+        CanNotUseAction = no, CanBeAttacked = yes, TryClearTowerSiege = no, CannotBeKilled = function() return state.enemyProtected end,
         CanKillTarget = function(unit, damage) return unit:GetHealth() <= damage end,
         IsAttacking = function(unit) return unit == bot and state.attacking or unit == enemy and state.enemyWindup end,
         GetAttackProDelayTime = function(unit) return unit == enemy and state.enemyEta or 0.3,
@@ -1036,6 +1036,19 @@ for _, core in ipairs({false, true}) do
     assert(not j.GetLaningLastHitTarget(bot, {creep}, nil, 50, {}), 'never stage into recent enemy pressure')
     state.wasHit, state.incomingDamageAt = false, 2
     assert(not j.GetLaningLastHitTarget(bot, {creep}, nil, 50, {}), 'wait for a credible incoming last-hit window')
+end
+
+do
+    local state, mode, _, enemy, bot = fixture(true)
+    local j = mode.J
+    state.hp, state.wasHit, state.incomingDamage = 0.73, true, 160
+    local linked = true
+    bot.HasModifier = function(_, name) return linked and name == 'modifier_warlock_fatal_bonds' end
+    assert(j.IsLaningUnderPressure(bot, {enemy}), '4:21: do not return for a deny while still exposed after a linked trade')
+    state.incomingDamage = 60
+    assert(not j.IsLaningUnderPressure(bot, {enemy}), 'a linked laner may continue when the visible threat is minor')
+    linked, state.incomingDamage = false, 160
+    assert(not j.IsLaningUnderPressure(bot, {enemy}), 'a prior hit without the link does not trip this pressure rule')
 end
 
 do

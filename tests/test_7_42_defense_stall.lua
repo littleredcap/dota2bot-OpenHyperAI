@@ -1,6 +1,6 @@
 local f = assert(io.open('bots/FunLib/jmz_func.lua','rb'))
 local source = f:read('*a'); f:close()
-local a = assert(source:find('function J.RunOuterTowerHold',1,true))
+local a = assert(source:find('function J.TryClearTowerSiege',1,true))
 local b = assert(source:find('function J.GetTowerDefenseTarget',a,true))
 local function yes() return true end
 local function no() return false end
@@ -25,6 +25,7 @@ bot.Action_MoveToLocation = function(_,point) bot.order=point end
 local foe1,foe2={},{}
 local now, attacking = 1200, false
 local j = {IsValid=function(u) return u==creep end, IsValidHero=no, CanBeAttacked=yes, GetHP=function() return 0.9 end,
+    IsValidBuilding=no, GetAssignedOuterTower=function() end,
     IsAttacking=function() return attacking end,
     IsInRange=function(a,b,r) return gap(a.x,b.x)<=r end, GetLastSeenEnemiesNearLoc=empty, GetAlliesNearLoc=empty,
     GetEnemiesNearLoc=function() return hostileAtHold and {foe1,foe2} or {} end,
@@ -116,6 +117,31 @@ do
     bot.order=nil
     assert(j.RunOuterTowerHold(bot,0,1200,false,-1000) and bot.order==-1000,
         'fall back when standing still for the attack is unsafe')
+end
+
+do
+    local tower = {x=0, IsTower=yes, GetLocation=function() return 0 end}
+    j.GetAssignedOuterTower = function() return tower end
+    j.IsValidBuilding = function(unit) return unit==tower end
+    j.IsKeyWordUnit = function(word, unit) return unit:GetUnitName():find(word, 1, true) ~= nil end
+    j.GetVisibleThreatAt = function() return 80, false end
+    bot.GetAttackRange = function() return 550 end
+    creep.x, creep.CanBeSeen = 740, yes
+    creep.GetUnitName = function() return 'npc_dota_badguys_siege' end
+    creep.GetAttackTarget = function() return tower end
+    bot.x, bot.order = -385, nil
+    assert(j.RunOuterTowerHold(bot, 0, 850, false, -385) and bot.order == -85,
+        '6:20: clear a firing catapult beyond the normal scan by taking a bounded step')
+    bot.x, bot.order = -85, nil
+    assert(j.TryClearTowerSiege(bot, tower) and bot.order == 210, 'take the rest of the safe step into range')
+    bot.x, bot.order = 210, nil
+    assert(j.TryClearTowerSiege(bot, tower) and bot.order == 'attack', 'fire at the catapult even before the last-hit window')
+    bot.x, bot.order = -385, nil
+    assert(not j.RunOuterTowerHold(bot, 0, 850, true, -385) and not bot.order, 'the cover hero stays in place')
+    j.GetVisibleThreatAt = function() return 220, true end
+    assert(not j.TryClearTowerSiege(bot, tower) and not bot.order, 'an unsafe approach leaves the hold in control')
+    creep.GetAttackTarget = function() end
+    assert(not j.TryClearTowerSiege(bot, tower) and not bot.order, 'ignore a siege creep that is not attacking this tower')
 end
 
 do

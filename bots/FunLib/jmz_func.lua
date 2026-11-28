@@ -1370,6 +1370,10 @@ function J.IsLaningUnderPressure(bot, enemies, tower)
         if damage >= bot:GetHealth() then return true end
     end
     local recentlyHit = bot:WasRecentlyDamagedByAnyHero(2)
+    if hp < 0.80 and recentlyHit and #enemies > 0 and bot:HasModifier('modifier_warlock_fatal_bonds')
+        and J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 2.5) >= bot:GetHealth() * 0.16 then
+        return true
+    end
     local attackers = 0
     for _, enemy in ipairs(J.GetHeroesTargetingUnit(enemies, bot)) do
         if J.IsInRange(bot, enemy, math.max(425, enemy:GetAttackRange() + 140)) then
@@ -9331,6 +9335,43 @@ function J.GetMidDefensePokeTarget(bot, range, hold)
 	return nil, point
 end
 
+function J.TryClearTowerSiege(bot, tower)
+	local range = bot:GetAttackRange()
+	if not J.IsValidBuilding(tower) or not tower:IsTower() or range < 350 or J.GetHP(bot) < 0.60
+		or bot:IsRooted() or bot:IsDisarmed() or bot:WasRecentlyDamagedByAnyHero(2)
+		or GetUnitToUnitDistance(bot, tower) > 850 then return false end
+	local hub, origin = tower:GetLocation(), bot:GetLocation()
+	if #J.GetEnemiesNearLoc(hub, 1450) > 1 then return false end
+	for _, creep in ipairs(bot:GetNearbyLaneCreeps(math.min(1600, range + 650), true)) do
+		if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsKeyWordUnit('_siege', creep)
+			and creep:GetAttackTarget() == tower and J.IsInRange(tower, creep, 1050) then
+			local gap = GetUnitToUnitDistance(bot, creep) - range
+			local stride = math.min(300, gap + 20)
+			local point = gap > 0 and J.VectorTowards(origin, creep:GetLocation(), stride) or origin
+			local midpoint = gap > 0 and J.VectorTowards(origin, point, stride * 0.5) or origin
+			if GetUnitToLocationDistance(tower, point) <= 700 and IsLocationVisible(point)
+				and IsLocationPassable(point) and IsLocationPassable(midpoint)
+				and #J.GetLastSeenEnemiesNearLoc(point, 825) == 0
+				and #J.GetEnemiesNearLoc(midpoint, 750) == 0 then
+				local enemies = J.GetEnemiesNearLoc(point, 1900)
+				local damage, control = J.GetVisibleThreatAt(bot, enemies, point, 1.6, true)
+				if not control and damage < bot:GetHealth() * 0.20 then
+					if J.Customize and J.Customize.TraceLaneDecisions
+						and DotaTime() >= (bot.ohaTowerSiegeTrace or -math.huge) then
+						bot.ohaTowerSiegeTrace = DotaTime() + 2
+						print('[OHA tower siege]', DotaTime(), bot:GetPlayerID(), tower:GetUnitName(),
+							math.floor(gap), gap > 0 and 'step' or 'attack')
+					end
+					if gap <= 0 then return J.IssueTowerDefenseAttack(bot, creep) end
+					bot:Action_MoveToLocation(point)
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
 function J.RunOuterTowerHold(bot, hub, reach, cover, stage, assignment)
 	if bot:HasModifier('modifier_teleporting') then return false end
 	local hold = stage or GetOuterTowerHoldPoint(hub, reach, cover)
@@ -9357,6 +9398,10 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage, assignment)
 		local tower = assignment.tower
 		local threat = J.GetOuterTowerThreat(tower, assignment.lane or LANE_MID)
 		if J.TryStageTowerWaveCast(bot, tower, threat) then return true end
+	end
+	if not cover and (not stage or J.GetLocationToLocationDistance(stage, hub) <= 700) then
+		local tower = assignment and assignment.tower or J.GetAssignedOuterTower(bot)
+		if tower and GetUnitToLocationDistance(tower, hub) <= 120 and J.TryClearTowerSiege(bot, tower) then return true end
 	end
 	local awayFromHold = GetUnitToLocationDistance(bot, hold) > 220
 	local canStepUp = not cover and formation == nil and #J.GetLastSeenEnemiesNearLoc(hub, 1150) == 0
