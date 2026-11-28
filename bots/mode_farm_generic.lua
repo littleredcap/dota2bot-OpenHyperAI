@@ -915,7 +915,9 @@ function GetDesire()
 	if res > BOT_MODE_DESIRE_NONE and (bot.ohaWatcherRecoveryUntil or 0) > DotaTime()
 		and (idleRally or idleCamp or collectingWave or sideWaveDesire)
 		and not bot:WasRecentlyDamagedByAnyHero(3) then
-		res = math.max(res, math.min(0.94, math.max(0.84, bot:GetActiveModeDesire() + 0.035)))
+		-- A validated resource ends the recovery without another escape step.
+		local priority = (idleCamp or collectingWave or sideWaveDesire) and 0.90 or 0.84
+		res = math.max(res, math.min(0.94, math.max(priority, bot:GetActiveModeDesire() + 0.035)))
 	end
 	-- J.Utils.SetCachedVars(cacheKey, res)
 	return res

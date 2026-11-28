@@ -333,3 +333,32 @@ do
     h[2].ohaWaveClaim = {expires = 1215}
     assert(m[2].GetDesire() == 0, 'a support already collecting a wave does not leave it to scout')
 end
+
+do
+    local s, h, m = fixture()
+    s.time, s.spots[bounty1], s.spots[bounty2], s.status[bounty2] = 940, -5000, 1600, unknown
+    h[1].x = -6500
+    assert(m[2].GetDesire() == 0.70, 'a free support can scout the home rune early')
+    m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    assert(h[2].ohaBountyTask.expires >= 963, 'the trip lasts through the upcoming spawn')
+    s.time, h[2].x = 948, s.spots[bounty2] - 80
+    assert(m[2].GetDesire() == 0.76, 'arriving early keeps the safe assignment through the spawn')
+    m[2].Think()
+    s.time, s.status[bounty2] = 961, available
+    assert(m[2].GetDesire() == 0.86)
+    m[2].Think()
+    order(h[2], 'pick', bounty2)
+    s.threat = s.spots[bounty2]
+    assert(m[2].GetDesire() == 0, 'a new threat can cancel even a retained trip')
+end
+
+do
+    local s, h, m = fixture()
+    s.time, s.spots[bounty1], s.spots[bounty2], s.status[bounty2] = 961, -5000, 1600, unknown
+    h[1].x = -6500
+    h[2].ohaBountyChecked = {spot=bounty2, time=951}
+    assert(m[2].GetDesire() > 0, 'the previous spawn check does not suppress a new rune')
+    h[2].ohaBountyChecked.time = 960
+    assert(m[2].GetDesire() == 0, 'avoid repeated checks in the same spawn window')
+end

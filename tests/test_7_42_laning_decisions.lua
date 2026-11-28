@@ -319,6 +319,10 @@ do
     state.time = 84
     env.J.CheckBotIdleState()
     assert(bot.ohaWatcherRecoveryUntil > state.time, 'a stalled native Watcher order can yield sooner')
+    local untilTime = bot.ohaWatcherRecoveryUntil
+    bot.ohaMoveSample.mode, state.time = env.BOT_MODE_NONE, 84.6
+    env.J.CheckBotIdleState()
+    assert(bot.ohaWatcherRecoveryUntil == untilTime, 'reentering Watcher does not clear a live escape')
     env.J.IsTryingtoUseAbility = yes
     state.time = 85
     env.J.CheckBotIdleState()
@@ -335,7 +339,7 @@ do
         return point(a.x + (b.x - a.x) * travel / length, a.y + (b.y - a.y) * travel / length)
     end
     j.CanTakePostFightTrip = yes
-    bot.ohaWatcherRecoveryUntil, state.orders = 95, {}
+    bot.ohaWatcherRecoveryUntil, bot.ohaIdleRecoveryOrigin, state.orders = 95, point(0), {}
     assert(not j.GetStalledWatcherExit(bot), 'never replace a real cast with a Watcher recovery move')
     j.IsTryingtoUseAbility, env.IsLocationVisible = no, no
     assert(not j.GetStalledWatcherExit(bot), 'a recovery step requires visible ground')
@@ -346,7 +350,10 @@ do
     bot.GetLocation = function() return point(-300) end
     assert(j.GetStalledWatcherExit(bot, exit) == exit, 'maintain the destination when another mode takes over')
     bot.GetLocation = function() return point(-620) end
-    assert(not j.GetStalledWatcherExit(bot, exit), 'return to normal mode selection after clearing the Watcher')
+    local farther = j.GetStalledWatcherExit(bot, exit)
+    assert(farther and farther.x < -1100, 'arriving at the first waypoint can continue away from the original stall')
+    bot.GetLocation = function() return point(-1160) end
+    assert(not j.GetStalledWatcherExit(bot, farther), 'release the recovery after leaving the Watcher area')
 end
 
 do

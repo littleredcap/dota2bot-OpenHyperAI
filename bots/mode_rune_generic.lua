@@ -231,7 +231,10 @@ function GetDesire()
 					-- lane obligations. Use a nearby support before the rune is lost.
 					if rune.status == RUNE_STATUS_AVAILABLE and rune.distance <= 1050 then return 0.78 end
 					if rune.status ~= RUNE_STATUS_AVAILABLE and rune.distance <= BountyScoutRange(bot)
-						and (BountySpawnApproaching(now) or BountyJustSpawned(now)) then return 0.70 end
+						and (BountySpawnApproaching(now) or BountyJustSpawned(now)) then
+						local preparing = rune.prepare and trip and trip.spot == rune.location and trip.expires > now
+						return preparing and 0.76 or 0.70
+					end
 				end
 				if rune.prepare and botHP >= 0.68 and not J.HasPendingLaningLastHit(bot) then return 0.76 end
 				local priority = rune.status == RUNE_STATUS_AVAILABLE and BOT_MODE_DESIRE_HIGH or BOT_MODE_DESIRE_MODERATE
@@ -408,8 +411,14 @@ function Think()
 					status == RUNE_STATUS_AVAILABLE and 'collect' or prepare and 'prepare' or 'scout')
 				bot.ohaLastBountyStatus = status
 			end
-			if bot.ohaBountyTask == nil or bot.ohaBountyTask.spot ~= assigned then
-				bot.ohaBountyTask = {spot=assigned, expires=now + 3 + distance / math.max(1, bot:GetCurrentMovementSpeed()) * 1.35}
+			local trip = bot.ohaBountyTask
+			if trip == nil or trip.spot ~= assigned or trip.expires <= now then
+				trip = {spot=assigned, expires=now + 3 + distance / math.max(1, bot:GetCurrentMovementSpeed()) * 1.35}
+				bot.ohaBountyTask = trip
+			end
+			if status ~= RUNE_STATUS_AVAILABLE and BountySpawnApproaching(now) then
+				-- An early scout may reach the spot before its rune exists.
+				trip.expires = math.max(trip.expires, now - now % bountyInterval + bountyInterval + 3)
 			end
 			if distance > 150 then
 				bot:Action_MoveToLocation(location)
@@ -570,6 +579,7 @@ end
 function X.GetBountyAssignment()
 	local choices = {}
 	local now = DotaTime()
+	local lastSpawn = now - now % bountyInterval
 	local ancient = GetAncient(GetTeam())
 	if not ancient then return end
 	local ownSpot = GetUnitToLocationDistance(ancient, GetRuneSpawnLocation(RUNE_BOUNTY_1))
@@ -588,7 +598,8 @@ function X.GetBountyAssignment()
 				if J.IsValidHero(member) then
 					local distance = GetUnitToLocationDistance(member, location)
 					local checked = member.ohaBountyChecked
-					if not available and not BountySpawnApproaching(now) and checked and checked.spot == spot and now - checked.time < 30 then
+					if not available and not BountySpawnApproaching(now) and checked and checked.spot == spot
+						and checked.time >= lastSpawn and now - checked.time < 30 then
 						choices[spot] = {false}
 						break
 					end

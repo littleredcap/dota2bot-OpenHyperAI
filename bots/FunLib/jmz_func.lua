@@ -11251,8 +11251,9 @@ function J.CheckBotIdleState()
 	local attack = bot:GetLastAttackTime()
 	local location = bot:GetLocation()
 	local reset = sample == nil or elapsed < 0 or elapsed > 2 or sample.attack ~= attack
-		or watching and sample.mode ~= mode
-	if reset or GetUnitToLocationDistance(bot, sample.location) > 180 then
+	local enteredWatcher = watching and sample ~= nil and sample.mode ~= mode
+	-- The native mode can retake a bot while its recovery still has work to do.
+	if reset or enteredWatcher or GetUnitToLocationDistance(bot, sample.location) > 180 then
 		if reset then bot.ohaIdleRecoveryUntil, bot.ohaWatcherRecoveryUntil = nil, nil end
 		bot.ohaMoveSample = {location=location, time=now, sampled=now, attack=attack, mode=mode}
 		bot.ohaIdleReplanUntil = nil
@@ -11296,6 +11297,9 @@ function J.GetStalledWatcherExit(bot, destination)
 	if not destination and bot:GetActiveMode() ~= (BOT_MODE_WATCHER or 28) then return nil end
 	local origin = bot:GetLocation()
 	if #J.GetEnemiesNearLoc(origin, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(origin, 1300) > 0 then return nil end
+	local stuckAt = bot.ohaIdleRecoveryOrigin
+	local cleared = stuckAt and J.GetLocationToLocationDistance(origin, stuckAt) or 0
+	if cleared >= 1100 then return nil end
 	local function SafeExit(point)
 		local distance = J.GetLocationToLocationDistance(origin, point)
 		if distance < 120 or distance > 850 then return false end
@@ -11304,7 +11308,10 @@ function J.GetStalledWatcherExit(bot, destination)
 			and #J.GetEnemiesNearLoc(point, 1300) == 0 and #J.GetLastSeenEnemiesNearLoc(point, 1250) == 0
 			and J.CanTakePostFightTrip(bot, point, false, true)
 	end
-	if destination then return SafeExit(destination) and destination or nil end
+	if destination then
+		if SafeExit(destination) then return destination end
+		if not stuckAt or J.GetLocationToLocationDistance(origin, destination) >= 120 then return nil end
+	end
 
 	local ally = J.GetClosestAlly(bot, 3000, true)
 	local anchor = ally and J.GetHP(bot) >= 0.55 and GetUnitToUnitDistance(bot, ally) > 700 and ally:GetActiveMode() ~= (BOT_MODE_WATCHER or 28)
@@ -11316,7 +11323,8 @@ function J.GetStalledWatcherExit(bot, destination)
 	for _, side in ipairs({0, 1, -1}) do
 		local point = side == 0 and ahead or Vector(origin.x + dx * 0.82 - dy * side * 0.58,
 			origin.y + dy * 0.82 + dx * side * 0.58, origin.z)
-		if SafeExit(point) then return point end
+		if (not stuckAt or J.GetLocationToLocationDistance(point, stuckAt) >= cleared + 180)
+			and SafeExit(point) then return point end
 	end
 end
 
