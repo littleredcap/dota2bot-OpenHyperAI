@@ -55,6 +55,18 @@ local function safeCourierLeg(start, finish)
     return true
 end
 
+function Supply.CanDeliverCourier(bot, courier, collectStash)
+    local start, destination = courier:GetLocation(), bot:GetLocation()
+    if collectStash then
+        local fountain = J.GetTeamFountain()
+        if courier:DistanceFromFountain() > 800 and not safeCourierLeg(start, fountain) then return false end
+        start = fountain
+    end
+    return #J.GetEnemiesNearLoc(destination, 925) == 0
+        and #J.GetLastSeenEnemiesNearLoc(destination, 925) == 0
+        and safeCourierLeg(start, destination)
+end
+
 local function deliveryTime(bot, courier, aboard, tower)
     if not courier or courier:IsNull() or not courier:IsAlive() or J.GetHP(courier) < 0.9
         or (bot.ohaCourierUnsafeUntil or 0) > DotaTime() or bot.SShopUser then return nil end

@@ -340,6 +340,19 @@ local function laneFixture(o, plan)
         tower = tower, commands = commands, advance = advance}
 end
 
+do
+    local o = {routeThreat = true, afterLane = true}
+    local s = laneFixture(o)
+    o.state = s.env.COURIER_STATE_DELIVERING_ITEMS
+    s.env.CourierUsageThink()
+    assert(s.commands[1] == s.env.COURIER_ACTION_RETURN_STASH_ITEMS,
+        'recall ordinary cargo before it reaches a newly exposed midpoint')
+    o.routeThreat = false
+    s.advance(6)
+    s.env.CourierUsageThink()
+    assert(#s.commands == 1, 'leave an ordinary delivery going once the route is clear')
+end
+
 -- Drive the normal purchase, courier and item-use callbacks through one lane reset decision.
 do
     local o = {}

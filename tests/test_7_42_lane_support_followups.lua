@@ -62,6 +62,14 @@ assert(not j.CanJoinObservedFightByTeleport(bot,690),'do not TP to a group that 
 bot.lane, bot.hp = 2, 0.9
 assert(j.ShouldKeepMidOpportunity(bot,1),'keep control of an exposed mid wave')
 assert(not j.ShouldKeepMidOpportunity(bot,2),'same lane travel uninhibited')
+now, allies = 1291.30, {}
+j.GetNumOfAliveHeroes = function() return 5 end
+assert(j.ShouldSaveMidFarmTeleport(bot, 3), '21:31: the sole mid core retains its defensive scroll')
+allies, core.ohaOuterTowerHoldUntil = {core}, now + 10
+assert(j.ShouldSaveMidFarmTeleport(bot, 3), 'an assigned side-lane responder is not spare middle cover')
+core.ohaOuterTowerHoldUntil = nil
+assert(not j.ShouldSaveMidFarmTeleport(bot, 3), 'a nearby available core permits the farming teleport')
+now = 510
 bot.lane=3
 assert(j.RunSideLaneCreepDrag(bot,{foe},nil,false) and orders[1][1]=='attack','one fake attack with safely reachable creeps')
 now=now+0.1

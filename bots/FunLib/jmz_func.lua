@@ -7963,6 +7963,25 @@ function J.ShouldKeepMidOverRoutineDefense(bot, targetLane)
         or threat.siegeAttacking and threat.towerHP < 0.45)
 end
 
+-- Keep the only nearby middle core within response range while the other
+-- defenders are covering side lanes. This gates only an elective farming TP.
+function J.ShouldSaveMidFarmTeleport(bot, targetLane)
+    if targetLane == LANE_MID or bot:GetAssignedLane() ~= LANE_MID or not J.IsCore(bot)
+        or DotaTime() < 15 * 60 or J.GetHP(bot) < 0.58 or J.IsRetreating(bot)
+        or J.GetNumOfAliveHeroes(true) < 4 then return false end
+    local team = bot:GetTeam()
+    local tower = GetTower(team, TOWER_MID_1)
+    if not J.IsValidBuilding(tower) then tower = GetTower(team, TOWER_MID_2) end
+    if not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 2600) then return false end
+    for _, ally in ipairs(J.GetAlliesNearLoc(tower:GetLocation(), 2350)) do
+        if ally ~= bot and J.IsValidHero(ally) and J.IsCore(ally) and J.GetHP(ally) >= 0.58
+            and not J.IsRetreating(ally) and not J.IsDisabled(ally) and not ally:IsChanneling()
+            and not ally:HasModifier('modifier_teleporting')
+            and (ally.ohaOuterTowerHoldUntil or 0) <= DotaTime() then return false end
+    end
+    return true
+end
+
 function J.ShouldKeepLaningWave(bot, targetLane, threat)
 	local lane = bot:GetAssignedLane()
 	local now = DotaTime()

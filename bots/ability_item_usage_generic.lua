@@ -578,7 +578,10 @@ local function CourierUsageComplement()
 
 	if nCourierState == COURIER_STATE_DEAD then return	end
 
+	local supply = require(GetScriptDirectory() .. '/FunLib/lane_supply')
 	if X.IsCourierTargetedByUnit( npcCourier )
+		or not bot.ohaLaneSupply and bAliveBot and nCourierState == COURIER_STATE_DELIVERING_ITEMS
+			and not supply.CanDeliverCourier(bot, npcCourier, false)
 	then
 		bot.ohaCourierUnsafeUntil = currentTime + protectCourierCD
 		if currentTime > nCourierReturnTime + protectCourierCD
@@ -610,7 +613,6 @@ local function CourierUsageComplement()
 
 
 	if bot.ohaLaneSupply then
-		local supply = require(GetScriptDirectory() .. '/FunLib/lane_supply')
 		local action, handling = supply.CourierAction(bot, npcCourier, nCourierState)
 		if handling then
 			if action and currentTime > nCourierLastActionTime + useCourierCD then
@@ -653,6 +655,7 @@ local function CourierUsageComplement()
 									or X.GetNumStashItem( bot ) == 6
 									or bot:GetGold() + 80 < GetItemCost( bot.currBuyingBasicItem ) ) )
 				then
+					if not supply.CanDeliverCourier(bot, npcCourier, true) then return end
 					J.SetReportMotive( bDebugCourier, "信使取出物品并开始运输" )
 					bot:ActionImmediate_Courier( npcCourier, COURIER_ACTION_TAKE_STASH_ITEMS )
 					nCourierLastActionTime = currentTime
@@ -690,6 +693,7 @@ local function CourierUsageComplement()
 			and ( not X.IsInvFull( bot ) or ( X.GetNumStashItem( bot ) == 0 and bot.currBuyingBasicItemList ~= nil and #bot.currBuyingBasicItemList == 0 ) )
 			and ( npcCourier:DistanceFromFountain() < 4000 + botLV * 200 or GetUnitToUnitDistance( bot, npcCourier ) < 1800 )
 			and currentTime > nCourierLastActionTime + useCourierCD
+			and supply.CanDeliverCourier(bot, npcCourier, false)
 			-- and Utils.CountBackpackEmptySpace(bot) >= 1
 		then
 			J.SetReportMotive( bDebugCourier, "信使运输背包中的东西" )
@@ -5568,6 +5572,7 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 		if mostFarmDesire > ( isTravelBootsAvailable and 0.7 or 0.8 )
 			and not midCover
 			and not (J.ShouldKeepMidOpportunity and J.ShouldKeepMidOpportunity(bot, mostFarmDesireLane))
+			and not (J.ShouldSaveMidFarmTeleport and J.ShouldSaveMidFarmTeleport(bot, mostFarmDesireLane))
 			and #nNearEnemyList == 0
 			and #nCreeps == 0
 			and #nAttackAllyList == 0
@@ -8537,23 +8542,27 @@ function X.TraceDefenseMovement(now)
 	end
 	if not sample or now < sample.sampled or now - sample.sampled > 2 or lastAttack ~= sample.attack then
 		bot.ohaDefenseMovement = {started=now, sampled=now, origin=position, last=position, travel=0,
-			attack=lastAttack, mode=mode, duty=duty, nextReport=now+10}
+			attack=lastAttack, mode=mode, duty=duty, nextReport=now+10, stillSince=now, stillAt=position}
 		return
+	end
+	if J.GetLocationToLocationDistance(sample.stillAt or sample.last, position) > 150 then
+		sample.stillAt, sample.stillSince = position, now
 	end
 	sample.travel = sample.travel + J.GetLocationToLocationDistance(sample.last, position)
 	sample.last, sample.sampled = position, now
 	if now < sample.nextReport then return end
 	local displacement = J.GetLocationToLocationDistance(sample.origin, position)
-	if duty ~= 'unassigned' or J.IsDefending(bot) or displacement <= 200 then
+	local stationary = now - (sample.stillSince or sample.started)
+	if duty ~= 'unassigned' or J.IsDefending(bot) or displacement <= 200 or stationary >= 9 then
 		local target = bot:GetAttackTarget()
 		local creep = bot:GetNearbyLaneCreeps(1500, true)[1]
 		local function describe(unit)
 			if not unit or unit:IsNull() or not unit:CanBeSeen() then return '-' end
 			return string.format('%s@%.0f', unit:GetUnitName(), GetUnitToUnitDistance(bot, unit))
 		end
-		print(string.format('[OHA no-auto] %.2f hero=%s since=%.2f mode=%d>%d duty=%s>%s tower=%s target=%s laneCreep=%s travel=%.0f net=%.0f action=%d channel=%s',
+		print(string.format('[OHA no-auto] %.2f hero=%s since=%.2f mode=%d>%d duty=%s>%s tower=%s target=%s laneCreep=%s travel=%.0f net=%.0f action=%d channel=%s stationary=%.1f',
 			now, botName, sample.started, sample.mode, mode, sample.duty, duty, describe(tower), describe(target), describe(creep), sample.travel,
-			displacement, bot:GetCurrentActionType(), tostring(bot:IsChanneling())))
+			displacement, bot:GetCurrentActionType(), tostring(bot:IsChanneling()), stationary))
 		sample.reported = true
 	end
 	sample.nextReport = now + 10

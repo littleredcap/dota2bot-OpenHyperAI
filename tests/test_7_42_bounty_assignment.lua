@@ -78,7 +78,7 @@ local function fixture()
         setfenv(assert(loadfile('bots/mode_rune_generic.lua')), env)()
         modes[i] = env
     end
-    return state, heroes, modes
+    return state, heroes, modes, j
 end
 
 local function order(hero, kind, target)
@@ -148,11 +148,43 @@ end
 do
     local s, h, m = fixture()
     s.time, s.status[bounty2], h[1].wave = 1442, unknown, true
-    assert(m[2].GetDesire() == 0.67, 'check the near home spot soon after a scheduled spawn')
+    assert(m[2].GetDesire() == 0.70, 'check the near home spot soon after a scheduled spawn')
     h[2].wave = true
-    assert(m[2].GetDesire() < 0.67, 'do not replace nearby wave duties with the scouting bonus')
+    assert(m[2].GetDesire() < 0.70, 'do not replace nearby wave duties with the scouting bonus')
     h[2].wave, s.threat = false, s.spots[bounty2]
     assert(m[2].GetDesire() == 0, 'recent enemy presence still vetoes the scout')
+end
+
+do
+    local s, h, m, j = fixture()
+    s.time, s.status[bounty2], h[1].wave = 1436, missing, true
+    assert(m[2].GetDesire() == 0.70 and m[1].GetDesire() == 0)
+    m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    h[2].x = s.spots[bounty2] - 70
+    m[2].Think()
+    assert(#h[2].orders == 1, 'wait at the nearby spawn without ordering a pickup before it exists')
+    s.time, s.status[bounty2] = 1441, available
+    assert(m[2].GetDesire() == 0.78)
+    m[2].Think()
+    order(h[2], 'pick', bounty2)
+    j.CanTakePostFightTrip = no
+    assert(m[2].GetDesire() == 0, 'a rune does not take the last timely defender away')
+end
+
+do
+    local s, h, m, j = fixture()
+    s.time, s.status[bounty2], h[1].x, h[1].level = 1265, missing, -6800, 17
+    assert(m[1].GetDesire() > 0.8)
+    m[1].Think()
+    order(h[1], 'move', -7948.152344)
+    j.CanTakePostFightTrip = no
+    m[1].Think()
+    order(h[1], 'cancel')
+    assert(m[1].GetDesire() == 0, 'release a remote Wisdom order when defense needs the bot')
+    j.CanTakePostFightTrip = nil
+    h[1].ohaIdleReplanUntil = s.time + 1
+    assert(m[1].GetDesire() == 0, 'an unstarted stalled shrine approach loses its claim')
 end
 
 do
