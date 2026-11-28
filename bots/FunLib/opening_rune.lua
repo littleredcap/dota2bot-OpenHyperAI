@@ -22,7 +22,7 @@ function Opening.Target(bot)
     local spot = Spot(bot)
     if type(spot) ~= 'number' then return end
     local location = GetRuneSpawnLocation(spot)
-    if not location or not IsLocationPassable(location) then return end
+    if not location then return end
     local distance = GetUnitToLocationDistance(bot, location)
     if now >= 0 and (distance > 700 or GetRuneStatus(spot) ~= RUNE_STATUS_AVAILABLE) then return end
     local allies, enemies = 0, #J.GetEnemiesNearLoc(location, 850)
@@ -49,13 +49,19 @@ end
 -- the walk even while the engine has yet to select rune mode.
 function Opening.Walk(bot, spot, location)
     local now = DotaTime()
-    if now >= 0 or not location or GetUnitToLocationDistance(bot, location) <= 110
-        or J.CanNotUseAction(bot, true) then return false end
+    if now >= 0 or not location or GetUnitToLocationDistance(bot, location) <= 110 then return false end
+    if J.CanNotUseAction(bot, true) then
+        if J.Customize and J.Customize.TraceLaneDecisions and not bot.ohaOpeningRuneBlocked then
+            bot.ohaOpeningRuneBlocked = true
+            print('[OHA opening rune blocked]', now, bot:GetPlayerID(), spot, bot:GetCurrentActionType(), bot:NumQueuedActions())
+        end
+        return false
+    end
     if spot ~= bot.ohaOpeningRuneSpot or now >= (bot.ohaOpeningRuneStepAt or -math.huge) then
         if spot ~= bot.ohaOpeningRuneSpot and J.Customize and J.Customize.TraceLaneDecisions then
             print('[OHA opening rune]', now, bot:GetPlayerID(), spot, GetUnitToLocationDistance(bot, location), bot:GetActiveMode())
         end
-        bot.ohaOpeningRuneSpot, bot.ohaOpeningRuneStepAt = spot, now + 0.60
+        bot.ohaOpeningRuneSpot, bot.ohaOpeningRuneStepAt = spot, now + 0.30
         bot:Action_MoveToLocation(location)
     end
     return true

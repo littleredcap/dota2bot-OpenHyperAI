@@ -1517,7 +1517,9 @@ function J.GetSideLaneReturnPoint(bot, lane)
         or not bot.DistanceFromFountain or bot:WasRecentlyDamagedByAnyHero(2)
         or bot:HasModifier('modifier_teleporting') or J.IsDisabled(bot)
         or (bot.ohaOuterTowerHoldUntil or 0) > now or not GetUnitList then return nil end
-    if bot:DistanceFromFountain() < 1000 and (J.GetHP(bot) <= 0.90 or J.GetMP(bot) <= 0.80) then return nil end
+    local fountainDistance = bot:DistanceFromFountain()
+    local recovered = fountainDistance < 1300 and J.GetHP(bot) > 0.90 and J.GetMP(bot) > 0.80
+    if fountainDistance < 1000 and not recovered then return nil end
     local supply = bot.ohaLaneSupply
     if supply and supply.waitUntil > now then return nil end
     local origin, team = bot:GetLocation(), bot:GetTeam()
@@ -1529,7 +1531,8 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local partnerReady = J.IsValidHero(partner) and J.GetHP(partner) >= 0.60
         and not J.IsDisabled(partner) and not J.IsRetreating(partner) and not partner:HasModifier('modifier_teleporting')
     if not core and (not J.IsValidHero(partner) or not J.IsCore(partner)) then return nil end
-    local hub, wave, distance = tower:GetLocation(), nil, core and 20000 or 4800
+    local fromFountain = not core and recovered
+    local hub, wave, distance = tower:GetLocation(), nil, (core or fromFountain) and 20000 or 4800
     local front = GetLaneFrontLocation(team, lane, 0)
     -- Don't turn a distant recovery route into a chase into enemy territory.
     for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
@@ -1541,8 +1544,12 @@ function J.GetSideLaneReturnPoint(bot, lane)
             if d < distance then wave, distance = creep, d end
         end
     end
-    if wave == nil or distance <= math.max(600, bot:GetAttackRange() + 370) then return nil end
-    local point = wave:GetLocation()
+    if not wave then
+        if not fromFountain then return nil end
+        distance = GetUnitToUnitDistance(bot, tower)
+    end
+    if distance <= math.max(600, bot:GetAttackRange() + 370) then return nil end
+    local point = wave and wave:GetLocation() or hub
     local covered = J.IsValidHero(partner) and J.GetHP(partner) >= 0.50 and not J.IsDisabled(partner)
         and not partner:HasModifier('modifier_teleporting') and not J.IsRetreating(partner)
         and GetUnitToLocationDistance(partner, point) <= 1050
@@ -1551,7 +1558,7 @@ function J.GetSideLaneReturnPoint(bot, lane)
     -- can safely advance into the enemy wave yet.
     local towerOnly = not core and (not partnerReady or not covered or distance > 2200)
     if towerOnly and (J.GetHP(bot) < 0.75 or distanceToTower > 1750
-        or not J.IsInRange(partner, tower, 800)) then return nil end
+        or not J.IsInRange(partner, tower, fromFountain and 1250 or 800)) then return nil end
     local hasLaneCover = false
     for _, creep in ipairs(GetUnitList(UNIT_LIST_ALLIED_CREEPS)) do
         if J.IsValid(creep) and string.find(creep:GetUnitName(), 'npc_dota_creep_', 1, true)
@@ -1819,16 +1826,17 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
         if J.IsValid(creep) and J.CanBeAttacked(creep) and J.CanSupportTakeLaneLastHit(bot, creep) then
             local distance = GetUnitToUnitDistance(bot, creep)
             local inRange = distance <= range
-            if inRange or (distance <= range + ((core or coveringLane) and 425 or 120)
+            local name = creep:GetUnitName()
+            local priority = (string.find(name, '_ranged', 1, true) or string.find(name, '_siege', 1, true)
+                or string.find(name, '_flagbearer', 1, true)) and 1 or 0
+            local approachRange = (core or coveringLane) and 425 or (priority > 0 and 240 or 120)
+            if inRange or (distance <= range + approachRange
                 and not (J.IsValidBuilding(tower) and J.IsInRange(creep, tower, 825))) then
                 local delay, _, wait = J.GetAttackProDelayTime(bot, creep)
                 -- Includes approach, attack recovery, turn allowance and flight once.
                 local remaining = GetLaneCreepHealthAt(creep, delay, attackers)
                 local damage = LaneAttackDamage(bot, creep, attackDamage)
                 if remaining > 0 then
-                    local name = creep:GetUnitName()
-                    local priority = (string.find(name, '_ranged', 1, true) or string.find(name, '_siege', 1, true)
-                        or string.find(name, '_flagbearer', 1, true)) and 1 or 0
                     local score = priority + (damage - remaining) / math.max(1, damage) - distance / 2000
                     if inRange and remaining <= damage then
                         if (wait or 0) <= 0.17 then
@@ -1849,7 +1857,7 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
                         and (approach == nil or lethalOnArrival and not urgentApproach
                             or lethalOnArrival == urgentApproach and score > approachScore) then
                         local step
-                        if not core and not coveringLane and remaining <= damage then
+                        if not core and not coveringLane and (lethalOnArrival or priority > 0) then
                             step = GetSupportLastHitStep(bot, creep, distance, tower, enemies)
                         end
                         if core or coveringLane or step then

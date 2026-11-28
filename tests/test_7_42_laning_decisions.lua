@@ -731,8 +731,8 @@ end
 
 for _, overridden in ipairs({false, true}) do
     local state, mode, _, _, bot = fixture(true, overridden)
-    state.time, state.noCreeps = -5, true
-    assert(mode.GetDesire() == 0.72, 'distant cores leave the rune area in time for the first wave')
+    state.time, state.noCreeps = -50, true
+    assert(mode.GetDesire() == 0.72, 'prepare for the first wave when no opening rune order owns the movement')
     expect(state, mode, 'move', 1600)
     bot.x, state.time = 1500, 25
     assert(mode.GetDesire() ~= 0.72, 'reaching the lane ends the rally order')
@@ -766,6 +766,28 @@ do
     assert(not j.GetSideLaneReturnPoint(bot, lane.LANE_BOT), 'no solo trip into a contested lane')
     s.partnerRetreat, s.towerDive = false, true
     assert(not j.GetSideLaneReturnPoint(bot, lane.LANE_BOT), 'no route through recently observed opponents')
+    s.towerDive, s.hp = false, 1
+    bot.x, partner.x = -10000, 1000
+    bot.DistanceFromFountain = function() return 700 end
+    j.GetMP = function() return 0.95 end
+    assert(j.GetSideLaneReturnPoint(bot, lane.LANE_BOT) == own.x,
+        'a recovered support can walk from the fountain to tower cover when the defending partner is present')
+    j.GetMP = function() return 0.65 end
+    assert(not j.GetSideLaneReturnPoint(bot, lane.LANE_BOT), 'finish healing mana before leaving the fountain')
+end
+
+do
+    local s, lane, creep, _, bot = fixture(false)
+    local j = lane.J
+    creep.x, s.creepHP = 670, 70
+    creep.GetLocation = function(self) return self.x end
+    creep.GetUnitName = function() return 'npc_dota_creep_badguys_ranged' end
+    s.allies = {{x=630}}
+    local target, approach, _, urgent, point = j.GetLaningLastHitTarget(bot, {creep}, nil, 50, {})
+    assert(target == creep and approach and not urgent and point == 240,
+        'cross 220 units early for a ranged creep that is still one hit away from becoming a last hit')
+    s.towerDive = true
+    assert(not j.GetLaningLastHitTarget(bot, {creep}, nil, 50, {}), 'refuse the same step into recent enemy contact')
 end
 
 do

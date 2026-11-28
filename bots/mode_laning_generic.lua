@@ -9,7 +9,8 @@ local Localization = require(GetScriptDirectory()..'/FunLib/localization')
 local bot = GetBot()
 if bot == nil then return end
 local botName = bot:GetUnitName()
-if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+if not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion()
+	or (bot:IsInvulnerable() and DotaTime() >= 0) then return end
 
 local local_mode_laning_generic = nil
 local nAllyCreeps = nil
@@ -71,7 +72,7 @@ bot.ohaEngineMid = engineMid
 
 local function GetOpeningLaneDestination(lane, enemies)
 	local now = DotaTime()
-	if firstWaveReached or now < -5 or now > 100
+	if firstWaveReached or now < -90 or now > 100
 		or GetGameMode() == GAMEMODE_MO or GetGameMode() == GAMEMODE_1V1MID then return nil end
 	local towerId = laneTierOne[lane]
 	local tower = towerId ~= nil and GetTower(GetTeam(), towerId) or nil
@@ -105,7 +106,8 @@ function GetDesire()
 	PickOneAnnouncer()
 	AnnounceMessages()
 
-	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return BOT_MODE_DESIRE_NONE end
+	if not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion()
+		or (bot:IsInvulnerable() and DotaTime() >= 0) then return BOT_MODE_DESIRE_NONE end
 	local botLV = bot:GetLevel()
 	local currentTime = DotaTime()
 
@@ -256,7 +258,7 @@ function GetFurthestEnemyAttackRange(enemyList)
 end
 
 local function ThinkLane()
-	if not bot:IsAlive() or J.CanNotUseAction(bot) or bot:IsDisarmed()
+	if not bot:IsAlive() or J.CanNotUseAction(bot, DotaTime() < 0) or bot:IsDisarmed()
 		or bot:IsUsingAbility() or bot:IsChanneling() then return end
 	nInRangeEnemy = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
 	local nearbyTower, clash = J.GetTowerCoveredLaneClash(bot)
@@ -276,6 +278,7 @@ local function ThinkLane()
 	if bot.ohaCreepDrag and J.RunSideLaneCreepDrag(bot, nInRangeEnemy, nil, true) then return end
 	local opening = GetOpeningLaneDestination(botAssignedLane or bot:GetAssignedLane(), nInRangeEnemy)
 	if opening ~= nil then
+		if DotaTime() < 0 and bot.ohaOpeningRuneSpot ~= nil and DotaTime() < (bot.ohaOpeningRuneStepAt or -math.huge) then return end
 		bot:Action_MoveToLocation(opening)
 		return
 	end
