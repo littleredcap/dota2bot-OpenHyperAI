@@ -131,6 +131,10 @@ do
     assert(not j.CanStartTeleportHere(bot),'the wraith form ends before the scroll can finish')
     bot.modifierTime = 4.0
     assert(j.CanStartTeleportHere(bot),'a long enough wraith window still permits a safe channel')
+    bot.HasModifier = function(_, name) return name == 'modifier_item_urn_damage' end
+    bot.GetHealth = value(55)
+    assert(not j.CanStartTeleportHere(bot),'an already active urn can kill during the channel without a hero in sight')
+    bot.GetHealth = value(162)
     bot.HasModifier = no
     local golem={x=140,CanBeSeen=yes,IsAlive=yes,IsDisarmed=no,GetAttackTarget=value(bot),
         GetAttackRange=value(150),GetSecondsPerAttack=value(1.4),GetAttackProjectileSpeed=value(0),
@@ -151,6 +155,12 @@ do
     assert(j.CanStartTeleportHere(bot),'do not count nonhero attacks using hidden units')
     assert(j.CanLandByTeleport(bot,0),'do not read a hidden summon at the landing point')
     bot.GetNearbyCreeps=function() return {} end
+    golem.GetAttackTarget, golem.CanBeSeen, golem.x = no, yes, 290
+    golem.GetExtrapolatedLocation = value(100)
+    bot.WasRecentlyDamagedByAnyHero = yes
+    assert(not j.CanStartTeleportHere(bot),'a visible closing summon can reach an injured caster without an attack target yet')
+    golem.GetExtrapolatedLocation, bot.WasRecentlyDamagedByAnyHero = value(410), no
+    assert(j.CanStartTeleportHere(bot),'a departing summon is not an immediate threat')
     local shaman=caster(9,591,280,400,130,'shadow_shaman_shackles')
     enemies={shaman}
     assert(not j.CanStartTeleportHere(bot),'a visible shaman can step into Shackles range during the channel')

@@ -1224,7 +1224,7 @@ function J.GetVisibleThreatAt(bot, enemies, point, seconds, checkInterrupt)
     return VisibleThreat.Evaluate(J, bot, enemies, point, seconds, checkInterrupt)
 end
 
-local function GetNonHeroDamageAt(bot, units, point, seconds, seen, landing)
+local function GetNonHeroDamageAt(bot, units, point, seconds, seen, landing, retreating)
     local damage = 0
     for _, unit in ipairs(units) do
         if not seen[unit] and unit:CanBeSeen() and unit:IsAlive() and not unit:IsDisarmed() then
@@ -1232,9 +1232,11 @@ local function GetNonHeroDamageAt(bot, units, point, seconds, seen, landing)
             local distance = GetUnitToLocationDistance(unit, point)
             local focused = unit:GetAttackTarget() == bot
             local name = unit.GetUnitName and unit:GetUnitName() or ''
-            local summon = landing and distance <= 850 and J.IsSiegeSummon(name)
+            local summon = (landing or retreating) and distance <= 850 and J.IsSiegeSummon(name)
             local laneCreep = distance <= range + 160 and (name:find('npc_dota_creep_', 1, true) or name:find('_siege', 1, true))
-            if focused or landing and (summon or laneCreep) then
+            local closing = retreating and summon and (distance <= range + 90 or unit.GetExtrapolatedLocation
+                and J.GetLocationToLocationDistance(unit:GetExtrapolatedLocation(0.65), point) + 60 < distance)
+            if focused or closing or landing and (summon or laneCreep) then
                 seen[unit] = true
                 local speed = unit.GetCurrentMovementSpeed and unit:GetCurrentMovementSpeed() or 0
                 if unit.IsRooted and unit:IsRooted() then speed = 0 end
@@ -1278,6 +1280,15 @@ function J.CanStartTeleportHere(bot)
         + GetNonHeroDamageAt(bot, bot:GetNearbyTowers(1250, true), location, channel, seen)
     if bot.GetNearbyNeutralCreeps then
         focused = focused + GetNonHeroDamageAt(bot, bot:GetNearbyNeutralCreeps(850), location, channel, seen)
+    end
+    if J.GetHP(bot) <= 0.40 and bot:WasRecentlyDamagedByAnyHero(3) then
+        focused = focused + GetNonHeroDamageAt(bot, GetUnitList(UNIT_LIST_ENEMY_CREEPS), location, channel, seen, false, true)
+    end
+    if not immune and bot:HasModifier('modifier_item_urn_damage') then
+        local duration = math.min(channel, J.GetModifierTime(bot, 'modifier_item_urn_damage'))
+        if duration > 0 then
+            focused = focused + bot:GetActualIncomingDamage(25 * math.ceil(duration), DAMAGE_TYPE_MAGICAL)
+        end
     end
     local now = DotaTime()
     local denied = bot.ohaUnsafeChannel
@@ -2261,7 +2272,9 @@ end
 
 function J.GetLaningDenyStep(bot, creeps, enemyTower, enemies)
     local lane, range = bot:GetAssignedLane(), bot:GetAttackRange()
-    if not J.IsCore(bot) or (lane ~= LANE_TOP and lane ~= LANE_BOT) or range >= 310 or not J.IsInLaningPhase(bot)
+    local core = J.IsCore(bot)
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or (core and range >= 310)
+        or (not core and range < 400) or not J.IsInLaningPhase(bot)
         or J.GetHP(bot) < 0.60 or J.IsRetreating(bot) or bot:IsRooted() or bot:IsDisarmed() then return nil end
     local tower = GetTower(bot:GetTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
     if not J.IsValidBuilding(tower) then return nil end
@@ -2270,7 +2283,7 @@ function J.GetLaningDenyStep(bot, creeps, enemyTower, enemies)
     for _, creep in ipairs(creeps) do
         if J.IsValid(creep) and J.CanBeAttacked(creep) and J.GetHP(creep) < 0.5 then
             local gap = GetUnitToUnitDistance(bot, creep) - range
-            if gap > 0 and gap <= 160 then
+            if gap > 0 and gap <= (core and 160 or 210) then
                 local valuable = J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep)
                     or J.IsKeyWordUnit('_flagbearer', creep)
                 local contested = false
@@ -2281,8 +2294,13 @@ function J.GetLaningDenyStep(bot, creeps, enemyTower, enemies)
                     end
                 end
                 local point = J.VectorTowards(origin, creep:GetLocation(), gap + 20)
-                if (contested and GetUnitToLocationDistance(tower, point) <= 1150
-                    or valuable and GetUnitToLocationDistance(tower, point) <= retreatDistance + 25)
+                local nearTower = GetUnitToLocationDistance(tower, point)
+                local partner = not core and J.GetLanePartner(bot)
+                local supportCovered = not core and valuable and (nearTower <= 1150
+                    or J.IsValidHero(partner) and J.GetHP(partner) >= 0.62 and not J.IsRetreating(partner)
+                        and GetUnitToLocationDistance(partner, point) <= 650)
+                if (core and (contested and nearTower <= 1150 or valuable and nearTower <= retreatDistance + 25)
+                    or supportCovered)
                     and IsLocationPassable(point) and IsLocationVisible(point)
                     and (not J.IsValidBuilding(enemyTower) or GetUnitToLocationDistance(enemyTower, point) > 900)
                     and #J.GetLastSeenEnemiesNearLoc(point, 700) <= #enemies then
@@ -2330,8 +2348,9 @@ function J.GetSideLaneDuoTrade(bot, enemies, tower, range, castPoint, spellStep,
         or (not castPoint and (bot:IsDisarmed() or bot:WasRecentlyDamagedByCreep(1.5))) then return nil end
     local partner = J.GetLanePartner(bot)
     if not J.IsValidHero(partner) or not J.IsInRange(bot, partner, 700) or J.GetHP(partner) < 0.64
-        or J.IsRetreating(partner) or J.IsDisabled(partner) or partner:IsChanneling()
+        or J.IsRetreating(partner) or J.IsDisabled(partner)
         or partner:HasModifier('modifier_teleporting') then return nil end
+    local partnerChannel = partner:IsChanneling()
 
     if not J.IsValidBuilding(tower) then
         local team = GetOpposingTeam()
@@ -2358,9 +2377,12 @@ function J.GetSideLaneDuoTrade(bot, enemies, tower, range, castPoint, spellStep,
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
             and (not linkedOnly or enemy:HasModifier('modifier_warlock_fatal_bonds'))
             and GetUnitToLocationDistance(enemy, clash) <= 585
-            and (J.CanFollowLaneFight(partner, enemy) or castPoint and J.IsInRange(partner, enemy, 850))
+            and (partnerChannel and partner.ohaFightControlTarget == enemy
+                or not partnerChannel and (J.CanFollowLaneFight(partner, enemy) or castPoint and J.IsInRange(partner, enemy, 850)))
             and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 900)) then
             local gap = GetUnitToUnitDistance(bot, enemy) - range
+            local _, release = J.GetAttackProDelayTime(bot, enemy)
+            local controlled = not castPoint and J.GetFightHardControlRemaining(enemy) > (release or 0.5) + 0.20
             local linked = enemy:HasModifier('modifier_warlock_fatal_bonds')
             local nearby = 0
             for _, foe in ipairs(enemies) do
@@ -2368,8 +2390,7 @@ function J.GetSideLaneDuoTrade(bot, enemies, tower, range, castPoint, spellStep,
                     nearby = nearby + 1
                 end
             end
-            -- A linked target permits a short follow-up even when its partner is there.
-            if nearby <= (linked and 2 or 1) and gap <= maxStep then
+            if (not partnerChannel or controlled) and nearby <= ((linked or controlled) and 2 or 1) and gap <= maxStep then
                 local step = gap > 0 and J.VectorTowards(origin, enemy:GetLocation(), gap + 20) or nil
                 local point = step or origin
                 local mid = step and J.VectorTowards(origin, point, (gap + 20) * 0.5) or origin
@@ -2386,7 +2407,7 @@ function J.GetSideLaneDuoTrade(bot, enemies, tower, range, castPoint, spellStep,
                     local harm = J.GetVisibleThreatAt(bot, enemies, point, exposure)
                         + LaneTradeCreepHarm(bot, exposure, not castPoint, point)
                     local limit = GetLaneRecoveryBudget(bot) < 40 and 0.23 or 0.30
-                    local score = (linked and 1 or 0) - J.GetHP(enemy)
+                    local score = (linked and 1 or 0) + (controlled and 1 or 0) - J.GetHP(enemy)
                     if harm < bot:GetHealth() * limit and score > bestScore
                         and J.CanSpendLaneTradeTime(bot, tower, enemies, seconds) then
                         best, bestPoint, bestScore = enemy, step, score
@@ -7799,6 +7820,18 @@ function J.ShouldHoldFightApproach(bot, target)
 	if drift >= selfSpeed * 0.58 and closingTime > (pressure and 3.5 or 2.2) then return true end
 	if firedUpon and not pressure and not stopMovement and target:GetAttackRange() >= bot:GetAttackRange() + 130
 		and distance <= target:GetAttackRange() + 275 and closingTime > 1.2 then return true end
+	if gap >= 130 then
+		local step = J.VectorTowards(origin, location, math.min(375, gap))
+		local opponents = J.GetEnemiesNearLoc(step, 1600)
+		if #opponents >= 2 then
+			local window = math.min(3.2, closingTime + 1.6)
+			local damage, control, contacts = J.GetVisibleThreatAt(bot, opponents, step, window, true)
+			local health = bot:GetHealth() + window * bot:GetHealthRegen()
+			if contacts >= 2 and damage >= health * (control and contacts > inContact + 1 and 0.78 or 1) then
+				return true
+			end
+		end
+	end
 	return false
 end
 
@@ -11090,8 +11123,12 @@ function J.CheckBotIdleState()
 		or J.CanNotUseAction(bot, false, true) or bot:IsRooted() or J.IsTryingtoUseAbility(bot)
 		or bot:HasModifier('modifier_teleporting') then
 		bot.ohaMoveSample, bot.ohaIdleRecoveryUntil, bot.ohaIdleReplanUntil = nil, nil, nil
+		bot.ohaWatcherRecoveryUntil = nil
 		return false
 	end
+	local mode = bot:GetActiveMode()
+	-- DOTA_BOT_MODE_WATCHER in the client protocol. Older Lua bindings omit it.
+	local watching = mode == (BOT_MODE_WATCHER or 28)
 	local sample = bot.ohaMoveSample
 	local elapsed = sample and now - sample.sampled
 	if elapsed and elapsed >= 0 and elapsed < 0.50 then
@@ -11100,18 +11137,19 @@ function J.CheckBotIdleState()
 	local attack = bot:GetLastAttackTime()
 	local location = bot:GetLocation()
 	local reset = sample == nil or elapsed < 0 or elapsed > 2 or sample.attack ~= attack
+		or watching and sample.mode ~= mode
 	if reset or GetUnitToLocationDistance(bot, sample.location) > 180 then
-		if reset then bot.ohaIdleRecoveryUntil = nil end
-		bot.ohaMoveSample = {location=location, time=now, sampled=now, attack=attack}
+		if reset then bot.ohaIdleRecoveryUntil, bot.ohaWatcherRecoveryUntil = nil, nil end
+		bot.ohaMoveSample = {location=location, time=now, sampled=now, attack=attack, mode=mode}
 		bot.ohaIdleReplanUntil = nil
 		return (bot.ohaIdleRecoveryUntil or 0) > now
 	end
 	sample.sampled = now
-	if now - sample.time < 6 then return false end
+	if now - sample.time < (watching and 4 or 6) then return false end
 	-- Let the current mode replace a stale queue even on defense or near enemies.
 	-- Only a quiet, unassigned hero may switch to local farm or a rally point.
 	bot.ohaIdleReplanUntil = now + 1.25
-	if now - sample.time < 9 or (bot.ohaIdleRecoveryUntil or 0) > now then
+	if now - sample.time < (watching and 4 or 9) or (bot.ohaIdleRecoveryUntil or 0) > now then
 		return (bot.ohaIdleRecoveryUntil or 0) > now
 	end
 	if J.IsDefending(bot) or J.IsDoingRoshan(bot) or J.IsDoingTormentor(bot)
@@ -11120,9 +11158,10 @@ function J.CheckBotIdleState()
 		or #J.GetEnemiesNearLoc(location, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(location, 1200) > 0 then return false end
 	if J.HasQueuedAction(bot) and not bot:GetAttackTarget() then bot:Action_ClearActions(false) end
 	bot.ohaIdleRecoveryUntil = now + 15
+	if watching then bot.ohaWatcherRecoveryUntil = now + 8 end
 	bot.ohaIdleRecoveryOrigin = location
 	if J.Customize and J.Customize.TraceLaneDecisions then
-		local mode, name = bot:GetActiveMode(), nil
+		local name = watching and 'BOT_MODE_WATCHER' or nil
 		for key, value in pairs(_G) do
 			if type(key) == 'string' and key:find('^BOT_MODE_') and not key:find('^BOT_MODE_DESIRE_') and value == mode then
 				name = key
@@ -11130,7 +11169,7 @@ function J.CheckBotIdleState()
 			end
 		end
 		print('[OHA idle]', now, bot:GetUnitName(), 'mode', name or mode, 'action', bot:GetCurrentActionType(),
-			'stationary', now - sample.time, 'lastAttack', attack)
+			'stationary', now - sample.time, 'desire', bot:GetActiveModeDesire(), 'lastAttack', attack)
 	end
 	return true
 end

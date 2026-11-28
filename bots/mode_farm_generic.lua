@@ -912,6 +912,11 @@ function GetDesire()
 	-- local cachedVar = J.Utils.GetCachedVars(cacheKey, 0.4)
 	-- if DotaTime() > 30 and cachedVar ~= nil then return cachedVar end
 	local res = GetDesireHelper()
+	if res > BOT_MODE_DESIRE_NONE and (bot.ohaWatcherRecoveryUntil or 0) > DotaTime()
+		and (idleRally or idleCamp or collectingWave or sideWaveDesire)
+		and not bot:WasRecentlyDamagedByAnyHero(3) then
+		res = math.max(res, math.min(0.94, math.max(0.84, bot:GetActiveModeDesire() + 0.035)))
+	end
 	-- J.Utils.SetCachedVars(cacheKey, res)
 	return res
 end
@@ -1049,6 +1054,10 @@ function GetDesireHelper()
 			local ally = J.GetClosestAlly(bot, 3500, true)
 			local rally = ally and GetUnitToUnitDistance(bot, ally) > 650 and ally:GetLocation()
 			if not rally and bot:DistanceFromFountain() >= 1250 then rally = J.GetTeamFountain() end
+			if rally and (bot.ohaWatcherRecoveryUntil or 0) > now then
+				local distance = GetUnitToLocationDistance(bot, rally)
+				rally = J.VectorTowards(bot:GetLocation(), rally, math.min(850, distance))
+			end
 			if rally and IsLocationPassable(rally) and IsFarmPathSafe(rally) and IsFarmLocationSafe(rally) then
 				idleRally = rally
 				return 0.72

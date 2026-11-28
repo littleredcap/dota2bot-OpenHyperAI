@@ -101,6 +101,7 @@ local function fixture(core, overridden, startMid)
         IsAttacking = function(unit) return unit == bot and state.attacking or unit == enemy and state.enemyWindup end,
         GetAttackProDelayTime = function(unit) return unit == enemy and state.enemyEta or 0.3,
             unit == enemy and state.enemyRelease or 0.18, unit == bot and state.attackWait or 0 end,
+        GetFightHardControlRemaining = function(unit) return unit.control or 0 end,
         GetTotalAttackWillRealDamage = function(unit, eta)
             if state.finishingDamageAt ~= nil and eta >= state.finishingDamageAt then return state.creepHP end
             if state.incomingDamageAt ~= nil then return eta >= state.incomingDamageAt and state.incomingDamage or 0 end
@@ -198,6 +199,14 @@ do
     local second = setmetatable({x = 490}, {__index = enemy})
     state.secondEnemy = second
     assert(not j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150), 'a second enemy cancels the ordinary opening')
+    local partner = j.GetLanePartner(bot)
+    partner.IsChanneling, partner.ohaFightControlTarget = yes, enemy
+    enemy.control = 0.10
+    assert(not j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150), 'the control must last through attack windup')
+    enemy.control = 1.0
+    assert(j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150) == enemy,
+        'take the protected attack during a confirmed partner channel')
+    partner.IsChanneling, partner.ohaFightControlTarget, enemy.control = no, nil, nil
     enemy.HasModifier = function(_, name) return name == 'modifier_warlock_fatal_bonds' end
     second.HasModifier = no
     assert(j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150) == enemy, 'a safe follow-up targets the linked hero')
@@ -274,6 +283,17 @@ do
     assert(bot.ohaIdleRecoveryUntil>state.time and state.orders[#state.orders][1]=='hold'
         and state.orders[#state.orders][2]==false,
         'release a stationary empty queue before replanning')
+    bot.GetActiveMode = function() return 28 end
+    env.J.HasQueuedAction = no
+    for t=0,3 do state.time=80+t; env.J.CheckBotIdleState() end
+    assert(not bot.ohaWatcherRecoveryUntil, 'leave time for the first Watcher interaction')
+    state.time = 84
+    env.J.CheckBotIdleState()
+    assert(bot.ohaWatcherRecoveryUntil > state.time, 'a stalled native Watcher order can yield sooner')
+    env.J.IsTryingtoUseAbility = yes
+    state.time = 85
+    env.J.CheckBotIdleState()
+    assert(not bot.ohaWatcherRecoveryUntil, 'an actual channel stops the Watcher recovery')
 end
 
 do

@@ -99,10 +99,10 @@ local function MustStayForObjective()
 		or (ancient ~= nil and J.Utils.CountEnemyHeroesNear(ancient:GetLocation(), 3200) > 0)
 end
 
-local function CancelBountyMove()
+local function CancelBountyMove(keepTrip)
 	if issuedBountySpot ~= nil and not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
 	issuedBountySpot = nil
-	bot.ohaBountyTask = nil
+	if not keepTrip then bot.ohaBountyTask = nil end
 end
 
 local function CancelRiverMove()
@@ -219,8 +219,11 @@ function GetDesire()
 
 			if IsBountySpot(rune.location) then
 				local now = DotaTime()
+				local trip = bot.ohaBountyTask
 				if rune.status == RUNE_STATUS_AVAILABLE and rune.distance <= 375 and botHP >= 0.55
 					and #nEnemyHeroes == 0 and not J.HasPendingLaningLastHit(bot) then return 0.86 end
+				if rune.status == RUNE_STATUS_AVAILABLE and trip and trip.spot == rune.location and trip.expires > now
+					and not J.HasPendingLaningLastHit(bot) then return 0.81 end
 				if not J.IsCore(bot) and botHP >= 0.68 and #nEnemyHeroes == 0
 					and #bot:GetNearbyLaneCreeps(850, true) == 0 then
 					-- The roster assignment has already checked the route and
@@ -294,7 +297,7 @@ end
 
 function OnEnd()
 	Bottle = nil
-	CancelBountyMove()
+	CancelBountyMove(true)
 	CancelRiverMove()
 	CancelWisdomMove()
 end
@@ -404,7 +407,7 @@ function Think()
 					status == RUNE_STATUS_AVAILABLE and 'collect' or prepare and 'prepare' or 'scout')
 				bot.ohaLastBountyStatus = status
 			end
-			if issuedBountySpot ~= assigned or bot.ohaBountyTask == nil then
+			if bot.ohaBountyTask == nil or bot.ohaBountyTask.spot ~= assigned then
 				bot.ohaBountyTask = {spot=assigned, expires=now + 3 + distance / math.max(1, bot:GetCurrentMovementSpeed()) * 1.35}
 			end
 			if distance > 150 then
@@ -622,6 +625,12 @@ end
 function X.GetBestRune()
 	minute = math.floor(DotaTime() / 60)
 	second = DotaTime() % 60
+	local bounty, distance, prepare
+	if DotaTime() >= 0 then
+		bounty, distance, prepare = X.GetBountyAssignment()
+		local trip = bot.ohaBountyTask
+		if bounty and trip and trip.spot == bounty and trip.expires > DotaTime() then return bounty, distance, prepare end
+	end
 	if IsMidPowerRuneWindow() then
 		local confirmed, nearest = -1, 1800
 		for _, rune in ipairs({RUNE_POWERUP_1, RUNE_POWERUP_2}) do
@@ -635,10 +644,7 @@ function X.GetBestRune()
 		end
 		if confirmed ~= -1 then return confirmed, nearest end
 	end
-	if DotaTime() >= 0 then
-		local bounty, distance, prepare = X.GetBountyAssignment()
-		if bounty then return bounty, distance, prepare end
-	end
+	if bounty then return bounty, distance, prepare end
 
 	local targetRune = -1
 	local targetRuneDistance = math.huge

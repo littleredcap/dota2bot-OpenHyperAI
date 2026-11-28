@@ -237,6 +237,20 @@ end
 
 do
     local s, h, m = fixture()
+    s.spots[bounty2], h[1].wave = 2200, true
+    assert(m[2].GetDesire() > 0)
+    m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    m[2].OnEnd()
+    order(h[2], 'cancel')
+    s.time = s.time + 0.5
+    assert(m[2].GetDesire() == 0.81, 'resume a still-safe collection after a short interruption')
+    s.threat = s.spots[bounty2]
+    assert(m[2].GetDesire() == 0, 'a retained collection still loses to a new threat')
+end
+
+do
+    local s, h, m = fixture()
     s.status[bounty1], s.status[bounty2] = unknown, unknown
     assert(m[2].GetDesire() > 0 and m[1].GetDesire() == 0)
     m[2].Think()

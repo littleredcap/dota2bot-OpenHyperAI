@@ -80,6 +80,10 @@ local function fixture(rescue)
         GetLastSeenEnemiesNearLoc = function() return state.recent or {} end,
         GetVisibleThreatAt = function() return 0, false, 0 end,
         GetLocationToLocationDistance = distance,
+        VectorTowards = function(a, b, step)
+            local length = distance(a, b)
+            return pos(a.x + (b.x - a.x) * step / length, a.y + (b.y - a.y) * step / length)
+        end,
         GetTeamFightLocation = function() return pos(650) end,
         GetDistance = distance, WeAreStronger = no, IsInLaningPhase = no, IsInTeamFight = yes,
         GetTeamFountain = function() return pos(-6000) end,
@@ -592,6 +596,13 @@ do
         assert(j.ShouldHoldFightApproach(bot, enemy), 'a damaged core without support does not step into three visible defenders')
         defenders[3] = nil
         assert(not j.ShouldHoldFightApproach(bot, enemy), 'the same ground without the visible numbers swing remains playable')
+        local threat = j.GetVisibleThreatAt
+        j.GetVisibleThreatAt = function(_, _, point, seconds, checkControl)
+            assert(point.x > 0 and seconds <= 3.2 and checkControl)
+            return 820, true, 2
+        end
+        assert(j.ShouldHoldFightApproach(bot, enemy), 'two visible enemies can close the prospective escape with control')
+        j.GetVisibleThreatAt = threat
         j.GetEnemiesNearLoc = original
     end
     bot.WasRecentlyDamagedByAnyHero, enemy.x = no, 1100
