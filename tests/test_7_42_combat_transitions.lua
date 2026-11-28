@@ -787,5 +787,20 @@ do
     assert(mode.GetDesire() > 0)
     mode.Think()
     assert(state.orders[2] == wave, 'after laning the same roaming last hit still executes')
+    bot.GetAttackTarget = function() return wave end
+    mode.BOT_ACTION_TYPE_ATTACK = 4
+    local action = bot.GetCurrentActionType
+    bot.GetCurrentActionType = function() return mode.BOT_ACTION_TYPE_ATTACK end
+    mode.Think()
+    assert(#state.orders == 2, 'do not replace an attack already aimed at the same roaming creep')
+    bot.ohaIdleReplanUntil = state.time + 1
+    mode.GetDesire()
+    mode.Think()
+    assert(#state.orders == 2, 'give up a stale roaming creep order')
+    bot.GetCurrentActionType, bot.ohaIdleReplanUntil = action, nil
+    j.CanTakePostFightTrip = no
+    mode.GetDesire()
+    mode.Think()
+    assert(#state.orders == 2, 'leave the creep when a defensive assignment needs the bot')
 end
 print('PASS: side-lane creep orders use lane mode while roaming keeps non-wave targets')

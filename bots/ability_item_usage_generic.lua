@@ -5068,14 +5068,14 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local recoveredSideLaner = laning and (homeLane == LANE_TOP or homeLane == LANE_BOT)
 		and now >= 40 and now < (J.IsModeTurbo() and 480 or 600) and nEnemyCount == 0
 		and botHP > 0.90 and botMP > 0.80 and bot:DistanceFromFountain() < 1300
-	if nMode == BOT_MODE_LANING or recoveringSideCore or recoveredSideLaner
+	if not postFightDuty and (nMode == BOT_MODE_LANING or recoveringSideCore or recoveredSideLaner
 		or laning and nMode == BOT_MODE_FARM and nEnemyCount == 0
-		and not midCover and bot:DistanceFromFountain() <= 1400
+		and not midCover and bot:DistanceFromFountain() <= 1400)
 	then
 		local shouldTp
 		hEffectTarget, shouldTp = X.GetLaningTPLocation(bot, nMinTPDistance, botLocation)
 		sCastMotive = '出去发育'
-		if shouldTp and J.CanCommitToLaneTeleport(bot, hEffectTarget)
+		if shouldTp and J.CanCommitToLaneTeleport(bot, hEffectTarget, true) and CanSpendOnTrip(hEffectTarget)
 		then
 			if botName == 'npc_dota_hero_furion'
 			then

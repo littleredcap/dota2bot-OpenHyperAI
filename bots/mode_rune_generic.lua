@@ -54,6 +54,7 @@ local wisdomRuneSpots = { [TEAM_RADIANT] = radiantWRLocation, [TEAM_DIRE] = dire
 local nShrineOfWisdomTime = 0
 local nShrineOfWisdomTeam = TEAM_RADIANT
 local pursueWisdom, issuedBountySpot = false, nil
+local bountyPickupAt, retriedBountyPickup = -math.huge, false
 local issuedRiverMove = false
 
 local function IsBountySpot(rune)
@@ -103,6 +104,7 @@ end
 local function CancelBountyMove(keepTrip)
 	if issuedBountySpot ~= nil and not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
 	issuedBountySpot = nil
+	bountyPickupAt, retriedBountyPickup = -math.huge, false
 	if not keepTrip then bot.ohaBountyTask = nil end
 end
 
@@ -421,9 +423,18 @@ function Think()
 				trip.expires = math.max(trip.expires, now - now % bountyInterval + bountyInterval + 3)
 			end
 			if distance > 150 then
+				bountyPickupAt, retriedBountyPickup = -math.huge, false
 				bot:Action_MoveToLocation(location)
 			elseif status == RUNE_STATUS_AVAILABLE then
-				if not picking or issuedBountySpot ~= assigned then bot:Action_PickUpRune(assigned) end
+				local retry = picking and issuedBountySpot == assigned and bountyPickupAt > -math.huge
+					and now >= bountyPickupAt + 1.25 and not retriedBountyPickup
+				if issuedBountySpot ~= assigned or (not picking and now >= bountyPickupAt + 0.25) or retry then
+					bot:Action_PickUpRune(assigned)
+					bountyPickupAt, retriedBountyPickup = now, retry
+					if J.Customize and J.Customize.TraceLaneDecisions then
+						print('[OHA bounty pickup]', now, bot:GetPlayerID(), assigned, math.floor(distance), retry and 'retry' or 'order')
+					end
+				end
 			elseif BountySpawnApproaching(now)
 				or status == RUNE_STATUS_UNKNOWN and prepare and BountyJustSpawned(now) then
 				issuedBountySpot = assigned

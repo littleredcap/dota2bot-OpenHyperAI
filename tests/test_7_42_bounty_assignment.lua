@@ -153,6 +153,29 @@ end
 
 do
     local s, h, m = fixture()
+    h[1].wave, h[2].x = true, s.spots[bounty2] - 20
+    assert(m[2].GetDesire() == 0.86)
+    m[2].Think()
+    order(h[2], 'pick', bounty2)
+    s.time = s.time + 1
+    m[2].Think()
+    assert(#h[2].orders == 1, 'give a still-pending pickup time to complete')
+    s.time = s.time + 0.35
+    m[2].Think()
+    order(h[2], 'pick', bounty2)
+    s.time = s.time + 2
+    m[2].Think()
+    assert(#h[2].orders == 2, 'a pickup that still shows available gets one retry')
+    h[2].action = 1
+    m[2].Think()
+    assert(#h[2].orders == 3, 'an available stack can be collected after the previous pickup ends')
+    s.threat = s.spots[bounty2]
+    m[2].Think()
+    order(h[2], 'cancel')
+end
+
+do
+    local s, h, m = fixture()
     s.time, s.status[bounty2], h[1].wave = 1442, unknown, true
     assert(m[2].GetDesire() == 0.70, 'check the near home spot soon after a scheduled spawn')
     h[2].wave = true

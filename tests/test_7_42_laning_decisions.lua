@@ -1282,6 +1282,20 @@ do
     desire, destination = teleport()
     assert(desire > 0 and destination == j.GetTeamFountain(), 'can complete the item after the safe wave is gone')
 
+    state.atBase, state.mode, state.hp, state.buy = true, 8, 1, false
+    bot.GetAssignedLane = function() return env.LANE_MID end
+    env.GetAmountAlongLane = function() return {amount=0, distance=6000} end
+    local contested = true
+    local checkLanding = j.CanCommitToLaneTeleport
+    j.CanCommitToLaneTeleport = function(_, _, requireClear) return not requireClear or not contested end
+    assert(teleport() == 0, 'a lingering laning mode cannot send a farm teleport onto a contested mid front')
+    contested = false
+    assert(teleport() > 0, 'a clear front is still usable after the lane phase')
+    j.CanTakePostFightTrip = no
+    assert(teleport() == 0, 'a normal lane return respects the shared defense timing')
+    j.CanTakePostFightTrip, j.CanCommitToLaneTeleport = nil, checkLanding
+    state.atBase = false
+
     local front = env.GetTower(nil, env.TOWER_TOP_1)
     state.fallbackTower = {GetLocation = function() return 1700 end}
     front.x, state.unsafe = 6000, false

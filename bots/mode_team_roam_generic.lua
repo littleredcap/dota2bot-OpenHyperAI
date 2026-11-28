@@ -153,17 +153,6 @@ function GetDesireHelper()
         return RemapValClamped(J.GetHP(bot), 0, 0.6, BOT_MODE_DESIRE_NONE, 0.98)
     end
 
-    -- The lane mode times shots and holds position while a mid wave is contested.
-    local midWave = J.IsInLaningPhase() and J.IsCore(bot) and bot:GetAssignedLane() == LANE_MID
-        and GetUnitToLocationDistance(bot, GetLaneFrontLocation(team, LANE_MID, 0)) <= 1400
-        and #bot:GetNearbyLaneCreeps(1200, true) > 0
-    if not midWave then
-        hTargetCreep = X.GetLastHitCreep()
-        if J.IsValid(hTargetCreep) and J.CanBeAttacked(hTargetCreep) then
-            return 1.5
-        end
-    end
-
     if not bot:IsAlive() or bot:GetCurrentActionType() == BOT_ACTION_TYPE_DELAY then
         return BOT_MODE_DESIRE_NONE
     end
@@ -189,6 +178,17 @@ function GetDesireHelper()
     focusEnemy = J.GetSupportedFightTarget(bot, nearbyEnemies, nearbyAllies)
     if IsSupport and not CanSupportCommitToTarget(focusEnemy) then focusEnemy = nil end
     if focusEnemy ~= nil then return 0.86 end
+
+    -- The lane mode keeps ownership of a contested mid wave.
+    local midWave = J.IsInLaningPhase() and J.IsCore(bot) and bot:GetAssignedLane() == LANE_MID
+        and GetUnitToLocationDistance(bot, GetLaneFrontLocation(team, LANE_MID, 0)) <= 1400
+        and #bot:GetNearbyLaneCreeps(1200, true) > 0
+    if not midWave then
+        hTargetCreep = X.GetLastHitCreep()
+        if hTargetCreep then
+            return J.IsInRange(bot, hTargetCreep, bot:GetAttackRange()) and 0.72 or 0.58
+        end
+    end
 
     if J.IsInLaningPhase(bot) and J.GetHP(bot) >= 0.55
         and not J.IsRetreating(bot) and not J.IsDefending(bot) and not J.IsPushing(bot) then
@@ -260,9 +260,11 @@ function X.GetLastHitCreep()
 
 	local nEnemyTowers = bot:GetNearbyTowers(1000, true)
 	local nEnemyCreeps = bot:GetNearbyCreeps(1200, true)
+	local staleTarget = (bot.ohaIdleReplanUntil or 0) > DotaTime() and bot:GetAttackTarget() or nil
 	for _, creep in pairs(nEnemyCreeps) do
 		if J.IsValid(creep)
 		and J.CanBeAttacked(creep)
+		and creep ~= staleTarget
 		and not IsSideLaneMicroTarget(creep)
 		and J.IsInRange(bot, creep, bot:GetAttackRange() + 300)
 		and not J.IsRoshan(creep)
@@ -276,7 +278,8 @@ function X.GetLastHitCreep()
 			then
 				local nInRangeAlly = J.GetAlliesNearLoc(creep:GetLocation(), 1000)
 				local nInRangeEnemy = J.GetEnemiesNearLoc(creep:GetLocation(), 1000)
-				if #nInRangeAlly >= #nInRangeEnemy then
+				if #nInRangeAlly >= #nInRangeEnemy
+					and (not J.CanTakePostFightTrip or J.CanTakePostFightTrip(bot, creep:GetLocation(), false, true)) then
 					return creep
 				end
 			end
@@ -429,7 +432,9 @@ function Think()
 	end
 
 	if J.IsValid(hTargetCreep) and not IsSideLaneMicroTarget(hTargetCreep) and J.CanSupportTakeLaneLastHit(bot, hTargetCreep) then
-		bot:Action_AttackUnit(hTargetCreep, true)
+		if bot:GetAttackTarget() ~= hTargetCreep or bot:GetCurrentActionType() ~= BOT_ACTION_TYPE_ATTACK then
+			bot:Action_AttackUnit(hTargetCreep, true)
+		end
 		return
 	end
 
