@@ -715,6 +715,59 @@ do
 end
 
 do
+    local bonds = ability({search_aoe = 400, count = 4})
+    local word = ability({})
+    bonds.GetManaCost, word.GetManaCost = function() return 120 end, function() return 100 end
+    local function unit(x) return {x = x, HasModifier = no, GetHealth = function() return 300 end} end
+    local caster, tower = unit(0), unit(-400)
+    local badSeed, bridge, front = unit(530), unit(740), unit(795)
+    local first, second = unit(900), unit(1100)
+    local foes, creeps, allies, target = {first, second}, {badSeed, bridge, front}, {unit(760), unit(780)}
+    local safe, free, doomed, mana = true, true, nil, 260
+    local function distance(a, b) return math.abs(a.x - b.x) end
+    caster.IsInvisible, caster.GetLevel = no, function() return 4 end
+    caster.GetHealth, caster.GetMaxHealth = function() return 600 end, function() return 600 end
+    caster.GetMana, caster.GetMaxMana = function() return mana end, function() return 400 end
+    caster.GetNearbyTowers, caster.GetNearbyLaneCreeps = empty, function(_, _, enemy) return enemy and creeps or allies end
+    caster.ActionQueue_UseAbilityOnEntity = function(_, spell, chosen) assert(spell == bonds); target = chosen end
+    local warlock = loadHero('warlock', {warlock_fatal_bonds = bonds, warlock_shadow_word = word}, caster, {
+        IsLaning = yes, CanNotUseAbility = no, IsItemAvailable = no, SetQueuePtToINT = no,
+        CanSpendLaneTradeTime = function() return free end,
+        GetTowerCoveredLaneClash = function() return tower, 795 end,
+        CanTradeAtCoveredLaneClash = function() return safe end,
+        GetTotalAttackWillRealDamage = function(creep) return creep == doomed and 350 or 0 end,
+        IsValidHero = yes, IsValid = yes, CanBeAttacked = yes, IsSuspiciousIllusion = no,
+        CanCastOnNonMagicImmune = yes, CanCastOnTargetAdvanced = yes,
+        IsInRange = function(a, b, radius) return distance(a, b) <= radius end,
+        GetNearbyHeroes = function() return foes end,
+    }, {'warlock_fatal_bonds', 'warlock_shadow_word'})
+    local env = getfenv(warlock.ConsiderQ)
+    env.GetUnitToUnitDistance = distance
+    env.GetUnitToLocationDistance = function(unit, point) return math.abs(unit.x - point) end
+    local function skip() return NONE end
+    warlock.WarlockShouldMove, warlock.ConsiderRFR, warlock.ConsiderR, warlock.ConsiderW, warlock.ConsiderE =
+        no, skip, skip, skip, skip
+    warlock.SkillsComplement()
+    assert(target == bridge, 'cast from a creep that reaches both enemy heroes within the link limit')
+    doomed, target = bridge, nil
+    warlock.SkillsComplement()
+    assert(target == badSeed, 'skip a preferred bridge that will already be dead at cast time')
+    foes, doomed, target = {first}, nil, nil
+    warlock.SkillsComplement()
+    assert(target, 'one hero and multiple creeps can justify a covered defensive lane link')
+    allies, target = {unit(700), unit(720), unit(740), unit(760)}, nil
+    warlock.SkillsComplement()
+    assert(not target, 'save single-hero Bonds when it would push an already stronger allied wave')
+    foes, safe = {first, second}, false
+    assert(warlock.ConsiderQ() == NONE, 'respect the retaliation estimate')
+    safe, free = true, false
+    assert(warlock.ConsiderQ() == NONE, 'do not cast over a reserved last hit')
+    free, mana = true, 210
+    assert(warlock.ConsiderQ() == NONE, 'leave enough mana to heal the core')
+end
+print('PASS: Warlock forecasts visible lane bounces, picks the best seed, and protects mana and lane position')
+
+do
     local near, orders = true, {}
     local spell, bonds = ability({aoe=500}), ability({})
     spell.GetManaCost, bonds.GetManaCost = function() return 250 end, function() return 100 end

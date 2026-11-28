@@ -1826,6 +1826,80 @@ function J.CanSpendLaneTradeTime(bot, tower, enemies, seconds)
     return not reserve and (not hit or approach and not urgent)
 end
 
+-- A real clash near a living tower offers a short trade and a short way out.
+function J.GetTowerCoveredLaneClash(bot)
+    local lane = bot:GetAssignedLane()
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or not J.IsInLaningPhase(bot) then return nil end
+    local team = bot:GetTeam()
+    local tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+    if not J.IsValidBuilding(tower) then
+        tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_2 or TOWER_BOT_2)
+    end
+    if not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 1050) then return nil end
+    local allies = bot:GetNearbyLaneCreeps(1100, false)
+    local clash, closest = nil, math.huge
+    for _, enemy in ipairs(bot:GetNearbyLaneCreeps(1100, true)) do
+        if J.IsValid(enemy) and J.IsInRange(enemy, tower, 1100) then
+            local distance = GetUnitToUnitDistance(bot, enemy)
+            if distance < closest then
+                for _, ally in ipairs(allies) do
+                    if J.IsValid(ally) and J.IsInRange(ally, enemy, 425) then
+                        clash, closest = enemy:GetLocation(), distance
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return tower, clash
+end
+
+function J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, actionTime, drawsCreeps)
+    if J.GetHP(bot) < 0.60 or J.IsRetreating(bot) or #enemies > 2
+        or GetUnitToLocationDistance(bot, clash) > 720
+        or J.IsValidBuilding(enemyTower) and J.IsInRange(bot, enemyTower, 900)
+        or #J.GetLastSeenEnemiesNearLoc(clash, 900) > #enemies then return false end
+    local partner = J.GetLanePartner(bot)
+    if J.IsValidHero(partner) and J.IsCore(partner) and J.IsInRange(bot, partner, 850)
+        and (J.GetHP(partner) < 0.55 or J.IsRetreating(partner)) then return false end
+    local exitTime = math.max(0, GetUnitToUnitDistance(bot, tower) - 500) / math.max(1, bot:GetCurrentMovementSpeed())
+    local seconds = math.min(3.0, 0.8 + actionTime + exitTime)
+    local harm = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), seconds)
+        + J.GetCreepAttackProjectileWillRealDamage(bot, seconds, true)
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(500, true)) do
+        if J.IsValid(creep) and (drawsCreeps or creep:GetAttackTarget() == bot) then
+            harm = harm + LaneAttackDamage(creep, bot, creep:GetAttackDamage())
+        end
+    end
+    return harm < bot:GetHealth() * 0.35
+end
+
+function J.GetTowerLaneHarassTarget(bot, enemies, enemyTower, range, castPoint)
+    if #enemies == 0 then return nil end
+    local tower, clash = J.GetTowerCoveredLaneClash(bot)
+    if not clash then return nil end
+    local best, score = nil, -math.huge
+    for _, enemy in ipairs(enemies) do
+        if J.IsValidHero(enemy) and J.CanBeAttacked(enemy) and not J.IsSuspiciousIllusion(enemy)
+            and J.IsInRange(bot, enemy, range) and GetUnitToLocationDistance(enemy, clash) <= 650
+            and (not J.IsValidBuilding(enemyTower) or not J.IsInRange(enemy, enemyTower, 900))
+            and (castPoint or GetHeightLevel(bot:GetLocation()) >= GetHeightLevel(enemy:GetLocation())) then
+            local target = enemy:GetAttackTarget()
+            local distracted = J.IsValid(target) and target:IsCreep() and J.IsAttacking(enemy)
+            local rangeAdvantage = GetUnitToUnitDistance(bot, enemy) > enemy:GetAttackRange() + 65
+            if castPoint or distracted or rangeAdvantage then
+                local priority = (distracted and 1 or 0) + (rangeAdvantage and 0.5 or 0) - J.GetHP(enemy)
+                if priority > score then best, score = enemy, priority end
+            end
+        end
+    end
+    if not best then return nil end
+    local actionTime = castPoint or select(2, J.GetAttackProDelayTime(bot, best))
+    local occupiedTime = castPoint or math.max(actionTime, bot:GetSecondsPerAttack())
+    if J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, actionTime, not castPoint)
+        and J.CanSpendLaneTradeTime(bot, enemyTower, enemies, occupiedTime) then return best, clash end
+end
+
 -- Drag nearby enemy melee creeps backwards with an attack order that never
 -- reaches the enemy hero. The normal last-hit planner takes over afterwards.
 function J.GetSideLaneCreepDrag(bot, enemies, tower)
@@ -1934,11 +2008,18 @@ end
 
 -- Keep both lane partners in range of the wave. A health advantage is useful
 -- only if it can be spent without standing in the opposing pair's damage.
-function J.GetSideLaneSpellTradeTarget(bot, enemies, tower, range, disableCastPoint, projectileSpeed)
+function J.GetSideLaneSpellTradeTarget(bot, enemies, tower, range, disableCastPoint, projectileSpeed, tradeCastPoint)
     local lane = bot:GetAssignedLane()
     if lane ~= LANE_TOP and lane ~= LANE_BOT or not J.IsInLaningPhase(bot)
         or J.GetHP(bot) < 0.65 or J.IsRetreating(bot) or #enemies > 2
         or J.IsLaningUnderPressure(bot, enemies, tower) then return nil end
+    local nearTower, clash = J.GetTowerCoveredLaneClash(bot)
+    if nearTower and tradeCastPoint then
+        if clash then return J.GetTowerLaneHarassTarget(bot, enemies, tower, range, tradeCastPoint) end
+        return nil
+    end
+    if nearTower and disableCastPoint and (not clash or not J.CanTradeAtCoveredLaneClash(
+        bot, enemies, nearTower, clash, tower, disableCastPoint, false)) then return nil end
     if not J.IsValidBuilding(tower) then
         local enemyTeam = GetOpposingTeam()
         tower = GetTower(enemyTeam, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
@@ -1955,6 +2036,7 @@ function J.GetSideLaneSpellTradeTarget(bot, enemies, tower, range, disableCastPo
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
             and not enemy:IsInvulnerable() and J.IsInRange(bot, enemy, range)
+            and (not clash or GetUnitToLocationDistance(enemy, clash) <= 650)
             and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 900)) then
             local victim = enemy:GetAttackTarget()
             local hitsCore = (victim == bot and J.IsCore(bot) or victim == friend and J.IsCore(friend))

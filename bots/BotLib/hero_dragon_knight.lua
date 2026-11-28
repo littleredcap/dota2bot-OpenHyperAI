@@ -440,7 +440,7 @@ function X.ConsiderBreatheFire()
 			end
 		end
 
-		local target = J.GetSideLaneSpellTradeTarget(bot, nEnemyHeroes, enemyTower, nCastRange)
+		local target = J.GetSideLaneSpellTradeTarget(bot, nEnemyHeroes, enemyTower, nCastRange, nil, nil, nCastPoint)
 		if target and J.CanCastOnNonMagicImmune(target)
 			and not target:HasModifier('modifier_dragonknight_breathefire_reduction')
 			and J.CanSpendLaneTradeTime(bot, enemyTower, nEnemyHeroes, nCastPoint) then

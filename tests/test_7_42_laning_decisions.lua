@@ -48,6 +48,8 @@ local function fixture(core, overridden, startMid)
     bot.GetLocation = function() return bot.x end
     bot.GetAttackRange = function() return 450 end
     bot.GetAttackDamage = function() return 50 end
+    bot.GetCurrentMovementSpeed = function() return 300 end
+    bot.GetActualIncomingDamage = function(_, damage) return damage end
     bot.GetHealth = function() return state.hp * 1000 end
     bot.GetAttackCombatProficiency = function() return state.proficiency or 1 end
     bot.GetSecondsPerAttack = function() return 1.5 end
@@ -150,6 +152,7 @@ local function fixture(core, overridden, startMid)
     env.dofile = function(path) return setfenv(assert(loadfile(path .. '.lua')), env)() end
     setfenv(laneSafety, env)()
     j.GetVisibleThreatAt = function() return state.incomingDamage or 0 end
+    j.GetCreepAttackProjectileWillRealDamage = function() return state.creepProjectiles or 0 end
     setfenv(assert(loadfile('bots/mode_laning_generic.lua')), env)()
     return state, env, creep, enemy, bot, tower
 end
@@ -1112,3 +1115,33 @@ do
     assert(hit == creep and approach and urgent, 'walk for the real last hit before a healthier priority creep')
 end
 print('PASS: side-lane spells distinguish setup, lethal windups, released shots and competing farm windows')
+
+do
+    local state, mode, creep, enemy, bot = fixture(true, false)
+    local j = mode.J
+    local own = mode.GetTower()
+    own.x = -600
+    creep.x, creep.GetLocation = 220, function(self) return self.x end
+    creep.GetAttackDamage, creep.GetAttackTarget = function() return 30 end, function() return bot end
+    state.creepHP, state.enemy, state.allies = 300, true, {creep}
+    enemy.x = 400
+    enemy.GetAttackRange = function() return 150 end
+    assert(mode.GetDesire() == 0.71, 'near our tower, stay for the safe free hit during the clash')
+    expect(state, mode, 'attack', enemy)
+    state.attackTarget = enemy
+    enemy.x = 510
+    expect(state, mode, 'hold', true)
+    state.attackTarget = nil
+    enemy.x = 400
+    state.creepHP = 30
+    expect(state, mode, 'attack', creep)
+    state.creepHP, state.creepProjectiles = 300, 350
+    assert(not j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450), 'in-flight creep damage can erase the trade budget')
+    state.creepProjectiles, state.incomingDamage = 0, 950
+    assert(not j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450, 0.3), 'refuse a spell when retaliation is lethal')
+    state.incomingDamage, state.allies = 0, {}
+    assert(not j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450), 'an isolated enemy wave is not a clash')
+    state.allies, own.x = {creep}, -1500
+    assert(not j.GetTowerLaneHarassTarget(bot, {enemy}, nil, 450), 'the extra trade is tied to a close living tower')
+end
+print('PASS: take a safe tower-side hit, preserve the farm shot, and cancel the attack outside the tether')

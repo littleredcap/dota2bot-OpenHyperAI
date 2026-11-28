@@ -487,7 +487,8 @@ function X.ConsiderW()
 
 	if laning then
 		local tower = bot:GetNearbyTowers(1500, true)[1]
-		local pressureTarget = J.GetSideLaneSpellTradeTarget(bot, hEnemyHeroList, tower, nCastRange)
+		local pressureTarget = J.GetSideLaneSpellTradeTarget(bot, hEnemyHeroList, tower, nCastRange,
+			nil, nil, abilityW:GetCastPoint())
 		if pressureTarget and J.CanCastOnNonMagicImmune(pressureTarget) and J.CanCastOnTargetAdvanced(pressureTarget)
 			and not pressureTarget:HasModifier('modifier_warlock_shadow_word')
 			and bot:GetMana() >= 2 * abilityW:GetManaCost()
@@ -540,6 +541,64 @@ function X.ConsiderW()
 	return BOT_ACTION_DESIRE_NONE, nil
 end
 
+local function FindLaneBondsTarget(enemies, enemyTower, range, radius, count, castPoint)
+	local tower, clash = J.GetTowerCoveredLaneClash(bot)
+	if tower then
+		if not clash or not J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, castPoint, false) then return nil end
+	elseif not J.GetSideLaneSpellTradeTarget(bot, enemies, enemyTower, range + radius) then
+		return nil
+	end
+
+	local units, enemyWave = {}, 0
+	local function Add(unit, hero)
+		if J.CanCastOnNonMagicImmune(unit) and not unit:HasModifier('modifier_warlock_fatal_bonds')
+			and (not clash or GetUnitToLocationDistance(unit, clash) <= radius) then
+			units[#units + 1] = {unit = unit, hero = hero}
+		end
+	end
+	for _, enemy in ipairs(enemies) do
+		if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) then Add(enemy, true) end
+	end
+	for _, creep in ipairs(bot:GetNearbyLaneCreeps(1600, true)) do
+		if J.IsValid(creep) and J.CanBeAttacked(creep) and not creep:HasModifier('modifier_fountain_glyph')
+			and creep:GetHealth() > J.GetTotalAttackWillRealDamage(creep, castPoint, true) then
+			if clash and GetUnitToLocationDistance(creep, clash) <= 600 then enemyWave = enemyWave + 1 end
+			Add(creep, false)
+		end
+	end
+	local allyWave = 0
+	if clash then
+		for _, creep in ipairs(bot:GetNearbyLaneCreeps(1100, false)) do
+			if J.IsValid(creep) and GetUnitToLocationDistance(creep, clash) <= 600 then allyWave = allyWave + 1 end
+		end
+	end
+	local best, score = nil, -math.huge
+	for _, seed in ipairs(units) do
+		if J.IsInRange(bot, seed.unit, range) and J.CanCastOnTargetAdvanced(seed.unit) then
+			-- Each jump searches around the last linked unit. Predict a
+			-- nearest visible path within the spell's actual target limit.
+			local linked = {[seed] = true}
+			local from, hits, heroes = seed, 1, seed.hero and 1 or 0
+			for _ = 2, count do
+				local nextUnit, closest = nil, radius
+				for _, row in ipairs(units) do
+					if not linked[row] then
+						local gap = GetUnitToUnitDistance(from.unit, row.unit)
+						if gap < closest then nextUnit, closest = row, gap end
+					end
+				end
+				if not nextUnit then break end
+				linked[nextUnit], from, hits = true, nextUnit, hits + 1
+				if nextUnit.hero then heroes = heroes + 1 end
+			end
+			local value = heroes * (count + 1) + hits
+			if hits >= 3 and (heroes >= 2 or heroes == 1 and clash and enemyWave >= allyWave)
+				and value > score then best, score = seed.unit, value end
+		end
+	end
+	return best
+end
+
 function X.ConsiderQ()
 
 	if not abilityQ:IsFullyCastable() then return BOT_ACTION_DESIRE_NONE, nil end
@@ -549,15 +608,16 @@ function X.ConsiderQ()
 	local nRadius = abilityQ:GetSpecialValueInt( "search_aoe" )
 	local candidates = hEnemyHeroList or {}
 	if #candidates == 0 then return BOT_ACTION_DESIRE_NONE, nil end
-	local laning = J.IsLaning(bot)
-	if laning then
+	if J.IsLaning(bot) then
 		local tower = bot:GetNearbyTowers(1500, true)[1]
 		if bot:GetMana() - manaCost < abilityW:GetManaCost()
 			or not J.CanSpendLaneTradeTime(bot, tower, candidates, abilityQ:GetCastPoint()) then
 			return BOT_ACTION_DESIRE_NONE, nil
 		end
-		local press = J.GetSideLaneSpellTradeTarget(bot, candidates, tower, nCastRange)
-		candidates = press and {press} or {}
+		local target = FindLaneBondsTarget(candidates, tower, nCastRange, nRadius,
+			abilityQ:GetSpecialValueInt('count'), abilityQ:GetCastPoint())
+		if target then return BOT_ACTION_DESIRE_HIGH, target end
+		return BOT_ACTION_DESIRE_NONE, nil
 	elseif not (J.IsDefending(bot) or J.IsInTeamFight(bot, 1200) or J.IsGoingOnSomeone(bot) or J.IsRetreating(bot)) then
 		return BOT_ACTION_DESIRE_NONE, nil
 	end
@@ -576,7 +636,7 @@ function X.ConsiderQ()
 				if J.IsValid(creep) and J.CanBeAttacked(creep) and J.IsInRange(target, creep, nRadius) then units = units + 1 end
 			end
 			local score = heroes * 4 + math.min(3, units)
-			if (heroes >= 2 or not laning and units >= 2) and score > bestScore then best, bestScore = target, score end
+			if (heroes >= 2 or units >= 2) and score > bestScore then best, bestScore = target, score end
 		end
 	end
 	if best then return BOT_ACTION_DESIRE_HIGH, best end

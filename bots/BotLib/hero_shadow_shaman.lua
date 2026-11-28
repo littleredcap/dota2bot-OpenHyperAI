@@ -392,7 +392,8 @@ function X.ConsiderQ()
 			local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange + aetherRange, true)
 			if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'Q-LaneCover' end
 			local tower = bot:GetNearbyTowers(1500, true)[1]
-			local pressure = J.GetSideLaneSpellTradeTarget(bot, nInRangeEnemyList, tower, nCastRange + aetherRange)
+			local pressure = J.GetSideLaneSpellTradeTarget(bot, nInRangeEnemyList, tower,
+				nCastRange + aetherRange, nil, nil, nCastPoint)
 			local reserve = abilityE and abilityE:IsTrained() and abilityE:GetManaCost() or nManaCost
 			if pressure and J.CanCastOnNonMagicImmune(pressure) and J.CanCastOnTargetAdvanced(pressure)
 				and bot:GetMana() - nManaCost >= reserve
