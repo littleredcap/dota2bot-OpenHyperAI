@@ -24,14 +24,15 @@ local teamHumans, teamBots = J.Utils.NumHumanBotPlayersInTeam(GetTeam())
 local firstWaveReached = false
 local campPlan
 local laneShot
-local nextLaneTrace, lastLaneTrace = -math.huge, nil
+local nextLaneTrace = {}
 local function TraceLaneDecision(kind, target)
 	if not J.Customize or not J.Customize.TraceLaneDecisions then return end
-	local now=DotaTime()
-	if now>600 or kind==lastLaneTrace and now<nextLaneTrace then return end
-	lastLaneTrace,nextLaneTrace=kind,now+4
-	print('[OHA lane]',now,bot:GetPlayerID(),bot:GetAssignedLane(),kind,
-		target and target:GetUnitName() or '-',math.floor(J.GetHP(bot)*100))
+	local now = DotaTime()
+	if now > 900 or now < (nextLaneTrace[kind] or -math.huge) then return end
+	nextLaneTrace[kind] = now + 4
+	print('[OHA lane]', now, bot:GetPlayerID(), bot:GetAssignedLane(), kind, bot:GetActiveMode(),
+		target and target:GetUnitName() or '-', target and math.floor(GetUnitToUnitDistance(bot, target)) or -1,
+		math.floor(J.GetHP(bot) * 100))
 end
 local laneTierOne = {[LANE_TOP] = TOWER_TOP_1, [LANE_MID] = TOWER_MID_1, [LANE_BOT] = TOWER_BOT_1}
 
@@ -196,17 +197,19 @@ function GetDesire()
 			and J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
 		if not local_mode_laning_generic
 			and J.GetSideLaneFinishTarget(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
+		campPlan = LaneCamp.Plan(bot, botAssignedLane)
+		if campPlan and campPlan.kind == 'pull' then return bot.ohaLaneCamp and 0.74 or 0.68 end
 		if not local_mode_laning_generic then
 			local target, step = J.GetSideLaneDuoTrade(bot, nInRangeEnemy, enemyTower, botAttackRange)
 			if target then return step and 0.68 or 0.71 end
+			if J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.71 end
+			if J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.68 end
 		end
 		if not local_mode_laning_generic and nearbyTower then
 			if not deny and not reserveDeny and J.GetTowerLaneHarassTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) then
 				return 0.71
 			end
 		elseif not local_mode_laning_generic then
-			if J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) ~= nil then return 0.71 end
-			if J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.68 end
 			if not deny and not reserveDeny and J.GetCoveredRangedLaneShot(bot, nInRangeEnemy, enemyTower) then return 0.66 end
 		end
 		if deny ~= nil or reserveDeny then return 0.7 end
@@ -217,7 +220,6 @@ function GetDesire()
 			or J.GetLaningCreepPosition(bot, botAssignedLane, nEnemyCreeps, enemyTower, nInRangeEnemy) ~= nil) then
 			return 0.57
 		end
-		campPlan = LaneCamp.Plan(bot, botAssignedLane)
 		if campPlan ~= nil then return 0.63 end
 		if not local_mode_laning_generic and not J.IsCore(bot)
 			and J.GetLaningCreepPosition(bot, botAssignedLane, nEnemyCreeps, enemyTower, nInRangeEnemy) ~= nil then
@@ -321,6 +323,25 @@ local function ThinkLane()
 			if covered then
 				local point = J.AdjustLocationWithOffsetTowardsFountain(wave[1]:GetLocation(), math.max(240, bot:GetAttackRange() - 50))
 				if IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 900) == 0 then hold = point end
+			elseif not underPressure and J.GetHP(bot) >= 0.70 and not bot:WasRecentlyDamagedByAnyHero(2)
+				and not J.IsFinishingLaningAttack(bot, current) then
+				local front = wave[1]
+				local gap = GetUnitToUnitDistance(bot, front) - bot:GetAttackRange()
+				if gap > 90 and J.IsInRange(front, holdTower, 780) then
+					local here = bot:GetLocation()
+					local stride = math.min(gap - 45, 325)
+					local point = J.VectorTowards(here, front:GetLocation(), stride)
+					local midpoint = J.VectorTowards(here, point, stride * 0.5)
+					if GetUnitToLocationDistance(holdTower, point) <= 700 and IsLocationVisible(point)
+						and IsLocationPassable(point) and IsLocationPassable(midpoint)
+						and #J.GetLastSeenEnemiesNearLoc(point, 850) == 0
+						and #J.GetEnemiesNearLoc(midpoint, 750) == 0
+						and J.GetVisibleThreatAt(bot, nInRangeEnemy, point, 1.5) < bot:GetHealth() * 0.20 then
+						TraceLaneDecision('tower-wave-step', front)
+						bot:Action_MoveToLocation(point)
+						return
+					end
+				end
 			end
 		end
 		-- On a real reset, the laner covering the tower can still deny from safety.
@@ -419,6 +440,9 @@ local function ThinkLane()
 		bot:Action_AttackUnit(cover, true)
 		return
 	end
+	local pull = campPlan or bot.ohaLaneCamp
+	if pull and pull.kind == 'pull' and not J.IsFinishingLaningAttack(bot, attackTarget)
+		and LaneCamp.Think(bot, pull) then return end
 	if not denyCreep and not reserveDeny and not J.IsFinishingLaningAttack(bot, attackTarget) then
 		local point, deny = J.GetLaningDenyStep(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if point then
@@ -441,7 +465,7 @@ local function ThinkLane()
 			return
 		end
 	end
-	if campPlan ~= nil and not J.IsFinishingLaningAttack(bot, attackTarget)
+	if campPlan ~= nil and campPlan.kind ~= 'pull' and not J.IsFinishingLaningAttack(bot, attackTarget)
 		and LaneCamp.Think(bot, campPlan) then return end
 
 	if not J.IsFinishingLaningAttack(bot, attackTarget) then
@@ -451,12 +475,11 @@ local function ThinkLane()
 
 	-- Real last hits remain first. Pressure the returning offlaner before an
 	-- optional support deny, and only move a short distance with lane cover.
-	if not nearbyTower and not J.IsCore(bot) and not J.IsFinishingLaningAttack(bot, attackTarget)
+	if not J.IsCore(bot) and not J.IsFinishingLaningAttack(bot, attackTarget)
 		and J.CanSpendLaneTradeTime(bot, enemyTower, nInRangeEnemy, bot:GetSecondsPerAttack()) then
 		local press = J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
 		if press ~= nil then
-			TraceLaneDecision('side-pressure-shot', press)
-			bot:Action_AttackUnit(press, true)
+			IssueLaneTradeShot(press, J.GetVisibleLaneClash(bot), 'side-pressure-shot')
 			return
 		end
 		local step = J.GetSideLanePressureStep(bot, nInRangeEnemy, enemyTower)

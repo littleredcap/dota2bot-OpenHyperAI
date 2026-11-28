@@ -1023,6 +1023,7 @@ do
         end,
         GetAttackTarget = function() return pushing and tower or nil end,
         ActionQueue_UseAbilityOnLocation = function(_, spell, place) order = {spell, place} end,
+        Action_MoveToLocation = function(_, place) order = {'move', place} end,
         ActionQueue_UseAbility = function(_, spell) order = {spell} end}
     local common = {CanNotUseAbility = no, CanCastAbility = function(spell) return spell ~= nil end,
         IsAttacking = no, GetHP = function() return 1 end, GetProperTarget = no,
@@ -1032,6 +1033,7 @@ do
         GetAvailableFightAllies = function() return 1 end, GetEnemiesNearLoc = empty,
         IsDoingRoshan = no, IsDoingTormentor = no,
         IsLaning = function() return not pushing end, IsInLaningPhase = yes, IsValid = yes, CanBeAttacked = yes,
+        GetSideLaneDuoTrade = function() end,
         IsValidBuilding = function(unit) return unit == tower end, IsValidHero = no,
         IsInRange = function(a,b,r) return math.abs(a.x-b.x) <= r end, GetProperCastRange = properRange,
         GetManaAfter = function() return 0.85 end, GetManaThreshold = function() return 0.2 end,
@@ -1075,6 +1077,16 @@ do
     assert(order and order[1]==breath and order[2]==580,'Breathe Fire can contest a covered enemy on a wave without a creep kill')
     common.HasPendingLaningLastHit=yes
     assert(dk.ConsiderBreatheFire()==NONE,'the optional trade cannot steal a pending last hit')
+    order, common.HasPendingLaningLastHit = nil, no
+    common.GetSideLaneDuoTrade=function(caster,enemies,_,_,_,stepBudget,linkedOnly)
+        assert(caster == dragon and enemies[1] == foe and linkedOnly and stepBudget == 145)
+        return foe, 110
+    end
+    dk.SkillsComplement()
+    assert(order and order[1]=='move' and order[2]==110,'make a bounded approach before following up a link')
+    common.GetSideLaneDuoTrade=function() return foe end
+    dk.SkillsComplement()
+    assert(order and order[1]==breath and order[2]==580,'cast on the linked target once in range')
 end
 
 do

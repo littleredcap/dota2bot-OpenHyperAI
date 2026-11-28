@@ -1,7 +1,7 @@
 local J = require(GetScriptDirectory() .. '/FunLib/jmz_func')
 
 local Camp = {}
-local Customize = require(GetScriptDirectory() .. '/Customize/general')
+local Customize = J.Customize or require(GetScriptDirectory() .. '/Customize/general')
 
 local function TracePull(bot, plan, stage, detail)
     if not Customize.TraceLanePull or plan.kind ~= 'pull' then return end
@@ -80,15 +80,18 @@ local function StackFarmer(location)
     return selected
 end
 
-local function PullWaveETA(bot, lane, location)
+local function PullWaveETA(bot, lane, location, planning)
     local track = GetAmountAlongLane(lane, location)
     local direction = bot:GetTeam() == TEAM_RADIANT and 1 or -1
+    local creeps = planning and GetUnitList and GetUnitList(UNIT_LIST_ALLIED_CREEPS)
+        or bot:GetNearbyLaneCreeps(1600, false)
     local eta
-    for _, creep in ipairs(bot:GetNearbyLaneCreeps(1600, false)) do
-        if J.IsValid(creep) and not J.IsKeyWordUnit('siege', creep) then
+    for _, creep in ipairs(creeps) do
+        if J.IsValid(creep) and creep:GetTeam() == bot:GetTeam() and not J.IsKeyWordUnit('siege', creep)
+            and (not planning or not creep.CanBeSeen or creep:CanBeSeen()) then
             local unitTrack = GetAmountAlongLane(lane, creep:GetLocation())
             local distance = GetUnitToLocationDistance(creep, location)
-            if distance >= 260 and distance <= 1500 and unitTrack.distance < 250
+            if distance >= 260 and distance <= (planning and 2900 or 1500) and unitTrack.distance < 250
                 and (track.amount - unitTrack.amount) * direction > 0 and creep:GetAttackTarget() == nil then
                 local time = distance / math.max(250, creep:GetCurrentMovementSpeed())
                 if eta == nil or time < eta then eta = time end
@@ -155,41 +158,47 @@ local function CanPullLane(bot, lane, tower, point)
     end
     if nearTower >= 3 then return false end
     if J.CanLeaveLane(bot) then return true end
-    -- A short pull is not a long roam. When the pushed-out front is occupied,
-    -- leave only if the core has no visible or recently seen enemy on top of it.
+    -- A short pull can leave a healthy core in tower cover against one manageable threat.
     local anchor = ally:GetLocation()
-    return J.IsInRange(ally, tower, 2300)
-        and #J.GetEnemiesNearLoc(anchor, 1150) == 0
-        and #J.GetLastSeenEnemiesNearLoc(anchor, 1150) == 0
+    if not J.IsInRange(ally, tower, 2300) then return false end
+    local enemies = J.GetEnemiesNearLoc(anchor, 1150)
+    if #J.GetLastSeenEnemiesNearLoc(anchor, 1150) > #enemies or #enemies > 1 then return false end
+    return #enemies == 0 or (J.IsInRange(ally, tower, 1600)
+        and J.GetVisibleThreatAt(ally, enemies, anchor, 2) < ally:GetHealth() * 0.18)
 end
 
 local function PlanPull(bot, camp, lane, lanePoint, neutral, campCreeps)
     local team = bot:GetTeam()
     local safeLane = team == TEAM_RADIANT and LANE_BOT or LANE_TOP
     local cross = J.GetLocationToLocationDistance(camp.location, lanePoint)
-    if lane ~= safeLane or not J.Site.IsSmallCamp(camp) or cross > 850 then return end
+    local smallCamp = J.Site.IsSmallCamp(camp)
+    if J.Site.IsAncientCamp(camp) or (smallCamp and lane ~= safeLane) or cross > 850 then return end
     local towerId = lane == LANE_BOT and TOWER_BOT_1 or TOWER_TOP_1
     local tower = GetTower(team, towerId)
     local front = GetLaneFrontLocation(team, lane, 0)
-    if not CanPullLane(bot, lane, tower, lanePoint) or GetUnitToLocationDistance(tower, lanePoint) > 1900
-        or not IsSafe(J.VectorTowards(camp.location, lanePoint, cross * 0.5)) then return end
+    local midpoint = J.VectorTowards(camp.location, lanePoint, cross * 0.5)
+    if not CanPullLane(bot, lane, tower, lanePoint) or GetUnitToLocationDistance(tower, lanePoint) > (lane == safeLane and 2050 or 2950)
+        or not IsSafe(midpoint) then return end
     local direction = team == TEAM_RADIANT and 1 or -1
     local home = GetAmountAlongLane(lane, tower:GetLocation()).amount
     local pushed = (GetAmountAlongLane(lane, front).amount - home) * direction
     local enemyTower = GetTower(GetOpposingTeam(), towerId)
+    if J.IsValidBuilding(enemyTower) and (GetUnitToLocationDistance(enemyTower, lanePoint) < 900
+        or GetUnitToLocationDistance(enemyTower, midpoint) < 900
+        or GetUnitToLocationDistance(enemyTower, camp.location) < 900) then return end
     local nearEnemyTower = J.IsValidBuilding(enemyTower)
         and GetUnitToLocationDistance(enemyTower, front) <= 1550
     if pushed <= 0 or not (nearEnemyTower or GetUnitToLocationDistance(tower, front) >= 1200) then return end
-    local eta = PullWaveETA(bot, lane, lanePoint)
+    local eta = PullWaveETA(bot, lane, lanePoint, true)
     local impact, travel = PullIntercept(bot, neutral, lanePoint)
     local intercept = impact + travel
     local half, observed
-    if #campCreeps <= 3 then
+    if smallCamp and #campCreeps <= 3 then
         half, observed = PullWaveTail(bot, lane, lanePoint)
         if observed and not half then return end
         if half then eta = half[3].eta end
     end
-    if eta and eta >= intercept - 0.9 and eta <= intercept + 2.4 then
+    if eta and eta >= intercept - 0.9 and eta <= intercept + 6 then
         local _, release = J.GetAttackProDelayTime(bot, neutral)
         local approach = math.max(0, GetUnitToUnitDistance(bot, neutral) - bot:GetAttackRange())
             / math.max(1, bot:GetCurrentMovementSpeed())
@@ -232,7 +241,7 @@ end
 
 function Camp.Plan(bot, lane)
     local now = DotaTime()
-    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 95 or now >= 14 * 60
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 60 or now >= 14 * 60
         or now < (bot.ohaNextCampWork or 0) or not CanWorkCamp(bot) then return end
     local work = bot.ohaLaneCamp
     if work ~= nil and work.expires > now and IsSafe(work.goal)
@@ -240,9 +249,12 @@ function Camp.Plan(bot, lane)
             or work.kind == 'stack' and J.CanLeaveLane(bot)) then return work end
     if work ~= nil then Camp.Cancel(bot); return end
     local best, bestScore
+    local safeLane = bot:GetTeam() == TEAM_RADIANT and LANE_BOT or LANE_TOP
     for _, camp in pairs(GetNeutralSpawners()) do
         local distance = GetUnitToLocationDistance(bot, camp.location)
-        if camp.team == bot:GetTeam() and distance <= 1230
+        local ownCamp = camp.team == bot:GetTeam()
+        local offlaneCamp = lane ~= safeLane and not J.Site.IsSmallCamp(camp) and not J.Site.IsAncientCamp(camp)
+        if (ownCamp or offlaneCamp) and distance <= 1530
             and IsLocationVisible(camp.location) and IsSafe(camp.location) and not CampTaken(bot, camp.location) then
             local track = GetAmountAlongLane(lane, camp.location)
             local point = GetLocationAlongLane(lane, track.amount)
@@ -255,7 +267,7 @@ function Camp.Plan(bot, lane)
                 end
                 if neutral then
                     local plan = PlanPull(bot, camp, lane, point, neutral, creeps)
-                    if not plan and J.CanLeaveLane(bot) then plan = PlanStack(bot, camp, point, distance) end
+                    if not plan and ownCamp and J.CanLeaveLane(bot) then plan = PlanStack(bot, camp, point, distance) end
                     local score = distance - (plan and plan.kind == 'pull' and 500 or 0)
                     if plan and (bestScore == nil or score < bestScore) then
                         plan.creeps = creeps
@@ -296,6 +308,17 @@ function Camp.Think(bot, plan)
             if plan.kind == 'pull' then
                 local impact, travel = PullIntercept(bot, target, plan.goal)
                 local intercept = impact + travel
+                if not plan.half and J.Site.IsSmallCamp(plan.camp) and #plan.creeps <= 3 then
+                    local tail, observed = PullWaveTail(bot, plan.lane, plan.goal)
+                    if observed and not tail then Camp.Cancel(bot, 'half-pull-window'); return false end
+                    if tail then
+                        plan.half = tail
+                        if tail[3].eta > intercept + 0.35 then
+                            plan.attackAt = now + tail[3].eta - intercept
+                            return true
+                        end
+                    end
+                end
                 if plan.half then
                     if not TailStillReachable(bot, plan, intercept) then
                         Camp.Cancel(bot, 'half-pull-window')

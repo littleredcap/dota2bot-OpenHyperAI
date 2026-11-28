@@ -40,7 +40,11 @@ local function fixture()
         IsInLaningPhase=function() return state.time < 600 end, GetLaningHoldTower=function(h) return h.hold end,
         GetLanePartner=function() end, IsPushing=no, IsGoingOnSomeone=no, IsDoingRoshan=no, IsDoingTormentor=no,
         IsDefending=no, IsMeepoClone=no, IsInTeamFight=no, IsThereCoreNearby=no, IsEarlyGame=no, IsLateGame=no,
-        GetDistanceFromEnemyFountain=function() return 8000 end, CanNotUseAction=no, IsValid=function(u) return u ~= nil end,
+        GetDistanceFromEnemyFountain=function() return 8000 end,
+        CanNotUseAction=function(h, allowInvulnerable)
+            return h.blocked or h:IsInvulnerable() and not allowInvulnerable
+        end,
+        IsValid=function(u) return u ~= nil end,
         GetDistance=function(a,b) return math.abs(a-b) end,
         Utils={IsTeamPushingSecondTierOrHighGround=no, CountEnemyHeroesNear=function() return state.defend and 2 or 0 end}}
     local modes = {}
@@ -50,6 +54,7 @@ local function fixture()
             require=function(name) return name:find('jmz_func',1,true) and j or {} end,
             GetTeamPlayers=function() return {1,2,3} end, GetTeamMember=function(n) return heroes[n] end,
             GameTime=function() return state.time end, DotaTime=function() return state.time end,
+            GetGameMode=function() return 0 end, GAMEMODE_1V1MID=1, GAMEMODE_MO=2,
             GetAncient=function() return {x=9000, GetLocation=function(self) return self.x end} end, GetTeam=function() return 2 end,
             GetTower=function() end, GetOpposingTeam=function() return 3 end,
             GetRuneStatus=function(id) return state.status[id] end, GetRuneType=function(id) return id == power1 and 8 or 0 end,
@@ -58,7 +63,7 @@ local function fixture()
             RemapValClamped=function(n,lo,hi,a,b) return a + (b-a)*math.max(0,math.min(1,(n-lo)/(hi-lo))) end,
             RUNE_BOUNTY_1=bounty1, RUNE_BOUNTY_2=bounty2, RUNE_POWERUP_1=power1, RUNE_POWERUP_2=power2,
             RUNE_STATUS_MISSING=missing, RUNE_STATUS_AVAILABLE=available, RUNE_STATUS_UNKNOWN=unknown, RUNE_WATER=8,
-            TEAM_RADIANT=2, TEAM_DIRE=3, LANE_MID=2, BOT_MODE_NONE=0, BOT_ACTION_TYPE_IDLE=1,
+            TEAM_RADIANT=2, TEAM_DIRE=3, LANE_TOP=1, LANE_MID=2, LANE_BOT=3, BOT_MODE_NONE=0, BOT_ACTION_TYPE_IDLE=1,
             BOT_ACTION_TYPE_PICK_UP_RUNE=2, BOT_MODE_DESIRE_NONE=0, BOT_MODE_DESIRE_MODERATE=0.5, BOT_MODE_DESIRE_HIGH=0.75
         }, {__index=_G})
         setfenv(assert(loadfile('bots/mode_rune_generic.lua')), env)()
@@ -70,6 +75,33 @@ end
 local function order(hero, kind, target)
     local last = hero.orders[#hero.orders]
     assert(last and last[1] == kind and last[2] == target, 'expected ' .. kind .. ' ' .. tostring(target))
+end
+
+do
+    local s, h, m = fixture()
+    s.time, h[1].x = -65, -6300
+    h[1].IsInvulnerable = function() return true end
+    assert(m[1].GetDesire() > 0.72, 'the opening rune starts at the fountain without waiting for spawn status')
+    h[1].blocked = true
+    m[1].Think()
+    assert(#h[1].orders == 0, 'the pregame move still respects an unavailable action')
+    h[1].blocked = false
+    m[1].Think()
+    order(h[1], 'move', s.spots[power1])
+    assert(m[2].GetDesire() > 0.72)
+    m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    s.time, h[1].x, h[2].x, h[2].role = -4, -5020, -4790, 2
+    assert(m[1].GetDesire() > 0.72, 'hold the actual rune position through the last five seconds')
+    m[1].Think()
+    assert(#h[1].orders == 1, 'standing at the destination issues no random movement')
+    s.time, s.status[power1], s.status[bounty2] = 0, available, missing
+    h[1].IsInvulnerable = no
+    assert(m[1].GetDesire() > 0.90 and m[2].GetDesire() == 0, 'the nearest assigned bot claims the first rune')
+    m[1].Think()
+    order(h[1], 'pick', power1)
+    s.status[power1] = missing
+    assert(m[1].GetDesire() == 0, 'release the lane as soon as the rune is gone')
 end
 
 do

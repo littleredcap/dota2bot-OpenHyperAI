@@ -97,10 +97,10 @@ function J.IsTryingtoUseAbility(bot)
 	or bot:IsChanneling()
 end
 
-function J.CanNotUseAction( bot )
+function J.CanNotUseAction( bot, allowInvulnerable )
 	return not bot:IsAlive()
 			or J.HasQueuedAction( bot )
-			or (bot:IsInvulnerable() and not bot:HasModifier('modifier_fountain_invulnerability') and not bot:HasModifier('modifier_dazzle_nothl_projection_soul_debuff'))
+			or (not allowInvulnerable and bot:IsInvulnerable() and not bot:HasModifier('modifier_fountain_invulnerability') and not bot:HasModifier('modifier_dazzle_nothl_projection_soul_debuff'))
 			or bot:IsCastingAbility()
 			or bot:IsUsingAbility()
 			or bot:IsChanneling()
@@ -1524,9 +1524,10 @@ function J.GetSideLaneReturnPoint(bot, lane)
     -- After the initial lane phase, reconnect to a nearby wave without calling a core back across the map.
     if now >= (J.IsModeTurbo() and 480 or 600) and not J.IsInRange(bot, tower, 2800) then return nil end
     local partner = J.GetLanePartner(bot, true)
-    if not core and (not J.IsValidHero(partner) or not J.IsCore(partner) or J.GetHP(partner) < 0.60
-        or J.IsDisabled(partner) or J.IsRetreating(partner) or partner:HasModifier('modifier_teleporting')) then return nil end
-    local hub, wave, distance = tower:GetLocation(), nil, core and 20000 or 2200
+    local partnerReady = J.IsValidHero(partner) and J.GetHP(partner) >= 0.60
+        and not J.IsDisabled(partner) and not J.IsRetreating(partner) and not partner:HasModifier('modifier_teleporting')
+    if not core and (not J.IsValidHero(partner) or not J.IsCore(partner)) then return nil end
+    local hub, wave, distance = tower:GetLocation(), nil, core and 20000 or 4800
     local front = GetLaneFrontLocation(team, lane, 0)
     -- Don't turn a distant recovery route into a chase into enemy territory.
     for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
@@ -1543,19 +1544,24 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local covered = J.IsValidHero(partner) and J.GetHP(partner) >= 0.50 and not J.IsDisabled(partner)
         and not partner:HasModifier('modifier_teleporting') and not J.IsRetreating(partner)
         and GetUnitToLocationDistance(partner, point) <= 1050
-    if not core and not covered then return nil end
+    local distanceToTower = J.GetLocationToLocationDistance(point, hub)
+    -- A healthy support can return to a defending partner even if neither
+    -- can safely advance into the enemy wave yet.
+    local towerOnly = not core and (not partnerReady or not covered or distance > 2200)
+    if towerOnly and (J.GetHP(bot) < 0.75 or distanceToTower > 1750
+        or not J.IsInRange(partner, tower, 800)) then return nil end
     local hasLaneCover = false
     for _, creep in ipairs(GetUnitList(UNIT_LIST_ALLIED_CREEPS)) do
         if J.IsValid(creep) and string.find(creep:GetUnitName(), 'npc_dota_creep_', 1, true)
             and GetUnitToLocationDistance(creep, point) <= 700 then hasLaneCover = true; break end
     end
-    local sheltered = covered or hasLaneCover
+    local sheltered = not towerOnly and (covered or hasLaneCover)
     local threatRadius = covered and 775 or 950
     local enemyTower = GetTower(GetOpposingTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
-    local distanceToTower = J.GetLocationToLocationDistance(point, hub)
     -- If the wave is contested, return to the tower instead of abandoning
     -- the lane or walking all the way into the contested wave.
-    local offsets = sheltered and {math.max(500, bot:GetAttackRange() + 120), 825, 1125, 1325}
+    local offsets = towerOnly and {math.max(distanceToTower, 825)}
+        or sheltered and {math.max(500, bot:GetAttackRange() + 120), 825, 1125, 1325}
         or {distanceToTower > 1050 and distanceToTower or 825, 1325}
     for _, offset in ipairs(offsets) do
         local step = distanceToTower > offset + 70 and J.VectorTowards(point, hub, offset) or hub
@@ -2198,7 +2204,7 @@ end
 
 -- Keep both lane partners in range of the wave. A health advantage is useful
 -- only if it can be spent without standing in the opposing pair's damage.
-function J.GetSideLaneDuoTrade(bot, enemies, tower, range, castPoint, spellStep)
+function J.GetSideLaneDuoTrade(bot, enemies, tower, range, castPoint, spellStep, linkedOnly)
     local lane = bot:GetAssignedLane()
     if (lane ~= LANE_TOP and lane ~= LANE_BOT) or #enemies == 0 or not J.IsInLaningPhase(bot)
         or J.GetHP(bot) < 0.64 or J.IsRetreating(bot) or J.IsDisabled(bot)
@@ -2231,6 +2237,7 @@ function J.GetSideLaneDuoTrade(bot, enemies, tower, range, castPoint, spellStep)
     local maxStep = castPoint and (spellStep or 0) or 215
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy) and J.CanBeAttacked(enemy)
+            and (not linkedOnly or enemy:HasModifier('modifier_warlock_fatal_bonds'))
             and GetUnitToLocationDistance(enemy, clash) <= 585
             and (J.CanFollowLaneFight(partner, enemy) or castPoint and J.IsInRange(partner, enemy, 850))
             and (not J.IsValidBuilding(tower) or not J.IsInRange(enemy, tower, 900)) then
@@ -2370,28 +2377,45 @@ end
 
 local function LaneTradeAgainst(bot, enemy, enemies, tower, range, step)
     if not J.IsValidHero(enemy) or J.IsSuspiciousIllusion(enemy) or not J.CanBeAttacked(enemy)
-        or enemy:IsInvulnerable() or not J.IsAttacking(enemy) then return nil end
+        or enemy:IsInvulnerable() then return nil end
+    local core = J.GetLanePartner(bot)
     if enemy:GetAttackRange() < 310 or #enemies > 1 then
-        local core = J.GetLanePartner(bot)
         if not J.IsValidHero(core) or not J.IsCore(core) or J.IsRetreating(core)
             or not J.IsInRange(bot, core, 750) then return nil end
     end
     local distance = GetUnitToUnitDistance(bot, enemy)
     if (distance > range) ~= step or distance > range + 200 then return nil end
     local victim = enemy:GetAttackTarget()
-    if not J.IsValid(victim) or not J.IsInRange(victim, enemy, enemy:GetAttackRange() + 50)
-        or not J.IsInRange(bot, victim, 800) or #bot:GetNearbyLaneCreeps(650, false) == 0 then return nil end
-    local onWave = IsContestForLaneCreep(bot, enemy, enemies)
-    if not onWave and not (J.IsValidHero(victim) and victim == J.GetLanePartner(bot) and J.IsCore(victim)) then return nil end
     local origin, target = bot:GetLocation(), enemy:GetLocation()
-    if step and not enemy:IsFacingLocation(victim:GetLocation(), 60) then return nil end
     local point = step and J.VectorTowards(origin, target, distance - range + 20) or origin
-    if GetUnitToLocationDistance(enemy, point) <= enemy:GetAttackRange() + 65
-        or (step and not IsLocationPassable(point)) or GetHeightLevel(point) < GetHeightLevel(target)
+    local outsideReach = GetUnitToLocationDistance(enemy, point) > enemy:GetAttackRange() + 65
+    if (step and (not IsLocationPassable(point) or not IsLocationVisible(point)))
+        or GetHeightLevel(point) < GetHeightLevel(target)
         or (J.IsValidBuilding(tower) and (J.IsInRange(enemy, tower, 900) or GetUnitToLocationDistance(tower, point) <= 900))
         or #J.GetLastSeenEnemiesNearLoc(target, 1000) > #enemies then return nil end
     if not HasLaneTradeSpace(enemy, enemies, point) then return nil end
-    if #enemies > 1 and J.GetVisibleThreatAt(bot, enemies, point, 1.5) >= bot:GetHealth() * 0.30 then return nil end
+
+    local busy = J.IsValid(victim) and J.IsAttacking(enemy) and J.IsInRange(victim, enemy, enemy:GetAttackRange() + 50)
+        and J.IsInRange(bot, victim, 800)
+    local contestedWindow = busy and (IsContestForLaneCreep(bot, enemy, enemies) or victim == core and J.IsCore(core))
+        and outsideReach and (not step or enemy:IsFacingLocation(victim:GetLocation(), 60))
+        and #bot:GetNearbyLaneCreeps(650, false) > 0
+    if contestedWindow then
+        if #enemies > 1 and J.GetVisibleThreatAt(bot, enemies, point, 1.5) >= bot:GetHealth() * 0.30 then return nil end
+    else
+        -- A safe shot on a real wave does not need an enemy last-hit windup.
+        local clash = J.GetVisibleLaneClash(bot)
+        if not J.IsValidHero(core) or not J.IsCore(core) or J.GetHP(core) < 0.60 or J.IsRetreating(core)
+            or not clash or GetUnitToLocationDistance(core, point) > 720
+            or GetUnitToLocationDistance(enemy, clash) > 590 or J.GetLocationToLocationDistance(point, clash) > 650
+            or step and (not outsideReach or not enemy.IsFacingLocation or not enemy:IsFacingLocation(clash, 75)) then return nil end
+        local sinceShot = GameTime() - enemy:GetLastAttackTime()
+        local recovering = sinceShot >= 0 and sinceShot <= 0.45
+        if not outsideReach and not recovering and not (busy and victim:IsCreep()) then return nil end
+        local exposure = step and 1.5 or 1.25
+        local damage = J.GetVisibleThreatAt(bot, enemies, point, exposure) + LaneTradeCreepHarm(bot, exposure, true, point)
+        if damage >= bot:GetHealth() * 0.24 then return nil end
+    end
     if step then
         local function countNearPoint(creeps)
             local count = 0

@@ -226,7 +226,8 @@ function X.SkillsComplement()
 		end
 	end
 	local holdingTower = J.IsDefending(bot) and J.GetAssignedOuterTower(bot) ~= nil
-	if holdingTower then BreatheFireDesire, BreatheFireLocation = X.ConsiderBreatheFire() end
+	local laneStep
+	if holdingTower then BreatheFireDesire, BreatheFireLocation, laneStep = X.ConsiderBreatheFire() end
 	if not holdingTower or BreatheFireDesire <= 0 then
 		ElderDragonFormDesire = X.ConsiderElderDragonForm()
 		if ElderDragonFormDesire > 0 then
@@ -236,8 +237,9 @@ function X.SkillsComplement()
 		end
 	end
 
-	if not holdingTower then BreatheFireDesire, BreatheFireLocation = X.ConsiderBreatheFire() end
+	if not holdingTower then BreatheFireDesire, BreatheFireLocation, laneStep = X.ConsiderBreatheFire() end
 	if BreatheFireDesire > 0 then
+		if laneStep then bot:Action_MoveToLocation(laneStep); return end
 		J.SetQueuePtToINT(bot, false)
 		bot:ActionQueue_UseAbilityOnLocation(BreatheFire, BreatheFireLocation)
 		return
@@ -421,7 +423,6 @@ function X.ConsiderBreatheFire()
 	end
 
 	if J.IsLaning(bot) and fManaAfter > fManaThreshold2 then
-		local enemyTower = bot:GetNearbyTowers(1500, true)[1]
 		for _, creep in ipairs(nEnemyCreeps) do
 			if  J.IsValid(creep)
 			and J.CanBeAttacked(creep)
@@ -440,6 +441,19 @@ function X.ConsiderBreatheFire()
 			end
 		end
 
+	end
+
+	if #nEnemyHeroes > 0 and fManaAfter > fManaThreshold2 and J.IsInLaningPhase(bot) and not J.IsDefending(bot) then
+		local enemyTower = bot:GetNearbyTowers(1500, true)[1]
+		local linked, step = J.GetSideLaneDuoTrade(bot, nEnemyHeroes, enemyTower, nCastRange - 35, nCastPoint, 145, true)
+		if linked and J.CanCastOnNonMagicImmune(linked)
+			and not linked:HasModifier('modifier_dragonknight_breathefire_reduction') then
+			return BOT_ACTION_DESIRE_HIGH, J.GetCorrectLoc(linked, nCastPoint), step
+		end
+	end
+
+	if J.IsLaning(bot) and fManaAfter > fManaThreshold2 then
+		local enemyTower = bot:GetNearbyTowers(1500, true)[1]
 		local target = J.GetSideLaneSpellTradeTarget(bot, nEnemyHeroes, enemyTower, nCastRange, nil, nil, nCastPoint)
 		if target and J.CanCastOnNonMagicImmune(target)
 			and not target:HasModifier('modifier_dragonknight_breathefire_reduction')

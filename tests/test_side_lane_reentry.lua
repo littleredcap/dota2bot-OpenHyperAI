@@ -24,8 +24,8 @@ bot.WasRecentlyDamagedByAnyHero=function() return state.hit end
 bot.HasModifier,ally.HasModifier=noop,noop
 bot.GetTeam=function() return 2 end
 bot.GetAttackRange=function() return 150 end
-local j={IsInLaningPhase=function() return not state.laneEnded end,IsCore=function() return true end,IsModeTurbo=noop,
-    GetHP=function(unit) return unit==bot and state.hp or 0.9 end,
+local j={IsInLaningPhase=function() return not state.laneEnded end,IsCore=function(unit) return unit~=bot or not state.support end,IsModeTurbo=noop,
+    GetHP=function(unit) return unit==bot and state.hp or state.allyHP or 0.9 end,
     GetMP=function() return state.mp or 1 end,
     IsDisabled=noop, IsValidBuilding=function(x) return x==tower end, IsValid=function(x) return x~=nil end,
     IsValidHero=function(x) return x==ally end, GetLanePartner=function() return ally end,
@@ -78,6 +78,16 @@ bot.x, state.laneEnded = 200, true
 assert(not j.GetSideLaneReturnPoint(bot,1),'the late return stops when the laning phase ends')
 state.time, state.laneEnded = nil, false
 print('PASS: side core reconnects to a visible wave, but not through live threat or fog.')
+
+state.support, state.allyHP, state.time = true, 0.55, 568
+bot.GetAttackRange=function() return 400 end
+bot.x, wave.x, ally.x = -3100, 1200, 100
+assert(j.GetSideLaneReturnPoint(bot,1)==0,'a healthy support rejoins its own tower instead of idling when the core is recovering')
+state.enemy = -1550
+assert(not j.GetSideLaneReturnPoint(bot,1),'the support cannot cross an enemy on the way to the tower')
+state.enemy, state.support, state.allyHP, state.time = nil, false, nil, nil
+bot.GetAttackRange=function() return 150 end
+bot.x, wave.x, ally.x = 200, 2250, 1700
 
 -- Exercise the production choice of a small retreat versus a real retreat.
 bot.GetAssignedLane=function() return 1 end

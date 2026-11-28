@@ -16,6 +16,7 @@ local function fixture(stack, mirrored)
             GetAttackTarget = function(self) return self.target end}
     end
     local camp = {team = own, type = 'small', location = point(sign * 800, 400)}
+    state.camp = camp
     local tower = unit(0, 0, own)
     local neutral = unit(sign * 800, 400, 4)
     local waveCreep = unit(sign * 200, 0, own)
@@ -29,6 +30,7 @@ local function fixture(stack, mirrored)
     state.neutrals = {neutral}
     carry.IsBot, carry.GetPlayerID = yes, function() return 2 end
     carry.GetAttackDamage, carry.GetSecondsPerAttack = function() return 160 end, function() return 1 end
+    carry.GetHealth = function() return 1000 end
     carry.GetUnitName = function() return 'npc_dota_hero_sniper' end
     support.GetAttackRange = function() return 450 end
     support.WasRecentlyDamagedByAnyHero = no
@@ -60,18 +62,21 @@ local function fixture(stack, mirrored)
             return {}
         end, GetLastSeenEnemiesNearLoc = empty,
         CanLeaveLane = function() return not state.unsafeLane and not state.roamBlocked end,
+        GetVisibleThreatAt = function() return state.unsafeLane and 300 or 0 end,
         GetLocationToLocationDistance = distance, GetAttackProDelayTime = function() return 0.3, 0.3 end,
         VectorTowards = function(origin, target, steps)
             local span = distance(origin, target)
             return point(origin.x + (target.x - origin.x) * steps / span, origin.y + (target.y - origin.y) * steps / span)
         end,
-        Site = {IsSmallCamp = yes, IsAncientCamp = no, GetCampStackTime = function() return 56 end},
+        Site = {IsSmallCamp = function(camp) return camp.type == 'small' end, IsAncientCamp = no,
+            GetCampStackTime = function() return 56 end},
     }
     local env = setmetatable({
         GetScriptDirectory = function() return 'bots' end,
         require = function() return j end,
         DotaTime = function() return state.now end,
         GetNeutralSpawners = function() return {camp} end, IsLocationVisible = function() return not state.hidden end,
+        GetUnitList = function() return not stack and state.wave or {} end, UNIT_LIST_ALLIED_CREEPS = 1,
         GetUnitToLocationDistance = distance, IsLocationPassable = yes,
         GetAmountAlongLane = function(_, loc) return {amount = loc.x / 10000, distance = math.abs(loc.y)} end,
         GetLocationAlongLane = function(_, amount) return point(amount * 10000, 0) end,
@@ -84,6 +89,22 @@ local function fixture(stack, mirrored)
     }, {__index = _G})
     local mode = setfenv(assert(loadfile('bots/FunLib/lane_camp.lua')), env)()
     return state, support, carry, neutral, waveCreep, mode
+end
+
+do
+    local state, support, carry, _, wave, mode = fixture(false)
+    state.now, wave.x, state.wave[2].x = 59, -1100, -1150
+    assert(not mode.Plan(support, 3), 'respect the first camp spawn')
+    state.now, support.x = 72, 200
+    local early = assert(mode.Plan(support, 3))
+    assert(early.attackAt > state.now + 3, 'make time to walk from lane before the earliest release window')
+    assert(mode.Think(support, early) and state.orders[1].move == state.camp.location)
+
+    state.now, support.ohaLaneCamp = 112, nil
+    carry.GetAssignedLane = function() return 1 end
+    state.camp.type, state.camp.team = 'large', 3
+    wave.x, state.wave[2].x = 200, 170
+    assert(mode.Plan(support, 1), 'offlane can use a clear route from a non-ancient hard camp')
 end
 
 do

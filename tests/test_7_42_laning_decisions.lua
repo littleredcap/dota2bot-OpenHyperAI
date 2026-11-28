@@ -197,6 +197,10 @@ do
     enemy.HasModifier = function(_, name) return name == 'modifier_warlock_fatal_bonds' end
     second.HasModifier = no
     assert(j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150) == enemy, 'a safe follow-up targets the linked hero')
+    assert(j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150, 0.2, 145, true) == enemy,
+        'the spell approach stays tied to an active link')
+    assert(not j.GetSideLaneDuoTrade(bot, {second}, nil, 150, 0.2, 145, true),
+        'do not spend the follow-up movement on an unlinked target')
     state.incomingDamage = 500
     assert(not j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150), 'linked enemies can still punish an unsafe trade')
     state.incomingDamage, bot.x, enemy.x = 0, 0, 680
@@ -335,6 +339,19 @@ do
     expect(state, mode, nil)
     state.incomingDamageAt = 0.2
     expect(state, mode, 'attack', creep)
+end
+
+do
+    local state, mode, creep, enemy, bot = fixture(true, false)
+    state.partner, state.partnerAtBase, state.creepHP = true, true, 300
+    state.enemy = true
+    mode.GetTower().x, bot.x, creep.x, enemy.x = 0, -650, 170, 1450
+    creep.GetLocation = function(self) return self.x end
+    bot.GetAttackRange = function() return 150 end
+    assert(mode.GetDesire() == 0.82, 'a solo core covers the tower while the lane partner resets')
+    expect(state, mode, 'move', -325)
+    state.incomingDamage = 260
+    expect(state, mode, 'move', -300)
 end
 
 do
@@ -625,7 +642,11 @@ do
     local friendly = setmetatable({GetTeam=function() return 2 end, GetHealth=function() return 30 end}, {__index=creep})
     state.allies, state.enemyCreep = {friendly, friendly}, friendly
     j.GetHP = function(unit) if unit == enemy then return 0.97 end; return hp(unit) end
-    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'do not hit the full-health target just for standing nearby')
+    assert(j.GetSideLanePressureTarget(bot, {enemy}, nil, 450) == enemy,
+        'support can use a covered range advantage outside the enemy last-hit animation')
+    state.incomingDamage = 310
+    assert(not j.GetSideLanePressureTarget(bot, {enemy}, nil, 450), 'heavy retaliation cancels the optional shot')
+    state.incomingDamage = 0
     enemy.IsFacingLocation = yes
     local canFollow = j.CanFollowLaneFight
     j.CanFollowLaneFight = no
