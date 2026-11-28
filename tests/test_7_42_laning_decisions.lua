@@ -226,11 +226,28 @@ do
 end
 
 do
-    local state, mode, _, _, bot = fixture(true, false, true)
+    local state, mode, creep, _, bot = fixture(true, false, true)
     assert(mode.Think == nil and bot.ohaEngineMid, 'supported ranged mids let the engine issue creep attacks')
     assert(mode.GetDesire() == 0.74 and #state.orders == 0, 'evaluating a contested mid wave issues no orders')
     local _, override = fixture(true, true, true)
     assert(type(override.Think) == 'function', 'heroes without engine lane control keep their scripted attacks')
+
+    local j = mode.J
+    j.IsLaning = yes
+    j.GetNearbyHeroes = function(unit, radius, hostile, active) return unit:GetNearbyHeroes(radius, hostile, active) end
+    state.previousShot = state.time - 1.5
+    assert(not j.TrySecureNativeMidLastHit(bot), 'give the engine time to take its next shot')
+    state.previousShot = state.time - 4
+    state.attacking, state.attackTarget = true, creep
+    assert(not j.TrySecureNativeMidLastHit(bot), 'preserve a committed native windup')
+    state.attacking, state.attackTarget, state.tower = false, nil, true
+    assert(not j.TrySecureNativeMidLastHit(bot), 'do not take a last hit while the enemy tower is firing')
+    state.tower, creep.x = false, 520
+    assert(not j.TrySecureNativeMidLastHit(bot), 'the fallback never walks out for a creep')
+    creep.x = 200
+    assert(j.TrySecureNativeMidLastHit(bot) and #state.orders == 1 and state.orders[1][2] == creep,
+        'a safe lethal shot can replace a stalled native lane order')
+    assert(not j.TrySecureNativeMidLastHit(bot), 'do not reissue a pending fallback shot')
 end
 
 do
@@ -294,6 +311,26 @@ do
     state.time = 85
     env.J.CheckBotIdleState()
     assert(not bot.ohaWatcherRecoveryUntil, 'an actual channel stops the Watcher recovery')
+
+    local j = env.J
+    local function point(x, y, z) return {x=x, y=y or 0, z=z or 0} end
+    env.Vector = point
+    bot.GetLocation, j.GetTeamFountain = function() return point(0) end, function() return point(-2000) end
+    j.GetClosestAlly = function() return nil end
+    j.GetLocationToLocationDistance = function(a, b) return math.sqrt((a.x - b.x)^2 + (a.y - b.y)^2) end
+    j.VectorTowards = function(a, b, travel)
+        local length = j.GetLocationToLocationDistance(a, b)
+        return point(a.x + (b.x - a.x) * travel / length, a.y + (b.y - a.y) * travel / length)
+    end
+    j.CanTakePostFightTrip = yes
+    bot.ohaWatcherRecoveryUntil, state.orders = 95, {}
+    assert(not j.TryLeaveStalledWatcher(bot), 'never replace a real cast with a Watcher recovery move')
+    j.IsTryingtoUseAbility, env.IsLocationVisible = no, no
+    assert(not j.TryLeaveStalledWatcher(bot) and #state.orders == 0, 'a recovery step requires visible ground')
+    env.IsLocationVisible, state.time = yes, 86
+    assert(j.TryLeaveStalledWatcher(bot) and state.orders[1][1] == 'move' and state.orders[1][2].x == -700,
+        'send an actual short movement order once the native interaction stalls')
+    assert(not j.TryLeaveStalledWatcher(bot) and #state.orders == 1, 'allow the movement order to run')
 end
 
 do

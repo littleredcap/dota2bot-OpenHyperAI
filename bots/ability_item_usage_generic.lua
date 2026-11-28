@@ -8521,6 +8521,7 @@ function AbilityUsageThink()
 	bot.lastAbilityFrameProcessTime = DotaTime()
 	J.CheckBotIdleState()
 	if J.Customize and J.Customize.TraceLaneDecisions then X.TraceDefenseMovement(bot.lastAbilityFrameProcessTime) end
+	if bot.ohaWatcherRecoveryUntil and J.TryLeaveStalledWatcher(bot) then return end
 	local protectingShot = bot.ohaLaningAttackTarget ~= nil and J.HasPendingLaningLastHit(bot)
 	if not protectingShot and bot.ohaEngineMid and J.IsLaning(bot) and J.IsInLaningPhase(bot) then
 		local target = bot:GetAttackTarget()
@@ -8531,6 +8532,7 @@ function AbilityUsageThink()
 		if #enemies == 0 or (J.IsLaning(bot) and J.GetHP(bot) >= 0.5
 			and not J.IsLaningUnderPressure(bot, enemies, bot:GetNearbyTowers(1200, true)[1])) then return end
 	end
+	if bot.ohaEngineMid and J.TrySecureNativeMidLastHit(bot) then return end
 	if BotBuild ~= nil and not J.IsNoAbilityIllution(bot) then BotBuild.SkillsComplement() end
 end
 

@@ -1949,6 +1949,26 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
     return approach, approach ~= nil, holdsAttack, urgentApproach, supportStep
 end
 
+function J.TrySecureNativeMidLastHit(bot)
+    if not bot.ohaEngineMid or DotaTime() < 60 or not J.IsLaning(bot) or not J.IsInLaningPhase(bot)
+        or GameTime() - bot:GetLastAttackTime() < math.max(2.7, bot:GetSecondsPerAttack() * 1.5)
+        or J.CanNotUseAction(bot) or bot:IsDisarmed() or J.HasPendingLaningLastHit(bot) then return false end
+    local current = bot:GetAttackTarget()
+    if J.IsValid(current) and J.IsAttacking(bot) then return false end
+    local creeps = bot:GetNearbyLaneCreeps(math.min(1600, bot:GetAttackRange()), true)
+    if #creeps == 0 then return false end
+    local enemies = J.GetNearbyHeroes(bot, 1250, true, BOT_MODE_NONE)
+    local tower = bot:GetNearbyTowers(1200, true)[1]
+    if J.IsLaningUnderPressure(bot, enemies, tower) then return false end
+    local target, approach = J.GetLaningLastHitTarget(bot, creeps, tower, J.GetLaningAttackDamage(bot), enemies)
+    if target == nil or approach then return false end
+    J.IssueLaningAttack(bot, target)
+    if J.Customize and J.Customize.TraceLaneDecisions then
+        print('[OHA lane native-mid]', DotaTime(), bot:GetPlayerID(), target:GetUnitName())
+    end
+    return true
+end
+
 -- The tower is about to take a creep neither laner can finish alone.
 function J.GetLaningTowerJointHit(bot, tower, enemies)
     if not J.IsValidBuilding(tower) or not J.IsInLaningPhase(bot) then return nil end
@@ -9669,6 +9689,23 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	end
 	local losingDuel = empoweredAttacker ~= nil and backup == 0 and J.GetHP(bot) <= 0.8
 		and (J.GetHP(bot) < 0.5 or J.GetHP(empoweredAttacker) > 0.35)
+	-- A ranged opponent can win an isolated duel without a damage rune.
+	if not losingDuel and now >= 4 * 60 and #enemies == 1 and backup == 0 and damaged then
+		local enemy, hp = enemies[1], J.GetHP(bot)
+		local distance = GetUnitToUnitDistance(bot, enemy)
+		if enemy:GetAttackRange() >= 450 and distance <= 1200 and hp <= 0.75
+			and (underFire or bot:WasRecentlyDamagedByHero(enemy, 2))
+			and (hp <= 0.40 or J.GetHP(enemy) >= hp + 0.18) then
+			local window = 3.5
+			local damage = J.GetVisibleThreatAt(bot, enemies, location, window)
+			local health = bot:GetHealth() + window * bot:GetHealthRegen()
+			losingDuel = damage >= health * (distance > bot:GetAttackRange() + 50 and 0.63 or 0.80)
+			if losingDuel and J.Customize and J.Customize.TraceLaneDecisions
+				and now - (bot.ohaReinforcementRetreatAt or -math.huge) > 1.25 then
+				print('[OHA retreat-exposure]', now, bot:GetPlayerID(), 'solo-ranged', math.floor(health), math.floor(damage))
+			end
+		end
+	end
 	local isolatedLaner = false
 	if now >= 40 and now < 14 * 60 and #enemies >= 2 and backup == 0 and J.IsInLaningPhase(bot)
 		and (bot:GetAttackRange() >= 400 or J.GetHP(bot) <= 0.74) then
@@ -11172,6 +11209,39 @@ function J.CheckBotIdleState()
 			'stationary', now - sample.time, 'desire', bot:GetActiveModeDesire(), 'lastAttack', attack)
 	end
 	return true
+end
+
+function J.TryLeaveStalledWatcher(bot)
+	local now = DotaTime()
+	if (bot.ohaWatcherRecoveryUntil or 0) <= now or bot:GetActiveMode() ~= (BOT_MODE_WATCHER or 28)
+		or (bot.ohaNextWatcherExitAt or 0) > now or J.CanNotUseAction(bot, false, true)
+		or bot:IsChanneling() or bot:IsRooted() or J.IsTryingtoUseAbility(bot)
+		or bot:WasRecentlyDamagedByAnyHero(3) or (bot.ohaOuterTowerHoldUntil or 0) > now then return false end
+	local origin = bot:GetLocation()
+	if #J.GetEnemiesNearLoc(origin, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(origin, 1300) > 0 then return false end
+	local ally = J.GetClosestAlly(bot, 3000, true)
+	local anchor = ally and GetUnitToUnitDistance(bot, ally) > 700 and ally:GetActiveMode() ~= (BOT_MODE_WATCHER or 28)
+		and ally:GetLocation() or J.GetTeamFountain()
+	local distance = J.GetLocationToLocationDistance(origin, anchor)
+	if distance < 450 then return false end
+	bot.ohaNextWatcherExitAt = now + 0.8
+	local ahead = J.VectorTowards(origin, anchor, math.min(distance, 700))
+	local dx, dy = ahead.x - origin.x, ahead.y - origin.y
+	for _, side in ipairs({0, 1, -1}) do
+		local point = side == 0 and ahead or Vector(origin.x + dx * 0.82 - dy * side * 0.58,
+			origin.y + dy * 0.82 + dx * side * 0.58, origin.z)
+		local middle = J.VectorTowards(origin, point, 340)
+		if IsLocationVisible(point) and IsLocationVisible(middle) and IsLocationPassable(point) and IsLocationPassable(middle)
+			and #J.GetEnemiesNearLoc(point, 1300) == 0 and #J.GetLastSeenEnemiesNearLoc(point, 1250) == 0
+			and J.CanTakePostFightTrip(bot, point, false, true) then
+			bot:Action_MoveToLocation(point)
+			if J.Customize and J.Customize.TraceLaneDecisions then
+				print('[OHA idle]', now, bot:GetUnitName(), 'watcher-exit', math.floor(point.x), math.floor(point.y))
+			end
+			return true
+		end
+	end
+	return false
 end
 
 function J.AreTreesBetween(bot, loc, r)

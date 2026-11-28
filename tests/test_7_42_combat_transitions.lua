@@ -55,6 +55,7 @@ local function fixture(rescue)
     bot.Action_MoveToLocation = function(_, target) state.orders[#state.orders + 1] = target end
     bot.Action_ClearActions = function() state.orders[#state.orders + 1] = 'cancel' end
     bot.WasRecentlyDamagedByAnyHero, bot.WasRecentlyDamagedByTower = no, no
+    bot.WasRecentlyDamagedByHero = function(_, attacker) return attacker == state.hitBy end
     bot.WasRecentlyDamagedByCreep = no
     local function near(roster, point, radius)
         local result = {}
@@ -279,6 +280,25 @@ end
 
 print('PASS: stop unsafe fights and rescue orders, including before visible hostile teleports finish')
 print('PASS: leave perceived Shrapnel promptly and preserve a channel already in progress')
+
+do
+    local state, _, bot, core, _, enemy, _, j = fixture(false)
+    state.time, state.hp, state.hitBy, core.retreating = 672, 0.42, enemy, true
+    bot.GetHealth = function() return state.hp * 1000 end
+    bot.GetAttackRange = function() return 550 end
+    bot.WasRecentlyDamagedByAnyHero = yes
+    enemy.x = 850
+    j.GetVisibleThreatAt = function() return 280 end
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'retreat when an isolated ranged opponent can finish the losing duel')
+    state.time, enemy.x = 675, 540
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'a reachable counterattack permits a less dangerous exchange')
+    state.time, state.hitBy, enemy.x = 678, nil, 850
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'a healthy-looking enemy must also be the source of current pressure')
+    state.time, state.hitBy, core.retreating = 681, enemy, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'available backup keeps the solo rule from overriding the fight')
+    state.time, core.retreating, enemy.visible = 684, true, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'do not use the attacker through fog')
+end
 
 do
     local state, mode, bot, core, _, enemy, reinforcement, j = fixture(false)
