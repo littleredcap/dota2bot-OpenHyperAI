@@ -239,9 +239,11 @@ function X.SkillsComplement()
 	if castETarget ~= nil then
 		castEDesire, sMotive = BOT_ACTION_DESIRE_HIGH, 'E-LaneCover'
 	else
-		castQDesire, castQTarget, sMotive = X.ConsiderQ()
+		local laneStep
+		castQDesire, castQTarget, sMotive, laneStep = X.ConsiderQ()
 		if castQDesire > 0 then
 			J.SetReportMotive(bDebugMode, sMotive)
+			if laneStep then bot:Action_MoveToLocation(laneStep); return end
 			J.SetQueuePtToINT(bot, true)
 			bot:ActionQueue_UseAbilityOnEntity(abilityQ, castQTarget)
 			return
@@ -412,10 +414,14 @@ function X.ConsiderQ()
 		end
 
 		if nMP > 0.5 and bot:GetMana() - nManaCost >= reserve then
-			local pressure = J.GetSideLaneSpellTradeTarget(bot, nInRangeEnemyList, tower,
-				spellReach, nil, nil, nCastPoint)
+			local visibleEnemies = hEnemyList or nInBonusEnemyList
+			local pressure, step = J.GetSideLaneDuoTrade(bot, visibleEnemies, tower, spellReach, nCastPoint, 145)
+			if pressure and J.CanCastOnNonMagicImmune(pressure) and J.CanCastOnTargetAdvanced(pressure) then
+				return BOT_ACTION_DESIRE_HIGH, pressure, 'Q-LaneDuoTrade', step
+			end
+			pressure = J.GetSideLaneSpellTradeTarget(bot, visibleEnemies, tower, spellReach, nil, nil, nCastPoint)
 			if pressure and J.CanCastOnNonMagicImmune(pressure) and J.CanCastOnTargetAdvanced(pressure)
-				and J.CanSpendLaneTradeTime(bot, tower, nInRangeEnemyList, nCastPoint) then
+				and J.CanSpendLaneTradeTime(bot, tower, visibleEnemies, nCastPoint) then
 				return BOT_ACTION_DESIRE_HIGH, pressure, 'Q-LanePressure'
 			end
 		end

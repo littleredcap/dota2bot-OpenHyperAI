@@ -723,7 +723,7 @@ do
     local badSeed, bridge, front = unit(530), unit(740), unit(795)
     local first, second = unit(900), unit(1100)
     local foes, creeps, allies, target = {first, second}, {badSeed, bridge, front}, {unit(760), unit(780)}
-    local safe, free, doomed, mana = true, true, nil, 260
+    local safe, free, covered, doomed, mana = true, true, true, nil, 260
     local function distance(a, b) return math.abs(a.x - b.x) end
     caster.IsInvisible, caster.GetLevel = no, function() return 4 end
     caster.GetHealth, caster.GetMaxHealth = function() return 600 end, function() return 600 end
@@ -733,8 +733,9 @@ do
     local warlock = loadHero('warlock', {warlock_fatal_bonds = bonds, warlock_shadow_word = word}, caster, {
         IsLaning = yes, CanNotUseAbility = no, IsItemAvailable = no, SetQueuePtToINT = no,
         CanSpendLaneTradeTime = function() return free end,
-        GetTowerCoveredLaneClash = function() return tower, 795 end,
-        CanTradeAtCoveredLaneClash = function() return safe end,
+        GetTowerCoveredLaneClash = function() if covered then return tower, 795 end end,
+        GetVisibleLaneClash = function() return 795 end,
+        CanTradeAtLaneClash = function() return safe end,
         GetTotalAttackWillRealDamage = function(creep) return creep == doomed and 350 or 0 end,
         IsValidHero = yes, IsValid = yes, CanBeAttacked = yes, IsSuspiciousIllusion = no,
         CanCastOnNonMagicImmune = yes, CanCastOnTargetAdvanced = yes,
@@ -749,6 +750,12 @@ do
         no, skip, skip, skip, skip
     warlock.SkillsComplement()
     assert(target == bridge, 'cast from a creep that reaches both enemy heroes within the link limit')
+    target, covered = nil, false
+    caster.GetTeam, first.GetTeam = function() return 2 end, function() return 3 end
+    warlock.ConsiderW = function() return HIGH, first, true end
+    warlock.SkillsComplement()
+    assert(target == bridge, 'take a multi-hero Bonds window outside tower cover before optional Shadow Word')
+    warlock.ConsiderW, covered = skip, true
     doomed, target = bridge, nil
     warlock.SkillsComplement()
     assert(target == badSeed, 'skip a preferred bridge that will already be dead at cast time')
@@ -955,7 +962,7 @@ do
         IsItemAvailable=no, SetReportMotive=no, SetQueuePtToINT=no, GetNearbyHeroes=empty,
         CanCastAbility=no, IsValid=yes, IsValidHero=no, IsDefending=no, IsInLaningPhase=yes,
         IsInTeamFight=no, IsGoingOnSomeone=no, IsRetreating=no, IsLaning=yes,
-        GetLaningPeelTarget=function() end, GetLanePartner=no, GetSideLaneSpellTradeTarget=no,
+        GetLaningPeelTarget=function() end, GetLanePartner=no, GetSideLaneSpellTradeTarget=no, GetSideLaneDuoTrade=no,
         HasPendingLaningLastHit=function() return pending end, IsLaningUnderPressure=function() return pressure end,
         CanBeAttacked=yes, IsKeyWordUnit=function(key) return key=='_ranged' end, IsInRange=yes,
         GetAttackProDelayTime=function() return attackETA end,
@@ -1129,7 +1136,7 @@ do
     local start = assert(source:find('function X.ConsiderDragonTail()', 1, true))
     local finish = assert(source:find('function X.ConsiderFireball()', start, true))
     local target = {x=195, HasModifier=no, IsChanneling=no}
-    local follow, pending, mana = target, false, 240
+    local follow, bonded, pending, mana = target, false, false, 240
     local support = {x=160, GetAttackRange=function() return 580 end, GetAttackTarget=function() return follow end}
     local bot = {x=0, GetMana=function() return mana end, GetCurrentMovementSpeed=function() return 300 end,
         GetNearbyTowers=empty, WasRecentlyDamagedByAnyHero=no}
@@ -1145,7 +1152,8 @@ do
             CanCastOnNonMagicImmune=yes, CanCastOnTargetAdvanced=yes, IsLaning=yes, IsRetreating=no,
             HasPendingLaningLastHit=function() return pending end, GetLanePartner=function() return support end,
             GetSideLanePressureTarget=function(unit) assert(unit == support); return target end,
-            GetSideLaneSpellTradeTarget=no, CanSpendLaneTradeTime=yes,
+            GetSideLaneSpellTradeTarget=no, GetSideLaneDuoTrade=function() return bonded and target or nil end,
+            CanSpendLaneTradeTime=yes,
             IsDisabled=no, IsInTeamFight=no, IsGoingOnSomeone=no, IsDoingRoshan=no, IsDoingTormentor=no},
     }, {__index=_G})
     setfenv(assert(loadstring(source:sub(start,finish-1))),env)()
@@ -1153,6 +1161,9 @@ do
     assert(desire == HIGH and unit == target, 'Dragon Tail follows a safe support trade already in range')
     follow = nil
     assert(env.X.ConsiderDragonTail() == NONE, 'do not stun without the support trade')
+    bonded = true
+    assert(select(2, env.X.ConsiderDragonTail()) == target, 'follow a safe Bonds opening before an allied attack target exists')
+    bonded = false
     follow, pending = target, true
     assert(env.X.ConsiderDragonTail() == NONE, 'do not break a protected last-hit windup')
     pending, mana = false, 170

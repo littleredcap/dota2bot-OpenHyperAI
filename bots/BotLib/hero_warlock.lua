@@ -292,13 +292,13 @@ function X.SkillsComplement()
 	end
 
 
-	local pressLane
+	local pressLane, multiHeroBonds
 	castWDesire, castWTarget, pressLane = X.ConsiderW()
 	castQDesire = BOT_ACTION_DESIRE_NONE
-	if not pressLane and (castWDesire <= 0 or castWTarget:GetTeam() ~= bot:GetTeam()) then
-		castQDesire, castQTarget = X.ConsiderQ()
+	if castWDesire <= 0 or castWTarget:GetTeam() ~= bot:GetTeam() then
+		castQDesire, castQTarget, multiHeroBonds = X.ConsiderQ()
 	end
-	if ( castQDesire > 0 )
+	if castQDesire > 0 and (not pressLane or multiHeroBonds)
 	then
 
 		J.SetQueuePtToINT( bot, true )
@@ -543,16 +543,13 @@ end
 
 local function FindLaneBondsTarget(enemies, enemyTower, range, radius, count, castPoint)
 	local tower, clash = J.GetTowerCoveredLaneClash(bot)
-	if tower then
-		if not clash or not J.CanTradeAtCoveredLaneClash(bot, enemies, tower, clash, enemyTower, castPoint, false) then return nil end
-	elseif not J.GetSideLaneSpellTradeTarget(bot, enemies, enemyTower, range + radius) then
-		return nil
-	end
+	if not clash then tower, clash = nil, J.GetVisibleLaneClash(bot) end
+	if not clash or not J.CanTradeAtLaneClash(bot, enemies, tower, clash, enemyTower, castPoint, false) then return nil end
 
 	local units, enemyWave = {}, 0
 	local function Add(unit, hero)
 		if J.CanCastOnNonMagicImmune(unit) and not unit:HasModifier('modifier_warlock_fatal_bonds')
-			and (not clash or GetUnitToLocationDistance(unit, clash) <= radius) then
+			and GetUnitToLocationDistance(unit, clash) <= radius + 220 then
 			units[#units + 1] = {unit = unit, hero = hero}
 		end
 	end
@@ -562,17 +559,15 @@ local function FindLaneBondsTarget(enemies, enemyTower, range, radius, count, ca
 	for _, creep in ipairs(bot:GetNearbyLaneCreeps(1600, true)) do
 		if J.IsValid(creep) and J.CanBeAttacked(creep) and not creep:HasModifier('modifier_fountain_glyph')
 			and creep:GetHealth() > J.GetTotalAttackWillRealDamage(creep, castPoint, true) then
-			if clash and GetUnitToLocationDistance(creep, clash) <= 600 then enemyWave = enemyWave + 1 end
+			if GetUnitToLocationDistance(creep, clash) <= 600 then enemyWave = enemyWave + 1 end
 			Add(creep, false)
 		end
 	end
 	local allyWave = 0
-	if clash then
-		for _, creep in ipairs(bot:GetNearbyLaneCreeps(1100, false)) do
-			if J.IsValid(creep) and GetUnitToLocationDistance(creep, clash) <= 600 then allyWave = allyWave + 1 end
-		end
+	for _, creep in ipairs(bot:GetNearbyLaneCreeps(1100, false)) do
+		if J.IsValid(creep) and GetUnitToLocationDistance(creep, clash) <= 600 then allyWave = allyWave + 1 end
 	end
-	local best, score = nil, -math.huge
+	local best, score, multiHero = nil, -math.huge, false
 	for _, seed in ipairs(units) do
 		if J.IsInRange(bot, seed.unit, range) and J.CanCastOnTargetAdvanced(seed.unit) then
 			-- Each jump searches around the last linked unit. Predict a
@@ -592,11 +587,11 @@ local function FindLaneBondsTarget(enemies, enemyTower, range, radius, count, ca
 				if nextUnit.hero then heroes = heroes + 1 end
 			end
 			local value = heroes * (count + 1) + hits
-			if hits >= 3 and (heroes >= 2 or heroes == 1 and clash and enemyWave >= allyWave)
-				and value > score then best, score = seed.unit, value end
+			if (heroes >= 2 or heroes == 1 and hits >= 3 and enemyWave >= allyWave)
+				and value > score then best, score, multiHero = seed.unit, value, heroes >= 2 end
 		end
 	end
-	return best
+	return best, multiHero
 end
 
 function X.ConsiderQ()
@@ -614,9 +609,9 @@ function X.ConsiderQ()
 			or not J.CanSpendLaneTradeTime(bot, tower, candidates, abilityQ:GetCastPoint()) then
 			return BOT_ACTION_DESIRE_NONE, nil
 		end
-		local target = FindLaneBondsTarget(candidates, tower, nCastRange, nRadius,
+		local target, multiHero = FindLaneBondsTarget(candidates, tower, nCastRange, nRadius,
 			abilityQ:GetSpecialValueInt('count'), abilityQ:GetCastPoint())
-		if target then return BOT_ACTION_DESIRE_HIGH, target end
+		if target then return BOT_ACTION_DESIRE_HIGH, target, multiHero end
 		return BOT_ACTION_DESIRE_NONE, nil
 	elseif not (J.IsDefending(bot) or J.IsInTeamFight(bot, 1200) or J.IsGoingOnSomeone(bot) or J.IsRetreating(bot)) then
 		return BOT_ACTION_DESIRE_NONE, nil

@@ -23,7 +23,7 @@ local function fixture(core, overridden, startMid)
         HasModifier = function(_, m) return m == 'modifier_teleporting' and state.partnerTP end,
         WasRecentlyDamagedByAnyHero = function() return state.partnerHit end,
         GetPlayerID = function() return 2 end,
-        IsDisarmed = function() return state.partnerDisarmed end,
+        IsDisarmed = function() return state.partnerDisarmed end, IsChanneling = no,
         GetAttackRange = function() return 150 end, GetAttackTarget = function() end,
         GetAttackDamage = function() return state.partnerDamage or 50 end, GetAttackCombatProficiency = function() return 1 end,
         GetItemSlotType = function() return 0 end, FindItemSlot = function() return -1 end,
@@ -40,7 +40,7 @@ local function fixture(core, overridden, startMid)
     enemy.IsInvulnerable, enemy.HasModifier = no, no
     enemy.GetHealth = function() return state.enemyHealth or 1000 end
     local tower = {x = 700, GetAttackTarget = function() return state.tower and bot or nil end}
-    local openingTower = {x = 1600, IsAlive = yes, GetLocation = function(self) return self.x end}
+    local openingTower = {x = 1600, IsAlive = yes, GetAttackTarget = no, GetLocation = function(self) return self.x end}
     bot.GetPlayerID = function() return state.playerID or 1 end
     bot.GetUnitName = function() return heroName end
     bot.GetLevel = function() return 5 end
@@ -57,7 +57,7 @@ local function fixture(core, overridden, startMid)
     bot.GetLastAttackTime = function() return state.previousShot or 0 end
     bot.GetIncomingTrackingProjectiles = empty
     bot.GetAttackTarget = function() return state.attackTarget end
-    bot.IsInvulnerable, bot.IsIllusion, bot.IsDisarmed = no, no, no
+    bot.IsInvulnerable, bot.IsIllusion, bot.IsDisarmed, bot.IsRooted = no, no, no, no
     bot.IsAlive, bot.IsHero, bot.IsUsingAbility, bot.IsChanneling = yes, yes, no, no
     bot.HasModifier = function(_, name) return name == 'modifier_tango_heal' end
     bot.WasRecentlyDamagedByAnyHero = function() return state.pressure or state.wasHit end
@@ -90,7 +90,7 @@ local function fixture(core, overridden, startMid)
         IsPosxHuman = no, IsInLaningPhase = yes, IsModeTurbo = no,
         GetEnemiesAroundAncient = function() return 0 end,
         IsValid = function(unit) return unit ~= nil end,
-        IsValidHero = function(unit) return unit == enemy or unit == partner or unit == state.secondEnemy end,
+        IsValidHero = function(unit) return unit ~= nil and (unit == enemy or unit == partner or unit == state.secondEnemy) end,
         IsValidBuilding = function(unit) return unit ~= nil and (unit == tower or unit == openingTower or unit == state.fallbackTower) end,
         IsSuspiciousIllusion = no, IsChasingTarget = no, IsThereNonSelfCoreNearby = no,
         GetHP = function(unit) return unit == bot and state.hp or (unit == partner and state.partnerHP)
@@ -144,7 +144,7 @@ local function fixture(core, overridden, startMid)
         GetUnitToUnitDistance = function(a, b) return math.abs(a.x - b.x) end,
         GetUnitToLocationDistance = function(unit, point) return math.abs(unit.x - point) end,
         GetHeightLevel = function(point) return state.uphill and point > bot.x and 2 or 1 end,
-        IsLocationPassable = yes,
+        IsLocationPassable = yes, IsLocationVisible = yes,
         PointToLineDistance = function() return {within = false, distance = 2000} end,
         RandomVector = function() return 0 end, RandomFloat = function() return 0.1 end,
         DotaTime = function() return state.time end, GameTime = function() return state.time end,
@@ -171,6 +171,41 @@ local function expect(state, mode, kind, target)
         ('expected %s %s, got %s %s'):format(kind, tostring(target), order[1], tostring(order[2])))
     -- The next decision scenario starts after any pending order's windup.
     state.time = math.max(state.time, mode.GetBot().ohaLaningAttackUntil or state.time)
+end
+
+do
+    local state, mode, creep, enemy, bot = fixture(true, false)
+    local j = mode.J
+    state.enemy, state.partner, state.partnerSupport = true, true, true
+    state.partnerHP, state.creepHP, state.allies = 0.86, 300, {creep, creep}
+    bot.GetAttackRange = function() return 150 end
+    enemy.x = 355
+    local target, step = j.GetSideLaneDuoTrade(bot, {enemy}, nil, 150)
+    assert(target == enemy and step == 225, 'healthy lane duo closes a short gap to an idle, isolated opponent')
+    assert(mode.GetDesire() == 0.68, 'a safe two-on-one competes for the active lane mode')
+    expect(state, mode, 'move', step)
+    bot.x = step
+    expect(state, mode, 'attack', enemy)
+    state.creepHP = 30
+    assert(not j.GetSideLaneDuoTrade(bot, {enemy}, nil, 150), 'save the next attack for a core last hit')
+    expect(state, mode, 'attack', creep)
+
+    state.creepHP, bot.ohaLaningAttackTarget = 300, nil
+    local second = setmetatable({x = 490}, {__index = enemy})
+    state.secondEnemy = second
+    assert(not j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150), 'a second enemy cancels the ordinary opening')
+    enemy.HasModifier = function(_, name) return name == 'modifier_warlock_fatal_bonds' end
+    second.HasModifier = no
+    assert(j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150) == enemy, 'a safe follow-up targets the linked hero')
+    state.incomingDamage = 500
+    assert(not j.GetSideLaneDuoTrade(bot, {enemy, second}, nil, 150), 'linked enemies can still punish an unsafe trade')
+    state.incomingDamage, bot.x, enemy.x = 0, 0, 680
+    assert(not j.GetSideLaneDuoTrade(bot, {enemy}, nil, 150), 'no long walk to get a melee hit')
+    target, step = j.GetSideLaneDuoTrade(bot, {enemy}, nil, 600, 0.3, 145)
+    assert(target == enemy and step == 100, 'a ready spell may use a shorter step when both are near the wave')
+    assert(not j.GetSideLaneDuoTrade(bot, {enemy}, nil, 600, 0.3), 'a request for an immediate cast cannot make the hero walk')
+    state.towerDive = true
+    assert(not j.GetSideLaneDuoTrade(bot, {enemy}, nil, 600, 0.3, 145), 'known enemy reinforcements cancel a short spell step')
 end
 
 do

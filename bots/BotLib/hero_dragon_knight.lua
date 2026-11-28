@@ -558,9 +558,10 @@ function X.ConsiderDragonTail()
 		local castPoint = DragonTail:GetCastPoint()
 		local deny = J.GetSideLaneSpellTradeTarget(bot, nEnemyHeroes, enemyTower, nCastRange,
 			castPoint, bInDragonForm and nSpeed or nil)
-		if deny and J.CanCastOnNonMagicImmune(deny) and J.CanCastOnTargetAdvanced(deny)
-			and J.CanSpendLaneTradeTime(bot, enemyTower, nEnemyHeroes, castPoint) then
-			return BOT_ACTION_DESIRE_HIGH, deny
+		local opening = deny or J.GetSideLaneDuoTrade(bot, nEnemyHeroes, enemyTower, nCastRange, castPoint)
+		if opening and J.CanCastOnNonMagicImmune(opening) and J.CanCastOnTargetAdvanced(opening)
+			and not J.IsDisabled(opening) and J.CanSpendLaneTradeTime(bot, enemyTower, nEnemyHeroes, castPoint) then
+			return BOT_ACTION_DESIRE_HIGH, opening
 		end
 		local support = J.GetLanePartner(bot)
 		if J.IsValidHero(support) and J.IsInRange(bot, support, 800) then

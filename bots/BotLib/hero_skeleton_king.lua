@@ -178,9 +178,11 @@ function X.SkillsComplement()
 	hEnemyHeroList = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE )
 
 
-	castQDesire, castQTarget = X.ConsiderQ()
+	local laneStep
+	castQDesire, castQTarget, laneStep = X.ConsiderQ()
 	if ( castQDesire > 0 )
 	then
+		if laneStep then bot:Action_MoveToLocation(laneStep); return end
 
 		J.SetQueuePtToINT( bot, false )
 
@@ -330,12 +332,18 @@ function X.ConsiderQ()
 			end
 		end
 		if laneShot and not J.IsRetreating(bot) then return BOT_ACTION_DESIRE_NONE end
-		if canSpareStun and #nEnemysHerosInRange > 0 and not J.IsRetreating(bot) then
+		if canSpareStun and #nEnemysHerosInView > 0 and not J.IsRetreating(bot) then
 			local tower = bot:GetNearbyTowers(1500, true)[1]
-			local deny = J.GetSideLaneSpellTradeTarget(bot, nEnemysHerosInRange, tower, abilityQ:GetCastRange(), nCastPoint, blastSpeed)
-			if deny and canLandStun(deny) and J.CanCastOnNonMagicImmune(deny) and J.CanCastOnTargetAdvanced(deny)
+			local range = abilityQ:GetCastRange()
+			local target = J.GetSideLaneSpellTradeTarget(bot, nEnemysHerosInRange, tower, range, nCastPoint, blastSpeed)
+			if target and canLandStun(target) and J.CanCastOnNonMagicImmune(target) and J.CanCastOnTargetAdvanced(target)
 				and J.CanSpendLaneTradeTime(bot, tower, nEnemysHerosInRange, nCastPoint) then
-				return BOT_ACTION_DESIRE_HIGH, deny
+				return BOT_ACTION_DESIRE_HIGH, target
+			end
+			local duo, step = J.GetSideLaneDuoTrade(bot, nEnemysHerosInView, tower, range, nCastPoint, 145)
+			if duo and canLandStun(duo) and not J.IsDisabled(duo)
+				and J.CanCastOnNonMagicImmune(duo) and J.CanCastOnTargetAdvanced(duo) then
+				return BOT_ACTION_DESIRE_HIGH, duo, step
 			end
 		end
 	end

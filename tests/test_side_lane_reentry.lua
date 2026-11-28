@@ -84,6 +84,15 @@ state.fog=false
 state.hp=0.58
 bot.x=1800
 assert(j.GetSideLaneYieldPoint(bot,{attacker})==1440,'break attack contact with one small backward step')
+state.hp, state.hit = 0.82, true
+bot.GetHealth = function() return state.hp * 1000 end
+j.IsInRange = function(u, enemy, range) return distance(u.x, enemy.x) <= range end
+j.GetHeroesTargetingUnit = function() return {attacker} end
+j.GetVisibleThreatAt = function() return 110 end
+assert(j.GetSideLaneYieldPoint(bot, {attacker}, nil, false) == 1440,
+    'a healthy melee core breaks repeated attack contact before its blood loss triggers retreat')
+j.GetVisibleThreatAt = function() return 45 end
+assert(not j.GetSideLaneYieldPoint(bot, {attacker}, nil, false), 'a light poke permits the core to keep farming')
 state.hp=0.35
 assert(not j.GetSideLaneYieldPoint(bot,{attacker}),'a low core still commits to the real escape')
 state.hp=0.59

@@ -35,6 +35,15 @@ local function TraceLaneDecision(kind, target)
 end
 local laneTierOne = {[LANE_TOP] = TOWER_TOP_1, [LANE_MID] = TOWER_MID_1, [LANE_BOT] = TOWER_BOT_1}
 
+local function IssueLaneTradeShot(target, clash, reason, fromTower)
+	if target ~= bot:GetAttackTarget() or not J.IsFinishingLaningAttack(bot, target) then
+		TraceLaneDecision(reason, target)
+		laneShot = {target = target, previous = bot:GetLastAttackTime(), clash = clash, fromTower = fromTower}
+		bot:Action_AttackUnit(target, true)
+	end
+	return true
+end
+
 local function ShootAtLaneClash(enemies, enemyTower, nearbyTower)
 	local target, clash
 	if nearbyTower then
@@ -43,12 +52,7 @@ local function ShootAtLaneClash(enemies, enemyTower, nearbyTower)
 		target, clash = J.GetCoveredRangedLaneShot(bot, enemies, enemyTower)
 	end
 	if not target then return false end
-	if target ~= bot:GetAttackTarget() or not J.IsFinishingLaningAttack(bot, target) then
-		TraceLaneDecision(nearbyTower and 'tower-lane-trade' or 'ranged-lane-trade', target)
-		laneShot = {target = target, previous = bot:GetLastAttackTime(), clash = clash, fromTower = nearbyTower ~= nil}
-		bot:Action_AttackUnit(target, true)
-	end
-	return true
+	return IssueLaneTradeShot(target, clash, nearbyTower and 'tower-lane-trade' or 'ranged-lane-trade', nearbyTower ~= nil)
 end
 
 -- Announcer state
@@ -135,11 +139,11 @@ function GetDesire()
 		return BOT_MODE_DESIRE_NONE
 	end
 	if bot.ohaCreepDrag ~= nil then return 0.82 end
+	if not local_mode_laning_generic and J.GetSideLaneYieldPoint
+		and J.GetSideLaneYieldPoint(bot, nInRangeEnemy, enemyTower, underPressure) then return 0.88 end
 	-- A safe side-lane return also helps ranged supports rejoin their core.
 	if not local_mode_laning_generic and J.GetSideLaneReturnPoint
 		and J.GetSideLaneReturnPoint(bot, botAssignedLane) ~= nil then return J.IsCore(bot) and 0.84 or 0.68 end
-	if not local_mode_laning_generic and J.GetSideLaneYieldPoint and underPressure
-		and J.GetSideLaneYieldPoint(bot, nInRangeEnemy, enemyTower) then return 0.88 end
 	if not local_mode_laning_generic and not underPressure and J.GetSideLaneReturnScreen
 		and J.GetSideLaneReturnScreen(bot) then return 0.79 end
 	if J.GetLaningHoldTower(bot) ~= nil then return 0.82 end
@@ -190,6 +194,10 @@ function GetDesire()
 			and J.GetSideLaneCoverAttack(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
 		if not local_mode_laning_generic
 			and J.GetSideLaneFinishTarget(bot, nInRangeEnemy, enemyTower) ~= nil then return 0.75 end
+		if not local_mode_laning_generic then
+			local target, step = J.GetSideLaneDuoTrade(bot, nInRangeEnemy, enemyTower, botAttackRange)
+			if target then return step and 0.68 or 0.71 end
+		end
 		if not local_mode_laning_generic and nearbyTower then
 			if not deny and not reserveDeny and J.GetTowerLaneHarassTarget(bot, nInRangeEnemy, enemyTower, botAttackRange) then
 				return 0.71
@@ -267,6 +275,17 @@ local function ThinkLane()
 		bot:Action_MoveToLocation(opening)
 		return
 	end
+	local enemyTower = bot:GetNearbyTowers(1200, true)[1]
+	local underPressure = J.IsLaningUnderPressure(bot, nInRangeEnemy, enemyTower)
+	if not local_mode_laning_generic and J.GetSideLaneYieldPoint then
+		local point = J.GetSideLaneYieldPoint(bot, nInRangeEnemy, enemyTower, underPressure)
+		if point then
+			TraceLaneDecision('short-yield')
+			if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'short-yield') end
+			bot:Action_MoveToLocation(point)
+			return
+		end
+	end
 	if not local_mode_laning_generic and not J.HasPendingLaningLastHit(bot)
 		and J.GetSideLaneReturnPoint then
 		local point = J.GetSideLaneReturnPoint(bot, botAssignedLane or bot:GetAssignedLane())
@@ -275,18 +294,6 @@ local function ThinkLane()
 			if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'side-wave-reentry') end
 			bot:Action_MoveToLocation(point)
 			return
-		end
-	end
-	if not local_mode_laning_generic and J.GetSideLaneYieldPoint then
-		local tower = bot:GetNearbyTowers(1200, true)[1]
-		if J.IsLaningUnderPressure(bot, nInRangeEnemy, tower) then
-			local point = J.GetSideLaneYieldPoint(bot, nInRangeEnemy, tower)
-			if point then
-				TraceLaneDecision('short-yield')
-				if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'short-yield') end
-				bot:Action_MoveToLocation(point)
-				return
-			end
 		end
 	end
 	local holdTower = J.GetLaningHoldTower(bot)
@@ -326,9 +333,7 @@ local function ThinkLane()
 		end
 		return
 	end
-	local enemyTower = bot:GetNearbyTowers(1200, true)[1]
 	local attackTarget = bot:GetAttackTarget()
-	local underPressure = J.IsLaningUnderPressure(bot, nInRangeEnemy, enemyTower)
 	if not underPressure and J.HasPendingLaningLastHit(bot) then return end
 	if local_mode_laning_generic then
 		if campPlan ~= nil and not underPressure and not J.IsFinishingLaningAttack(bot, attackTarget)
@@ -400,6 +405,19 @@ local function ThinkLane()
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'protect-core-now') end
 		bot:Action_AttackUnit(cover, true)
 		return
+	end
+	if not J.IsFinishingLaningAttack(bot, attackTarget) then
+		local target, step, tradeClash = J.GetSideLaneDuoTrade(bot, nInRangeEnemy, enemyTower, botAttackRange)
+		if target then
+			if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'side-duo-trade') end
+			if step then
+				TraceLaneDecision('side-duo-step', target)
+				bot:Action_MoveToLocation(step)
+			else
+				IssueLaneTradeShot(target, tradeClash, 'side-duo-shot')
+			end
+			return
+		end
 	end
 	if campPlan ~= nil and not J.IsFinishingLaningAttack(bot, attackTarget)
 		and LaneCamp.Think(bot, campPlan) then return end
