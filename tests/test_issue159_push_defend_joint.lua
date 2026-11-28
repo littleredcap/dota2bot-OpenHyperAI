@@ -255,6 +255,7 @@ local function fixture(opts)
         GetTeamForPlayer=function(id) return id <= #members and 2 or 3 end,
         GetGlyphCooldown=function() return opts.glyphCooldown or 180 end,
         IsLocationPassable=yes, IsLocationVisible=yes, TEAM_RADIANT=2, LANE_TOP=1, LANE_MID=2, LANE_BOT=3, UNIT_LIST_ENEMY_CREEPS=1, UNIT_LIST_ALLIED_CREEPS=3,
+        TOWER_TOP_1=10,
         ABILITY_BEHAVIOR_UNIT_TARGET=8, ABILITY_BEHAVIOR_POINT=16,
         GetAmountAlongLane=function(lane, point)
             return {amount=point.x / 10000, distance=point.lane and point.lane ~= lane and 650 or point.y or 0}
@@ -1440,6 +1441,31 @@ do
     assert(j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'keep the early lane partner there as well')
     watch.siegeAttacking = true
     assert(not j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'a siege already hitting the tower can still call for help')
+end
+
+do
+    local _, _, members, _, lane, _, _, j = fixture({time=529, direct=true, outerSiege=true, friendlyTower=true, x=5500})
+    local bot, partner = members[1], members[2]
+    j.IsInLaningPhase = function() return true end
+    j.IsModeTurbo = function() return false end
+    j.IsCore = function(unit) return unit == partner end
+    j.GetLanePartner = function() return partner end
+    j.IsInRange = function(ally, unit, range) return math.abs(ally:GetLocation().x - unit:GetLocation().x) <= range end
+    bot.GetAssignedLane, partner.GetAssignedLane = function() return lane.Top end, function() return lane.Top end
+    bot.GetNearbyLaneCreeps = function(_, _, hostile)
+        return not hostile and {{GetLocation=function() return {x=bot.x, lane=lane.Top} end}} or {}
+    end
+    j.GetLastSeenEnemiesNearLoc = function() return {6} end
+    local watch = {count=1, towerHP=0.95, waveSize=1}
+    assert(j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'support stays for the next contested wave with its core')
+    watch.siegeAttacking = true
+    assert(not j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'an actual emergency can call the support away')
+    watch.siegeAttacking = false
+    j.GetLastSeenEnemiesNearLoc = function() return {} end
+    assert(not j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'a free allied wave does not block support from rotating')
+    j.GetLastSeenEnemiesNearLoc = function() return {6} end
+    partner.HasModifier = function(_, modifier) return modifier == 'modifier_teleporting' end
+    assert(not j.ShouldKeepLaningWave(bot, lane.Mid, watch), 'a departing core does not keep the support anchored for the next wave')
 end
 
 do

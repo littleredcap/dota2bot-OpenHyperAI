@@ -560,6 +560,20 @@ do
     assert(not j.GetSafeLaneSupplyTower(bot), 'standing in front of the tower is not shelter')
     bot.x, enemy.x, state.pressure = 0, 400, true
     assert(not j.GetSafeLaneSupplyTower(bot), 'actual pursuit cannot be masked by the nearby support')
+
+    state.time, state.hp, state.partnerHP, state.pressure, state.wasHit = 523, 0.55, 0.39, false, true
+    state.partner, enemy.x = false, 1250
+    j.IsRetreating = function(unit) return unit == bot end
+    mode.GetAmountAlongLane = function() return {distance=100} end
+    assert(j.GetLaningHoldTower(bot) == tower, 'already sheltered with a reachable wave, stay for it after a nonlethal trade')
+    state.noCreeps = true
+    assert(not j.GetLaningHoldTower(bot), 'release the hold when there is no approaching wave')
+    state.noCreeps, state.incomingDamage = false, 130
+    assert(not j.GetLaningHoldTower(bot), 'do not keep a core in a position where committed damage is high')
+    state.incomingDamage, state.creepProjectiles = nil, 130
+    assert(not j.GetLaningHoldTower(bot), 'check the projectiles already travelling toward the core')
+    state.incomingDamage, state.hp = nil, 0.34
+    assert(not j.GetLaningHoldTower(bot), 'a badly injured core can still reset')
 end
 print('PASS: low carry can receive real lane supply from a sheltered tower, never through a dive')
 

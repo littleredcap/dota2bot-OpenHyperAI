@@ -1551,7 +1551,28 @@ function J.GetLaningHoldTower(bot)
         local tower = J.GetSafeLaneSupplyTower(bot)
         if tower then return tower end
     end
-    return J.GetSideLaneHoldTower(bot) or GetPressuredMidLaneTower(bot)
+    local tower = J.GetSideLaneHoldTower(bot) or GetPressuredMidLaneTower(bot)
+    if tower then return tower end
+
+    local lane, now = bot:GetAssignedLane(), DotaTime()
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 40 or now >= (J.IsModeTurbo() and 480 or 600)
+        or not J.IsCore(bot) or J.GetHP(bot) < 0.52 or not J.IsRetreating(bot)
+        or not bot:WasRecentlyDamagedByAnyHero(6) then return nil end
+    -- A core already behind a safe tower can stay for the approaching wave
+    -- after a trade. A TP home would also spend its quick way back.
+    tower = J.GetSafeLaneSupplyTower(bot)
+    if not tower then return nil end
+    local point = J.AdjustLocationWithOffsetTowardsFountain(tower:GetLocation(), 300)
+    if GetUnitToLocationDistance(bot, point) > 440 or not IsLocationVisible(point) or not IsLocationPassable(point)
+        or #J.GetLastSeenEnemiesNearLoc(point, 750) > 0 then return nil end
+    local enemies = J.GetEnemiesNearLoc(point, 1500)
+    local damage, control = J.GetVisibleThreatAt(bot, enemies, point, 2.0, true)
+    if bot.GetIncomingTrackingProjectiles then damage = damage + J.GetCreepAttackProjectileWillRealDamage(bot, 2.0, true) end
+    if control or damage >= bot:GetHealth() * 0.20 then return nil end
+    for _, creep in ipairs(bot:GetNearbyLaneCreeps(1150, true)) do
+        if J.IsValid(creep) and J.IsInRange(creep, tower, 1300)
+            and GetAmountAlongLane(lane, creep:GetLocation()).distance <= 550 then return tower end
+    end
 end
 
 -- A side laner can recover contact without waiting for the wave to enter the
@@ -8160,10 +8181,13 @@ end
 function J.ShouldKeepLaningWave(bot, targetLane, threat)
 	local lane = bot:GetAssignedLane()
 	local now = DotaTime()
-	local openingSideWave = targetLane ~= nil and (lane == LANE_TOP or lane == LANE_BOT)
-		and now >= 0 and now < 45
+	local sideLane = lane == LANE_TOP or lane == LANE_BOT
+	local openingSideWave = targetLane ~= nil and sideLane and now >= 0 and now < 45
+	local core = J.IsCore(bot)
+	local coverPartner = not core and targetLane ~= nil and sideLane and now >= 45
+		and now < (J.IsModeTurbo() and 480 or 600)
 	if lane == targetLane or (lane ~= LANE_MID and lane ~= LANE_TOP and lane ~= LANE_BOT)
-		or (not J.IsCore(bot) and not openingSideWave)
+		or (not core and not openingSideWave and not coverPartner)
 		or not J.IsInLaningPhase(bot) or J.GetHP(bot) < 0.55 then return false end
 	if targetLane ~= nil and not threat then
 		local tower = GetTower(bot:GetTeam(), targetLane == LANE_TOP and TOWER_TOP_1 or (targetLane == LANE_MID and TOWER_MID_1 or TOWER_BOT_1))
@@ -8180,6 +8204,22 @@ function J.ShouldKeepLaningWave(bot, targetLane, threat)
 	-- The side-lane wave may not have reached vision yet. Its absence in a
 	-- nearby creep scan is not an invitation to leave for a routine rotation.
 	if openingSideWave then return true end
+	if coverPartner then
+		local partner = J.GetLanePartner(bot)
+		local tower = GetTower(bot:GetTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+		if not J.IsValidHero(partner) or not J.IsCore(partner) or partner:HasModifier('modifier_teleporting')
+			or not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 1450)
+			or not J.IsInRange(partner, tower, 1450) or not J.IsInRange(bot, partner, 950) then return false end
+		-- Stay through the handoff into the next contested wave even if the
+		-- previous wave has already died and only allied creeps are in range.
+		local front = GetLaneFrontLocation(bot:GetTeam(), lane, 0)
+		if #J.GetLastSeenEnemiesNearLoc(front, 1500) > 0 then
+			for _, creep in ipairs(bot:GetNearbyLaneCreeps(1150, false)) do
+				if J.IsValid(creep) and J.IsInRange(creep, tower, 1550)
+					and GetAmountAlongLane(lane, creep:GetLocation()).distance <= 550 then return true end
+			end
+		end
+	end
 	for _, creep in ipairs(bot:GetNearbyLaneCreeps(1250, true)) do
 		if J.IsValid(creep) and GetAmountAlongLane(lane, creep:GetLocation()).distance <= 550 then return true end
 	end
