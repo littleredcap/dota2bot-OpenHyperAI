@@ -2,7 +2,9 @@ local function value(n) return function() return n end end
 local no, yes = value(false), value(true)
 local now = 277.6
 local env = setmetatable({
-    DotaTime=function() return now end, GetUnitToLocationDistance=function(e, p) return math.abs(e.x-p) end,
+    DotaTime=function() return now end, GameTime=function() return now end,
+    GetUnitToLocationDistance=function(e, p) return math.abs(e.x-p) end,
+    GetUnitToUnitDistance=function(a, b) return math.abs(a.x-b.x) end,
     DAMAGE_TYPE_PHYSICAL=1, DAMAGE_TYPE_MAGICAL=2, DAMAGE_TYPE_PURE=4,
     ABILITY_BEHAVIOR_UNIT_TARGET=8, ABILITY_BEHAVIOR_POINT=16, ABILITY_TARGET_TEAM_ENEMY=2,
 }, {__index=_G})
@@ -11,7 +13,8 @@ local j = {IsValidHero=yes, IsSuspiciousIllusion=no, IsStunProjectileSpell=funct
     GetFightHardControlRemaining=function(e) return e.disabled or 0 end,
     Utils={AbilityBehaviorHasFlag=function(n,flag) return n==flag end}}
 local bot = {GetLocation=value(0), IsMagicImmune=no, GetActualIncomingDamage=function(_, raw) return raw * 0.75 end,
-    GetHealth=value(341), GetHealthRegen=value(4)}
+    GetHealth=value(341), GetHealthRegen=value(4), x=0, WasRecentlyDamagedByAnyHero=no,
+    GetNearbyCreeps=function() return {} end, GetNearbyTowers=function() return {} end}
 local function caster(id, x, mana, range, cost, name)
     local ability={GetName=value(name), IsNull=no, IsTrained=yes, IsHidden=no, IsPassive=no,
         GetManaCost=value(cost), GetBehavior=value(8), GetTargetTeam=value(2), GetTargetFlags=value(0), GetCastRange=value(range),
@@ -39,6 +42,7 @@ setfenv(assert(loadstring(src:sub(a,b-1))),env)()
 j.GetNearbyHeroes=function() return enemies end
 j.GetCreepAttackProjectileWillRealDamage=value(0)
 j.GetHP=value(0.6)
+j.IsInRange=function(a,b,gap) return math.abs(a.x-b.x)<=gap end
 j.IsStunProjectileIncoming=no
 assert(not j.CanStartTeleportHere(bot),'4:37: a nonlethal melee stun can arrive during the scroll')
 bot.IsMagicImmune=yes
@@ -63,7 +67,7 @@ assert(j.CanStartTeleportHere(bot),'a silenced enemy cannot cast a stun')
 dk.duration=0.3
 assert(not j.CanStartTeleportHere(bot),'a short silence wears off before the enemy reaches stun range')
 dk.IsSilenced,dk.GetStunDuration=no,value(0)
-assert(j.CanStartTeleportHere(bot),'spent stun with enough mana still permits escape')
+assert(not j.CanStartTeleportHere(bot),'a reachable named stun remains a threat despite a zero aggregate estimate')
 dk.GetStunDuration,dk.IsUsingAbility=value(1.5),yes
 assert(j.CanStartTeleportHere(bot),'a witnessed spell release does not become a fresh interrupt')
 now=now+6;dk.IsUsingAbility=no
@@ -86,6 +90,16 @@ do
     assert(not j.CanStartTeleportHere(bot),'already released lethal shots remain even when no hero is in sight')
     j.GetCreepAttackProjectileWillRealDamage=value(0)
     assert(j.CanStartTeleportHere(bot),'allow a cleared escape point')
+    local golem={x=140,CanBeSeen=yes,IsAlive=yes,IsDisarmed=no,GetAttackTarget=value(bot),
+        GetAttackRange=value(150),GetSecondsPerAttack=value(1.4),GetAttackProjectileSpeed=value(0),
+        GetLastAttackTime=value(now-1),GetAttackDamage=value(120)}
+    bot.GetNearbyCreeps=value({golem})
+    assert(not j.CanStartTeleportHere(bot),'a visible golem hitting the caster can kill during the scroll')
+    golem.GetAttackTarget=no
+    assert(j.CanStartTeleportHere(bot),'a golem fighting someone else does not add immediate focused damage')
+    golem.GetAttackTarget,golem.CanBeSeen=value(bot),no
+    assert(j.CanStartTeleportHere(bot),'do not count nonhero attacks using hidden units')
+    bot.GetNearbyCreeps=function() return {} end
     local shaman=caster(9,591,280,400,130,'shadow_shaman_shackles')
     enemies={shaman}
     assert(not j.CanStartTeleportHere(bot),'a visible shaman can step into Shackles range during the channel')
@@ -93,6 +107,15 @@ do
     dk.x,wl.x,wl.GetAttackRange=oldX,oldY,value(150)
     dk.GetAttackDamage,wl.GetAttackDamage=value(62),value(62)
     bot.GetHealth,bot.GetHealthRegen,j.GetHP=value(341),value(4),value(0.6)
+end
+
+do
+    local unit=caster(19,100,200,500,70,'physical_active')
+    local spell=unit:GetAbilityInSlot(0)
+    spell.GetDamageType=value(1)
+    spell.GetAbilityDamage=function() error('enemy-only damage handle unavailable') end
+    unit.GetEstimatedDamageToTarget=function(_, _, _, _, kind) return kind==1 and 240 or 0 end
+    assert(j.GetVisibleThreatAt(bot,{unit},0,3)==240,'use the allowed estimate for visible physical spells')
 end
 dk.visible,wl.visible=false,false
 assert(j.GetVisibleThreatAt(bot,enemies,0,4)==0,'no enemy combat information from fog')

@@ -58,19 +58,18 @@ local function spellWindow(J, enemy, distance, seconds, rooted, silence, checkIn
                 local ready = math.max(silence, contact, (spent[spell:GetName()] or now) - now)
                 if ready + cast < seconds then
                     earliest = math.min(earliest, ready)
-                    if spell.GetDamageType and spell:GetDamageType() == DAMAGE_TYPE_PHYSICAL
-                        and (spell:GetAbilityDamage() or 0) > 0 then
+                    if spell.GetDamageType and spell:GetDamageType() == DAMAGE_TYPE_PHYSICAL then
                         physicalSpell = math.min(physicalSpell, ready)
                     end
                     if checkInterrupt and (not immune or J.Utils.AbilityBehaviorHasFlag(spell:GetTargetFlags(),
                         ABILITY_TARGET_FLAG_MAGIC_IMMUNE_ENEMIES or 16)) then
                         local name = spell:GetName()
-                        local stun = J.IsStunProjectileSpell(name) or spell:GetSpecialValueFloat('stun_duration') > 0
+                        local stun = J.IsStunProjectileSpell(name) or hasStun and spell:GetSpecialValueFloat('stun_duration') > 0
                         local otherControl = name == 'shadow_shaman_shackles' or name == 'shadow_shaman_voodoo'
                             or name == 'lion_voodoo' or spell:GetSpecialValueFloat('root_duration') > 0
-                        -- Do not query individual enemy cooldowns. The API's available stun estimate
-                        -- and visible mana restrict the controls that can actually stop the channel.
-                        if (stun and hasStun) or otherControl then interrupt = true end
+                        -- The aggregate engine estimate can omit a named, known disable.
+                        -- Mana, contact time and witnessed spell use still bound it.
+                        if stun or otherControl then interrupt = true end
                     end
                 end
             end

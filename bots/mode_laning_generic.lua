@@ -135,9 +135,9 @@ function GetDesire()
 		return BOT_MODE_DESIRE_NONE
 	end
 	if bot.ohaCreepDrag ~= nil then return 0.82 end
-	-- Ranged mid retains the engine's timing. This plan only belongs to side cores.
+	-- A safe side-lane return also helps ranged supports rejoin their core.
 	if not local_mode_laning_generic and J.GetSideLaneReturnPoint
-		and J.GetSideLaneReturnPoint(bot, botAssignedLane) ~= nil then return 0.84 end
+		and J.GetSideLaneReturnPoint(bot, botAssignedLane) ~= nil then return J.IsCore(bot) and 0.84 or 0.68 end
 	if not local_mode_laning_generic and J.GetSideLaneYieldPoint and underPressure
 		and J.GetSideLaneYieldPoint(bot, nInRangeEnemy, enemyTower) then return 0.88 end
 	if not local_mode_laning_generic and not underPressure and J.GetSideLaneReturnScreen
@@ -209,6 +209,10 @@ function GetDesire()
 		end
 		campPlan = LaneCamp.Plan(bot, botAssignedLane)
 		if campPlan ~= nil then return 0.63 end
+		if not local_mode_laning_generic and not J.IsCore(bot)
+			and J.GetLaningCreepPosition(bot, botAssignedLane, nEnemyCreeps, enemyTower, nInRangeEnemy) ~= nil then
+			return 0.59
+		end
 	end
 	if local_mode_laning_generic and local_mode_laning_generic.GetDesire ~= nil then return local_mode_laning_generic.GetDesire() end
 

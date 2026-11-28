@@ -655,6 +655,32 @@ end
 print('PASS: first-wave commitment reaches the assigned lane and cores position behind their wave')
 
 do
+    local s, lane, creep, _, bot = fixture(false)
+    local j = lane.J
+    s.time, s.partner, s.partnerHP = 418, true, 0.85
+    local own = lane.GetTower(2, lane.TOWER_BOT_1)
+    bot.x, own.x, creep.x = -850, 0, 1100
+    lane.GetTower = function(team) return team == 2 and own or nil end
+    creep.GetLocation, creep.CanBeSeen = function(self) return self.x end, yes
+    local partner = j.GetLanePartner(bot)
+    partner.x = 920
+    partner.GetTeam = bot.GetTeam
+    partner.GetLocation = function(self) return self.x end
+    bot.DistanceFromFountain = function() return 4000 end
+    lane.UNIT_LIST_ENEMY_CREEPS, lane.UNIT_LIST_ALLIED_CREEPS = 2, 3
+    lane.GetUnitList = function(which) return which == 2 and {creep} or {} end
+    lane.GetAmountAlongLane = function() return {distance=0} end
+    lane.IsLocationVisible = yes
+    assert(lane.GetDesire() == 0.68, 'a ranged support far from a real wave can rejoin its lane core')
+    expect(s, lane, 'move', 530)
+    assert(not j.GetSideLaneReturnPoint(partner, lane.LANE_BOT), 'an already arrived core needs no reentry')
+    s.partnerRetreat = true
+    assert(not j.GetSideLaneReturnPoint(bot, lane.LANE_BOT), 'no solo trip into a contested lane')
+    s.partnerRetreat, s.towerDive = false, true
+    assert(not j.GetSideLaneReturnPoint(bot, lane.LANE_BOT), 'no route through recently observed opponents')
+end
+
+do
     local s, lane, creep, enemy, bot = fixture(false)
     s.time, s.noCreeps, s.partner = 14, true, true
     creep.x, creep.GetLocation = 1050, function(self) return self.x end
@@ -675,6 +701,12 @@ do
     assert(not j.CanSupportTakeLaneLastHit(bot, creep), 'in-range core gets its uncommitted last hit while ready')
     core.IsChanneling = yes
     assert(j.CanSupportTakeLaneLastHit(bot, creep), 'a channeling core cannot reserve its next attack')
+    assert(j.CanSecureLaneCreepWithSpell(bot, creep, 140, 2, 0.35, {}), 'the support may collect a living creep during the channel')
+    core.IsChanneling = no
+    assert(not j.CanSecureLaneCreepWithSpell(bot, creep, 140, 2, 0.35, {}), 'save the shot for a core that can still take it')
+    core.IsChanneling, s.finishingDamageAt = yes, 0.25
+    assert(not j.CanSecureLaneCreepWithSpell(bot, creep, 140, 2, 0.35, {}), 'do not spend the spell on a creep killed before impact')
+    s.finishingDamageAt = nil
 
     s.hp, s.incomingDamage, s.creepProjectiles = 0.50, 450, 60
     assert(j.IsLaningUnderPressure(bot, {enemy}), 'already launched attacks can make a safe-looking exchange lethal')

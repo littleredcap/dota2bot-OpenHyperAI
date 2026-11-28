@@ -1224,17 +1224,42 @@ function J.GetVisibleThreatAt(bot, enemies, point, seconds, checkInterrupt)
     return VisibleThreat.Evaluate(J, bot, enemies, point, seconds, checkInterrupt)
 end
 
+local function GetFocusedNonHeroDamage(bot, channel)
+    local damage, seen = 0, {}
+    local function AddAttacker(unit)
+        if seen[unit] or not unit:CanBeSeen() or not unit:IsAlive() or unit:IsDisarmed()
+            or unit:GetAttackTarget() ~= bot or not J.IsInRange(bot, unit, unit:GetAttackRange() + 80) then return end
+        seen[unit] = true
+        local period = math.max(0.25, unit:GetSecondsPerAttack())
+        local wait = math.max(0, period - (GameTime() - unit:GetLastAttackTime()))
+        local speed = unit:GetAttackProjectileSpeed()
+        if speed > 0 then wait = wait + GetUnitToUnitDistance(bot, unit) / speed end
+        if wait < channel then
+            damage = damage + (1 + math.floor((channel - wait) / period))
+                * bot:GetActualIncomingDamage(unit:GetAttackDamage(), DAMAGE_TYPE_PHYSICAL)
+        end
+    end
+    for _, unit in ipairs(bot:GetNearbyCreeps(1250, true)) do AddAttacker(unit) end
+    for _, tower in ipairs(bot:GetNearbyTowers(1250, true)) do AddAttacker(tower) end
+    return damage
+end
+
 function J.CanStartTeleportHere(bot)
+    local channel = 3
     local projectile = J.IsStunProjectileIncoming(bot, 1600, bot:IsMagicImmune())
     local enemies = J.GetNearbyHeroes(bot, 1600, true, BOT_MODE_NONE)
-    local inFlight = J.GetCreepAttackProjectileWillRealDamage(bot, 3, true)
-    if #enemies == 0 and not projectile and inFlight == 0 then return true end
-    local damage, interrupt, contacts = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 3, true)
-    damage = damage + inFlight
-    local health = bot:GetHealth() + 3 * bot:GetHealthRegen()
-    -- Attack damage varies. Do not rely on surviving simultaneous attacks by
-    -- only a few HP when channeling in place at critical health.
-    if contacts >= 2 and J.GetHP(bot) <= 0.30 then health = health * 0.85 end
+    local inFlight = J.GetCreepAttackProjectileWillRealDamage(bot, channel, true)
+    local focused = GetFocusedNonHeroDamage(bot, channel)
+    if #enemies == 0 and not projectile and inFlight == 0 and focused == 0 then return true end
+    local damage, interrupt, contacts = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), channel, true)
+    damage = damage + inFlight + focused
+    local health = bot:GetHealth() + channel * bot:GetHealthRegen()
+    -- Keep a margin for attack variance and damage already ticking in a contested lane.
+    if contacts >= 2 and J.GetHP(bot) <= 0.30 then
+        health = health * 0.85
+    elseif (contacts >= 2 or contacts >= 1 and focused > 0) and bot:WasRecentlyDamagedByAnyHero(2) then
+        health = health * 0.90
+    end
     if not projectile and not interrupt and damage < health then return true end
     if J.Customize and J.Customize.TraceLaneDecisions and (bot.ohaTpDeniedLog or -100) + 2 <= DotaTime() then
         bot.ohaTpDeniedLog = DotaTime()
@@ -1490,12 +1515,14 @@ function J.GetLaningHoldTower(bot)
     return J.GetSideLaneHoldTower(bot) or GetPressuredMidLaneTower(bot)
 end
 
--- A side core can recover contact without waiting for the wave to enter the
+-- A side laner can recover contact without waiting for the wave to enter the
 -- local last-hit scan. This is a walk to experience range, not a commit.
 function J.GetSideLaneReturnPoint(bot, lane)
     local now = DotaTime()
-    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 40 or now >= 600
-        or not J.IsInLaningPhase(bot) or not J.IsCore(bot) or J.GetHP(bot) < 0.58
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 40 or now >= 720 then return nil end
+    local core = J.IsCore(bot)
+    if core and now >= 600 or not J.IsInLaningPhase(bot) or J.GetHP(bot) < (core and 0.58 or 0.65)
+        or not core and bot:GetAttackRange() < 310
         or not bot.DistanceFromFountain or bot:WasRecentlyDamagedByAnyHero(2)
         or bot:HasModifier('modifier_teleporting') or J.IsDisabled(bot)
         or (bot.ohaOuterTowerHoldUntil or 0) > now or not GetUnitList then return nil end
@@ -1505,7 +1532,10 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local origin, team = bot:GetLocation(), bot:GetTeam()
     local tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
     if not J.IsValidBuilding(tower) then return nil end
-    local hub, wave, distance = tower:GetLocation(), nil, 20000
+    local partner = J.GetLanePartner(bot, true)
+    if not core and (not J.IsValidHero(partner) or not J.IsCore(partner) or J.GetHP(partner) < 0.60
+        or J.IsDisabled(partner) or J.IsRetreating(partner) or partner:HasModifier('modifier_teleporting')) then return nil end
+    local hub, wave, distance = tower:GetLocation(), nil, core and 20000 or 2200
     local front = GetLaneFrontLocation(team, lane, 0)
     -- Don't turn a distant recovery route into a chase into enemy territory.
     for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
@@ -1519,10 +1549,10 @@ function J.GetSideLaneReturnPoint(bot, lane)
     end
     if wave == nil or distance <= math.max(600, bot:GetAttackRange() + 370) then return nil end
     local point = wave:GetLocation()
-    local partner = J.GetLanePartner(bot, true)
     local covered = J.IsValidHero(partner) and J.GetHP(partner) >= 0.50 and not J.IsDisabled(partner)
         and not partner:HasModifier('modifier_teleporting') and not J.IsRetreating(partner)
         and GetUnitToLocationDistance(partner, point) <= 1050
+    if not core and not covered then return nil end
     local hasLaneCover = false
     for _, creep in ipairs(GetUnitList(UNIT_LIST_ALLIED_CREEPS)) do
         if J.IsValid(creep) and string.find(creep:GetUnitName(), 'npc_dota_creep_', 1, true)
@@ -2582,6 +2612,14 @@ function J.CanSupportTakeLaneLastHit(bot, creep)
     end
 
     return true
+end
+
+function J.CanSecureLaneCreepWithSpell(bot, creep, damage, damageType, impact, enemies)
+    if not J.CanSupportTakeLaneLastHit(bot, creep) then return false end
+    local attackers = GetLaneAttackers(bot, bot:GetNearbyTowers(1600, false)[1], enemies,
+        bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE))
+    local remaining = GetLaneCreepHealthAt(creep, impact, attackers)
+    return remaining > 0 and remaining <= creep:GetActualIncomingDamage(damage, damageType)
 end
 
 function J.GetSameUnitType(hUnit, nRadius, sUnitName, bAttacking)

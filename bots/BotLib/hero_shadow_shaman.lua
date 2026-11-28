@@ -387,23 +387,40 @@ function X.ConsiderQ()
 
 	if J.IsLaning( bot )
 	then
+		local tower = bot:GetNearbyTowers(1500, true)[1]
+		local reserve = abilityE and abilityE:IsTrained() and abilityE:GetManaCost() or nManaCost
 		if nMP > 0.5
 		then
 			local peel = J.GetLaningPeelTarget(bot, J.GetLanePartner(bot), nInRangeEnemyList, nCastRange + aetherRange, true)
 			if peel ~= nil then return BOT_ACTION_DESIRE_HIGH, peel, 'Q-LaneCover' end
-			local tower = bot:GetNearbyTowers(1500, true)[1]
+		end
+
+		-- Collect a valuable creep that no core can finish. Do not walk up to cast.
+		local spellReach = math.min(1600, nCastRange + aetherRange)
+		local canSecure = not J.HasPendingLaningLastHit(bot) and not J.IsLaningUnderPressure(bot, nInBonusEnemyList, tower)
+			and bot:GetMana() - nManaCost >= reserve
+		if canSecure then
+			for _, creep in ipairs(bot:GetNearbyLaneCreeps(spellReach, true)) do
+				if J.IsValid(creep) and J.CanBeAttacked(creep) and not creep:HasModifier('modifier_fountain_glyph')
+					and (J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep))
+					and J.IsInRange(bot, creep, spellReach)
+					and J.GetAttackProDelayTime(bot, creep) > nCastPoint + 0.12
+					and J.CanSecureLaneCreepWithSpell(bot, creep, nDamage, nDamageType, nCastPoint, nInBonusEnemyList) then
+					return BOT_ACTION_DESIRE_HIGH, creep, 'Q-LaneSecure'
+				end
+			end
+		end
+
+		if nMP > 0.5 and bot:GetMana() - nManaCost >= reserve then
 			local pressure = J.GetSideLaneSpellTradeTarget(bot, nInRangeEnemyList, tower,
-				nCastRange + aetherRange, nil, nil, nCastPoint)
-			local reserve = abilityE and abilityE:IsTrained() and abilityE:GetManaCost() or nManaCost
+				spellReach, nil, nil, nCastPoint)
 			if pressure and J.CanCastOnNonMagicImmune(pressure) and J.CanCastOnTargetAdvanced(pressure)
-				and bot:GetMana() - nManaCost >= reserve
 				and J.CanSpendLaneTradeTime(bot, tower, nInRangeEnemyList, nCastPoint) then
 				return BOT_ACTION_DESIRE_HIGH, pressure, 'Q-LanePressure'
 			end
 		end
 
-		
-		if #hAllyList <= 1 or J.IsCore(bot) then
+		if canSecure and (#hAllyList <= 1 or J.IsCore(bot)) then
 			local nEnemyCreeps = bot:GetNearbyLaneCreeps( 800, true )
 			for _, creep in pairs( nEnemyCreeps )
 			do
@@ -411,13 +428,8 @@ function X.ConsiderQ()
 					and not creep:HasModifier( 'modifier_fountain_glyph' )
 					and not J.IsAllysTarget( creep )
 				then
-					if J.IsKeyWordUnit( 'ranged', creep )
-						and J.WillKillTarget( creep, nDamage, nDamageType, nCastPoint )
-					then
-						return BOT_ACTION_DESIRE_HIGH, creep, "Q-LaneRanged"
-					end
-
 					if bot:GetMana() > 320
+						and J.IsInRange(bot, creep, spellReach)
 						and J.IsKeyWordUnit( 'melee', creep )
 						and J.WillKillTarget( creep, nDamage, nDamageType, nCastPoint )
 						and not J.WillKillTarget( creep, nDamage * 0.5, nDamageType, nCastPoint )

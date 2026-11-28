@@ -939,6 +939,56 @@ do
 end
 
 do
+    local canClaim, pressure, pending, mana, attackETA = true, false, false, 290, 0.68
+    local target = {HasModifier=no}
+    local shock, shackle = ability({damage=140}), ability({})
+    shock.GetCastRange, shock.GetLevel, shock.GetManaCost = function() return 600 end, function() return 1 end, function() return 100 end
+    shackle.GetManaCost = function() return 120 end
+    local order
+    local caster = {GetLocation=empty, GetNearbyTowers=empty, GetLevel=function() return 3 end, IsInvisible=no,
+        GetMana=function() return mana end, GetMaxMana=function() return 300 end,
+        GetHealth=function() return 560 end, GetMaxHealth=function() return 700 end,
+        GetNearbyLaneCreeps=function() return {target} end,
+        ActionQueue_UseAbilityOnEntity=function(_, spell, creep) order={spell,creep} end}
+    local j = {
+        CanNotUseAbility=no, GetProperTarget=no, GetAlliesNearLoc=function() return {caster,{}} end,
+        IsItemAvailable=no, SetReportMotive=no, SetQueuePtToINT=no, GetNearbyHeroes=empty,
+        CanCastAbility=no, IsValid=yes, IsValidHero=no, IsDefending=no, IsInLaningPhase=yes,
+        IsInTeamFight=no, IsGoingOnSomeone=no, IsRetreating=no, IsLaning=yes,
+        GetLaningPeelTarget=function() end, GetLanePartner=no, GetSideLaneSpellTradeTarget=no,
+        HasPendingLaningLastHit=function() return pending end, IsLaningUnderPressure=function() return pressure end,
+        CanBeAttacked=yes, IsKeyWordUnit=function(key) return key=='_ranged' end, IsInRange=yes,
+        GetAttackProDelayTime=function() return attackETA end,
+        CanSecureLaneCreepWithSpell=function(_,creep,damage,kind,delay)
+            assert(creep==target and damage==140 and kind==MAGICAL and delay==0.3)
+            return canClaim
+        end,
+        IsCore=no, IsPushing=no, IsFarming=no, IsDoingRoshan=no, IsDoingTormentor=no,
+    }
+    local shaman = loadHero('shadow_shaman',{shadow_shaman_ether_shock=shock,shadow_shaman_shackles=shackle},
+        caster,j,{'shadow_shaman_ether_shock',[3]='shadow_shaman_shackles'},'pos_5')
+    shaman.ConsiderW, shaman.ConsiderR, shaman.ConsiderE = function() return NONE end,
+        function() return NONE end, function() return NONE end
+    shaman.SkillsComplement()
+    assert(order and order[1]==shock and order[2]==target,'secure the unclaimed ranged creep even with the lane partner nearby')
+    order, canClaim = nil, false
+    shaman.SkillsComplement()
+    assert(not order,'preserve the core last hit')
+    canClaim, pressure = true, true
+    shaman.SkillsComplement()
+    assert(not order,'skip a threatened creep')
+    pressure, pending = false, true
+    shaman.SkillsComplement()
+    assert(not order,'preserve a launched creep order')
+    pending, mana = false, 215
+    shaman.SkillsComplement()
+    assert(not order,'retain mana for shackles')
+    mana, attackETA = 290, 0.39
+    shaman.SkillsComplement()
+    assert(not order,'prefer a timely normal attack')
+end
+
+do
     local knight = loadHero('dragon_knight', {}, {}, {}, nil, 'pos_3')
     assert(knight.sSkillList[4] == 1 and knight.sSkillList[7] == 1, 'offlane build ranks Breathe Fire for wave clear')
     assert(table.concat(knight.sBuyList, ' '):find('item_blink item_black_king_bar item_crimson_guard', 1, true))
