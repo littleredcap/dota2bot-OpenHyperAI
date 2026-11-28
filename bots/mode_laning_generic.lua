@@ -207,6 +207,10 @@ function GetDesire()
 		if reserve and botAssignedLane ~= LANE_MID then return J.IsCore(bot) and 0.78 or 0.55 end
 		if urgentApproach and J.IsCore(bot)
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
+		if not local_mode_laning_generic and not reserve and J.GetTowerRangedPrepareStep(bot,
+			bot:GetNearbyTowers(1100, false)[1], nEnemyCreeps, nInRangeEnemy, enemyTower) then
+			return J.IsCore(bot) and 0.76 or 0.68
+		end
 		local deny, reserveDeny, urgentDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if urgentDeny and not local_mode_laning_generic then return 0.76 end
 		if not local_mode_laning_generic and not deny and not reserveDeny
@@ -351,6 +355,14 @@ local function ThinkLane()
 		end
 		if not underPressure and not pending and not J.IsFinishingLaningAttack(bot, current)
 			and J.TryClearTowerSiege(bot, holdTower) then return end
+		if not underPressure and not pending and not reserve and not J.IsFinishingLaningAttack(bot, current) then
+			local point, ranged = J.GetTowerRangedPrepareStep(bot, holdTower, wave, nInRangeEnemy, enemyTower)
+			if point then
+				TraceLaneDecision('tower-ranged-step', ranged)
+				bot:Action_MoveToLocation(point)
+				return
+			end
+		end
 		if #wave > 0 then
 			if reserve then J.HoldLaningAttack(bot, current); return end
 			if approach and bot:GetAttackRange() < 310 and not J.IsLaningUnderPressure(bot, nInRangeEnemy, nil)
@@ -491,6 +503,15 @@ local function ThinkLane()
 	if firingPosition ~= nil and (urgentApproach or J.IsCore(bot)) then
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'safe-core-last-hit') end
 		bot:Action_MoveToLocation(firingPosition)
+		return
+	end
+
+	local rangedPosition, ranged = J.GetTowerRangedPrepareStep(bot, bot:GetNearbyTowers(1100, false)[1],
+		nEnemyCreeps, nInRangeEnemy, enemyTower)
+	if rangedPosition then
+		TraceLaneDecision('tower-ranged-step', ranged)
+		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'tower-ranged-step') end
+		bot:Action_MoveToLocation(rangedPosition)
 		return
 	end
 

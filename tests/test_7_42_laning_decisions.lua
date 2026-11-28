@@ -1039,6 +1039,31 @@ for _, core in ipairs({false, true}) do
 end
 
 do
+    local state, lane, creep, _, bot, tower = fixture(false)
+    local j = lane.J
+    creep.x, state.creepHP = 620, 180
+    bot.GetNearbyTowers = function(_, _, hostile) return hostile and {} or {tower} end
+    creep.GetUnitName = function() return 'npc_dota_creep_badguys_ranged' end
+    creep.GetLocation = function(self) return self.x end
+    creep.CanBeSeen = yes
+    tower.GetAttackTarget = function() return creep end
+    local point, target = j.GetTowerRangedPrepareStep(bot, tower, {creep}, {})
+    assert(point == 190 and target == creep, '5:26: stage in tower cover before the ranged creep enters a last-hit window')
+    assert(lane.GetDesire() == 0.68)
+    expect(state, lane, 'move', point)
+    state.allies = {{x=500}}
+    j.GetVisibleThreatAt = function() return 0, true end
+    assert(not j.GetTowerRangedPrepareStep(bot, tower, {creep}, {}), 'reachable control keeps the defender behind the tower')
+    j.GetVisibleThreatAt = function() return 0, false end
+    creep.CanBeSeen = no
+    assert(not j.GetTowerRangedPrepareStep(bot, tower, {creep}, {}), 'the setup requires a visible creep')
+    creep.CanBeSeen, j.HasPendingLaningLastHit = yes, yes
+    local count = #state.orders
+    lane.Think()
+    assert(#state.orders == count, 'a pending attack finishes before the setup move')
+end
+
+do
     local state, mode, _, enemy, bot = fixture(true)
     local j = mode.J
     state.hp, state.wasHit, state.incomingDamage = 0.73, true, 160

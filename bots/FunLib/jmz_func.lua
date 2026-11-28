@@ -1960,7 +1960,7 @@ local function CanReserveLaneCreepShot(creep, damage, impact, nextImpact, attack
     return false
 end
 
-local function GetLaningLastHitStep(bot, creep, distance, tower, enemies)
+local function GetLaningLastHitStep(bot, creep, distance, tower, enemies, friendlyTower)
     local range, lane = bot:GetAttackRange(), bot:GetAssignedLane()
     if (not J.IsCore(bot) and (range < 310 or (lane ~= LANE_TOP and lane ~= LANE_BOT)))
         or not J.IsInLaningPhase(bot)
@@ -1978,9 +1978,37 @@ local function GetLaningLastHitStep(bot, creep, distance, tower, enemies)
             return nil
         end
     end
+    if friendlyTower then
+        if GetUnitToLocationDistance(friendlyTower, point) > 700
+            or #J.GetEnemiesNearLoc(middle, 750) > 0 then return nil end
+        local damage, control = J.GetVisibleThreatAt(bot, J.GetEnemiesNearLoc(point, 1600), point, 1.6, true)
+        if not control and damage < bot:GetHealth() * 0.20 then return point end
+        return nil
+    end
     for _, ally in ipairs(bot:GetNearbyLaneCreeps(1000, false)) do
         if J.IsValid(ally) and J.IsInRange(ally, creep, 500) then return point end
     end
+end
+
+function J.GetTowerRangedPrepareStep(bot, tower, creeps, enemies, enemyTower)
+    local range = bot:GetAttackRange()
+    if range < 350 or not J.IsValidBuilding(tower) or not J.IsInRange(bot, tower, 900)
+        or J.GetHP(bot) < 0.70 or bot:IsRooted() or bot:IsDisarmed() then return end
+    local current = tower:GetAttackTarget()
+    local position, target, cost
+    for _, creep in ipairs(creeps) do
+        if J.IsValid(creep) and J.IsKeyWordUnit('_ranged', creep) and J.CanBeAttacked(creep)
+            and creep.CanBeSeen and creep:CanBeSeen() and J.IsInRange(creep, tower, 800) then
+            local gap = GetUnitToUnitDistance(bot, creep) - range
+            local priority = gap - (creep == current and 250 or 0)
+            if gap > 0 and gap <= 235 and (not cost or priority < cost)
+                and J.CanSupportTakeLaneLastHit(bot, creep) then
+                local point = GetLaningLastHitStep(bot, creep, range + gap, enemyTower, enemies, tower)
+                if point then position, target, cost = point, creep, priority end
+            end
+        end
+    end
+    return position, target
 end
 
 function J.GetLaneCreepGoldValue(bot, creep)
