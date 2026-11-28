@@ -1897,14 +1897,17 @@ local function CanReserveLaneCreepShot(creep, damage, impact, nextImpact, attack
     return false
 end
 
-local function GetSupportLastHitStep(bot, creep, distance, tower, enemies)
+local function GetLaningLastHitStep(bot, creep, distance, tower, enemies)
     local range, lane = bot:GetAttackRange(), bot:GetAssignedLane()
-    if range < 310 or (lane ~= LANE_TOP and lane ~= LANE_BOT) or not J.IsInLaningPhase(bot)
+    if (not J.IsCore(bot) and (range < 310 or (lane ~= LANE_TOP and lane ~= LANE_BOT)))
+        or not J.IsInLaningPhase(bot)
         or J.GetHP(bot) < 0.65 or J.IsRetreating(bot)
         or bot:WasRecentlyDamagedByAnyHero(2) or bot:WasRecentlyDamagedByCreep(1.5) then return nil end
     local origin = bot:GetLocation()
     local point = J.VectorTowards(origin, creep:GetLocation(), distance - range + 20)
-    if not IsLocationPassable(point) or GetHeightLevel(point) ~= GetHeightLevel(origin)
+    local middle = J.VectorTowards(origin, point, (distance - range + 20) * 0.5)
+    if not IsLocationVisible(point) or not IsLocationPassable(point) or not IsLocationPassable(middle)
+        or GetHeightLevel(point) ~= GetHeightLevel(origin)
         or (J.IsValidBuilding(tower) and GetUnitToLocationDistance(tower, point) <= 850)
         or #J.GetLastSeenEnemiesNearLoc(point, 650) > 0 then return nil end
     for _, enemy in ipairs(enemies or {}) do
@@ -1948,7 +1951,7 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
     local attackers = GetLaneAttackers(bot, bot:GetNearbyTowers(1600, false)[1], enemies or {},
         bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE))
     local attackInterval = bot:GetSecondsPerAttack()
-    local holdsAttack, supportStep = false, nil
+    local holdsAttack, approachStep = false, nil
     local best, bestScore, approach, approachScore, urgentApproach = nil, -math.huge, nil, -math.huge, false
     local bestValue, bestExpires, reserveValue = 0, false, 0
     for _, creep in ipairs(creeps) do
@@ -1990,15 +1993,19 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
                     end
                     local lethalOnArrival = remaining <= damage
                     local approachPriority = value / 35 + score
-                    if not inRange and remaining <= damage * 1.45
+                    if not inRange
                         and (approach == nil or lethalOnArrival and not urgentApproach
                             or lethalOnArrival == urgentApproach and approachPriority > approachScore) then
+                        local nearWindow = remaining <= damage * 1.45
+                        -- Start a short step while the next hits are making a valuable creep collectible.
+                        local forecast = not nearWindow and valuable and distance <= range + 160
+                            and remaining <= damage * 3 and CanReserveLaneCreepShot(creep, damage, delay, delay + 0.85, attackers)
                         local step
-                        if not core and not coveringLane and (lethalOnArrival or valuable) then
-                            step = GetSupportLastHitStep(bot, creep, distance, tower, enemies)
+                        if forecast or nearWindow and not core and not coveringLane and (lethalOnArrival or valuable) then
+                            step = GetLaningLastHitStep(bot, creep, distance, tower, enemies)
                         end
-                        if core or coveringLane or step then
-                            approach, approachScore, supportStep = creep, approachPriority, step
+                        if step or nearWindow and (core or coveringLane) then
+                            approach, approachScore, approachStep = creep, approachPriority, step
                             urgentApproach = lethalOnArrival
                         end
                     end
@@ -2008,7 +2015,7 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
     end
     if reserveValue > bestValue then return nil, false, true end
     if best ~= nil then return best, false end
-    return approach, approach ~= nil, holdsAttack, urgentApproach, supportStep
+    return approach, approach ~= nil, holdsAttack, urgentApproach, approachStep
 end
 
 function J.TrySecureNativeMidLastHit(bot)
@@ -11295,12 +11302,19 @@ function J.CheckBotIdleState()
 	return true
 end
 
+local watcherExitSteps = {
+	{700, 1, 0}, {700, 0.82, 0.58}, {700, 0.82, -0.58},
+	{365, 1, 0}, {365, 0.82, 0.58}, {365, 0.82, -0.58},
+	{365, 0.34, 0.94}, {365, 0.34, -0.94},
+}
+
 function J.GetStalledWatcherExit(bot, destination)
 	local now = DotaTime()
 	if (bot.ohaWatcherRecoveryUntil or 0) <= now or J.CanNotUseAction(bot, false, true)
 		or bot:IsRooted() or J.IsTryingtoUseAbility(bot) or bot:HasModifier('modifier_teleporting')
+		or J.IsDefending(bot) or J.IsDoingRoshan(bot) or J.IsDoingTormentor(bot)
 		or bot:WasRecentlyDamagedByAnyHero(3) or (bot.ohaOuterTowerHoldUntil or 0) > now then return nil end
-	if not destination and bot:GetActiveMode() ~= (BOT_MODE_WATCHER or 28) then return nil end
+	-- Keep replanning during a live recovery if another mode briefly interrupts the route.
 	local origin = bot:GetLocation()
 	if #J.GetEnemiesNearLoc(origin, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(origin, 1300) > 0 then return nil end
 	local stuckAt = bot.ohaIdleRecoveryOrigin
@@ -11337,15 +11351,12 @@ function J.GetStalledWatcherExit(bot, destination)
 		and ally:GetActiveMode() ~= (BOT_MODE_WATCHER or 28) and ally:GetLocation()) or J.GetTeamFountain()
 	local distance = J.GetLocationToLocationDistance(origin, anchor)
 	if distance < (rally and 280 or 450) then return nil end
-	for _, reach in ipairs({700, 365}) do
-		local ahead = J.VectorTowards(origin, anchor, math.min(distance, reach))
+	for _, step in ipairs(watcherExitSteps) do
+		local ahead = J.VectorTowards(origin, anchor, math.min(distance, step[1]))
 		local dx, dy = ahead.x - origin.x, ahead.y - origin.y
-		for _, side in ipairs({0, 1, -1}) do
-			local point = side == 0 and ahead or Vector(origin.x + dx * 0.82 - dy * side * 0.58,
-				origin.y + dy * 0.82 + dx * side * 0.58, origin.z)
-			if (not stuckAt or J.GetLocationToLocationDistance(point, stuckAt) >= cleared + 180)
-				and SafeExit(point) then return point end
-		end
+		local point = Vector(origin.x + dx * step[2] - dy * step[3], origin.y + dy * step[2] + dx * step[3], origin.z)
+		if (not stuckAt or J.GetLocationToLocationDistance(point, stuckAt) >= cleared + 180)
+			and SafeExit(point) then return point end
 	end
 end
 

@@ -195,7 +195,7 @@ function GetDesire()
 			return 0.74
 		end
 		if J.HasPendingLaningLastHit(bot) then return J.IsCore(bot) and 0.9 or 0.55 end
-		local hitCreep, moveToCreep, reserve, urgentApproach, supportStep = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
+		local hitCreep, moveToCreep, reserve, urgentApproach, approachStep = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
 			J.GetLaningAttackDamage(bot), nInRangeEnemy)
 		if J.IsValid(hitCreep) and not moveToCreep and J.IsInRange(bot, hitCreep, botAttackRange + 100) then
 			if J.GetPosition(bot) <= 3 then return 0.9 end
@@ -203,7 +203,7 @@ function GetDesire()
 		end
 		if not engineMid and not local_mode_laning_generic and J.GetLaningTowerJointHit(bot,
 			bot:GetNearbyTowers(1050, false)[1], nInRangeEnemy) then return J.IsCore(bot) and 0.88 or 0.75 end
-		if supportStep then return 0.55 end
+		if approachStep then return J.IsCore(bot) and 0.72 or 0.55 end
 		if reserve and botAssignedLane ~= LANE_MID then return J.IsCore(bot) and 0.78 or 0.55 end
 		if urgentApproach and J.IsCore(bot)
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
@@ -446,11 +446,11 @@ local function ThinkLane()
 	nEnemyCreeps = bot:GetNearbyLaneCreeps(botAttackRange < 310 and 1200 or math.min(1600, math.max(800, botAttackRange + 300)), true)
 	nAllyCreeps = bot:GetNearbyLaneCreeps(1200, false)
 	botAssignedLane = bot:GetAssignedLane()
-	local hitCreep, moveToCreep, reserve, urgentApproach, supportStep = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
+	local hitCreep, moveToCreep, reserve, urgentApproach, approachStep = J.GetLaningLastHitTarget(bot, nEnemyCreeps, enemyTower,
 		J.GetLaningAttackDamage(bot), nInRangeEnemy)
 	-- Trace inputs as decision evidence, not as a claim that a creep was missed.
 	if J.IsCore(bot) and #nEnemyCreeps == 0 then TraceLaneDecision('no-near-wave')
-	elseif moveToCreep then TraceLaneDecision('approach-window', hitCreep)
+	elseif moveToCreep then TraceLaneDecision(approachStep and not urgentApproach and 'stage-last-hit' or 'approach-window', hitCreep)
 	elseif reserve then TraceLaneDecision('hold-for-shot')
 	elseif hitCreep == nil then TraceLaneDecision('no-lethal-window') end
 	if hitCreep ~= nil and not moveToCreep then
@@ -473,7 +473,7 @@ local function ThinkLane()
 		return
 	end
 
-	local firingPosition = supportStep or (moveToCreep
+	local firingPosition = approachStep or (moveToCreep
 		and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true)) or nil
 	-- A recovering core should enter last-hit range before an optional deny
 	-- can pin it behind the next enemy creep. Never walk without a safe point.
@@ -505,6 +505,11 @@ local function ThinkLane()
 		TraceLaneDecision('cover-core',cover)
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'protect-core-now') end
 		bot:Action_AttackUnit(cover, true)
+		return
+	end
+	if approachStep ~= nil then
+		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'last-hit-approach') end
+		bot:Action_MoveToLocation(approachStep)
 		return
 	end
 	local camp = campPlan or bot.ohaLaneCamp

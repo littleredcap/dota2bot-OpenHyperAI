@@ -109,7 +109,7 @@ function X.Think()
 		end
 	end
 
-	local hitCreep, moveToCreep, reserve, urgentApproach, supportStep = J.GetLaningLastHitTarget(bot, nEnemyCreeps, tEnemyTowers[1],
+	local hitCreep, moveToCreep, reserve, urgentApproach, approachStep = J.GetLaningLastHitTarget(bot, nEnemyCreeps, tEnemyTowers[1],
 		J.GetLaningAttackDamage(bot), tEnemyHeroes)
 	if hitCreep ~= nil and not moveToCreep then
 		J.IssueLaningAttack(bot, hitCreep)
@@ -120,9 +120,9 @@ function X.Think()
 		return
 	end
 
-	local firingPosition = supportStep or (moveToCreep
+	local firingPosition = approachStep or (moveToCreep
 		and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, tEnemyTowers[1], tEnemyHeroes, true)) or nil
-	if urgentApproach and firingPosition ~= nil then
+	if firingPosition ~= nil and (urgentApproach or approachStep and J.IsCore(bot)) then
 		bot:Action_MoveToLocation(firingPosition)
 		return
 	end

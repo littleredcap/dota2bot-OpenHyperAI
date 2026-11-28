@@ -350,10 +350,18 @@ do
     env.IsLocationPassable = function(p) return p.x >= -400 end
     local shorter = j.GetStalledWatcherExit(bot, exit)
     assert(shorter and shorter.x == -365, 'replace a blocked route with a nearer visible waypoint')
+    env.IsLocationPassable = function(p) return math.abs(p.y) >= math.abs(p.x) end
+    local lateral = j.GetStalledWatcherExit(bot, shorter)
+    assert(lateral and math.abs(lateral.y) > 300 and math.abs(lateral.x) < 150,
+        'use visible ground beside the original route when the forward exits are blocked')
     env.IsLocationPassable = yes
     bot.GetActiveMode = function() return 8 end
     bot.GetLocation = function() return point(-300) end
     assert(j.GetStalledWatcherExit(bot, exit) == exit, 'maintain the destination when another mode takes over')
+    assert(j.GetStalledWatcherExit(bot).x == -1000, 'reselect a waypoint after an interruption without an old target')
+    j.IsDefending = yes
+    assert(not j.GetStalledWatcherExit(bot, exit), 'yield to an active defense assignment')
+    j.IsDefending = no
     bot.GetLocation = function() return point(-620) end
     local farther = j.GetStalledWatcherExit(bot, exit)
     assert(farther and farther.x < -1100, 'arriving at the first waypoint can continue away from the original stall')
@@ -1004,6 +1012,30 @@ do
         'cross 220 units early for a ranged creep that is still one hit away from becoming a last hit')
     s.towerDive = true
     assert(not j.GetLaningLastHitTarget(bot, {creep}, nil, 50, {}), 'refuse the same step into recent enemy contact')
+end
+
+for _, core in ipairs({false, true}) do
+    local state, mode, creep, _, bot = fixture(core)
+    local j = mode.J
+    creep.x = 550
+    creep.GetLocation = function(self) return self.x end
+    creep.GetUnitName = function() return 'npc_dota_creep_badguys_flagbearer' end
+    state.creepHP, state.incomingDamage, state.incomingDamageAt = 135, 90, 0.75
+    state.allies = {{x = 460}}
+    local target, approach, _, urgent, point = j.GetLaningLastHitTarget(bot, {creep}, nil, 50, {})
+    assert(target == creep and approach and not urgent and point == 120,
+        'enter range early when tracked damage is about to open a valuable last-hit window')
+    assert(mode.GetDesire() == (core and 0.72 or 0.55))
+    expect(state, mode, 'move', 120)
+
+    local melee = setmetatable({x=200, GetHealth=function() return 40 end,
+        GetUnitName=function() return 'npc_dota_creep_badguys_melee' end}, {__index=creep})
+    local immediate, move = j.GetLaningLastHitTarget(bot, {creep, melee}, nil, 50, {})
+    assert(immediate == melee and not move, 'take a free last hit before staging for a future one')
+    state.wasHit = true
+    assert(not j.GetLaningLastHitTarget(bot, {creep}, nil, 50, {}), 'never stage into recent enemy pressure')
+    state.wasHit, state.incomingDamageAt = false, 2
+    assert(not j.GetLaningLastHitTarget(bot, {creep}, nil, 50, {}), 'wait for a credible incoming last-hit window')
 end
 
 do
