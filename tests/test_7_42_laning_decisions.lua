@@ -436,12 +436,44 @@ do
     carryState.partnerSupport, supportState.playerID = true, 3
     afterTrade(carryState, 0.63, 0.65)
     afterTrade(supportState, 0.65, 0.63)
-    assert(carryMode.J.GetSideLaneHoldTower(carry) and not supportMode.J.GetSideLaneHoldTower(support),
-        'both laners independently leave the wave with the core at comparable health')
+    assert(not carryMode.J.GetSideLaneHoldTower(carry) and not supportMode.J.GetSideLaneHoldTower(support),
+        'ordinary chip damage does not send either active laner back to cover an empty tower')
     afterTrade(carryState, 0.38, 0.69)
     afterTrade(supportState, 0.69, 0.38)
     assert(not carryMode.J.GetSideLaneHoldTower(carry) and supportMode.J.GetSideLaneHoldTower(support),
         'the support takes over when the core is in worse shape')
+end
+
+do
+    local state, mode, creep = fixture(false, false)
+    local ranged = setmetatable({x=120, GetTeam=function() return 2 end,
+        GetUnitName=function() return 'npc_dota_creep_goodguys_ranged' end}, {__index=creep})
+    mode.GetTower().x = 300
+    state.partner, state.partnerRetreat, state.partnerHP = true, true, 0.32
+    state.noCreeps, state.deniable, state.allies = true, true, {ranged}
+    assert(mode.GetDesire() == 0.82, 'take over when the lane partner really resets')
+    expect(state, mode, 'attack', ranged)
+    state.noCreeps = false
+    expect(state, mode, 'attack', creep)
+end
+
+do
+    local state, mode, creep, _, bot = fixture(true, false)
+    local ranged = setmetatable({x=-245, GetTeam=function() return 2 end,
+        GetUnitName=function() return 'npc_dota_creep_goodguys_ranged' end,
+        GetLocation=function(self) return self.x end, GetHealth=function() return 30 end}, {__index=creep})
+    local tower = mode.GetTower()
+    tower.x = -450
+    mode.GetTower = function(team) return team == 2 and tower or nil end
+    bot.GetAttackRange = function() return 150 end
+    state.creepHP, state.deniable, state.allies = 300, true, {ranged}
+    assert(mode.GetDesire() == 0.69, 'a one-step contested ranged deny is an active lane opportunity')
+    expect(state, mode, 'move', -115)
+    bot.x = -115
+    expect(state, mode, 'attack', ranged)
+    bot.x, creep.x, state.creepHP = 0, 100, 30
+    assert(not mode.J.GetLaningDenyStep(bot, {ranged}, nil, {}), 'do not delay the immediately available last hit')
+    expect(state, mode, 'attack', creep)
 end
 
 do

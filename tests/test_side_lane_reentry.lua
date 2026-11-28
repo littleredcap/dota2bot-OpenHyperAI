@@ -24,16 +24,17 @@ bot.WasRecentlyDamagedByAnyHero=function() return state.hit end
 bot.HasModifier,ally.HasModifier=noop,noop
 bot.GetTeam=function() return 2 end
 bot.GetAttackRange=function() return 150 end
-local j={IsInLaningPhase=function() return true end,IsCore=function() return true end,
+local j={IsInLaningPhase=function() return not state.laneEnded end,IsCore=function() return true end,IsModeTurbo=noop,
     GetHP=function(unit) return unit==bot and state.hp or 0.9 end,
     GetMP=function() return state.mp or 1 end,
     IsDisabled=noop, IsValidBuilding=function(x) return x==tower end, IsValid=function(x) return x~=nil end,
     IsValidHero=function(x) return x==ally end, GetLanePartner=function() return ally end,
     IsRetreating=noop, GetLocationTowardDistanceLocation=function(unit,b,d) return toward(unit:GetLocation(),b,d) end,VectorTowards=toward,
     GetLocationToLocationDistance=distance,GetEnemiesNearLoc=hostile,
+    IsInRange=function(a,b,r) return distance(a.x,b.x) <= r end,
     GetLastSeenEnemiesNearLoc=hostile}
 local env=setmetatable({J=j,LANE_TOP=1,LANE_BOT=2,TOWER_TOP_1=1,TOWER_BOT_1=2,
-    UNIT_LIST_ENEMY_CREEPS=1,UNIT_LIST_ALLIED_CREEPS=2,DotaTime=function() return 300 end,
+    UNIT_LIST_ENEMY_CREEPS=1,UNIT_LIST_ALLIED_CREEPS=2,DotaTime=function() return state.time or 300 end,
     GetUnitList=function(k) return k==1 and {wave} or {cover} end,
     GetTower=function(team) return team==2 and tower or nil end,GetOpposingTeam=function() return 3 end,
     GetLaneFrontLocation=function() return wave.x end,GetAmountAlongLane=function() return {distance=0} end,
@@ -69,6 +70,13 @@ bot.x=200
 ally.x,cover.x=1700,2000
 state.fog=true
 assert(not j.GetSideLaneReturnPoint(bot,1),'no commitment into a blind endpoint')
+state.fog, state.time = false, 620
+assert(j.GetSideLaneReturnPoint(bot,1)==1750,'a nearby side core reconnects after ten minutes while still laning')
+bot.x=-3500
+assert(not j.GetSideLaneReturnPoint(bot,1),'the later return cannot recall a core far from the tower')
+bot.x, state.laneEnded = 200, true
+assert(not j.GetSideLaneReturnPoint(bot,1),'the late return stops when the laning phase ends')
+state.time, state.laneEnded = nil, false
 print('PASS: side core reconnects to a visible wave, but not through live threat or fog.')
 
 -- Exercise the production choice of a small retreat versus a real retreat.

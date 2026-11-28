@@ -456,6 +456,7 @@ local function fixture(opts)
             return {}
         end
         jmz.IsInLaningPhase = function() return opts.laning == true end
+        jmz.ShouldKeepLaningWave = no
         jmz.IsItemAvailable = function() return not opts.route and midas or nil end
         jmz.IsInAllyArea = yes
         jmz.CanCastAbility = function(item) return item == midas end
@@ -871,6 +872,27 @@ do
     opts.hp, opts.carryHarass, opts.laneThreat = 1, false, false
     farm.AdvanceTime(86)
     same(farm.GetDesire(), 0, 'an expired reset never keeps the carry off a clear lane')
+end
+
+do
+    local opts = {farmBot=1, route=true, time=530, laning=true, direct=true, farmLevel=4, farmNetWorth=1500,
+        laneTower=true, farmAssignedLane=3}
+    local _, _, members, _, lane, farm, _, jmz = fixture(opts)
+    local bot = members[1]
+    bot.ohaCarryLaneRecoveryUntil = 570
+    bot.GetNearbyHeroes = function() return {} end
+    bot.GetNearbyTowers = bot.GetNearbyHeroes
+    jmz.ShouldKeepLaningWave = function() return true end
+    local safe = false
+    jmz.IsLaningUnderPressure = function() return not safe end
+    jmz.GetLaningCreepPosition = function(_, assignedLane)
+        assert(assignedLane == lane.Bot)
+        return bot:GetLocation()
+    end
+    same(farm.GetDesire(), 0.67, 'an unsafe lane still allows the forced reset to use alternate farm')
+    safe = true
+    same(farm.GetDesire(), 0, 'a real safe wave ends the forced reset before its timer expires')
+    assert(not bot.ohaCarryLaneRecoveryUntil, 'clear the same recovery state read by farm and support')
 end
 
 do

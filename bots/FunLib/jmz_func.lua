@@ -1373,24 +1373,13 @@ function J.GetSideLaneHoldTower(bot)
 
     local absent = not partner:IsAlive() or partner:DistanceFromFountain() < 1200
         or (not J.IsInRange(bot, partner, 2000) and not J.IsInRange(partner, tower, 2000))
-    -- One healthy(ish) partner can hold a sheltered tower while the
-    -- more endangered hero resets. Do not try to hold an overrun lane.
-    if hp >= 0.48 and J.IsInRange(bot, tower, 1200) and not absent
-        and J.GetHP(partner) < 0.35 and J.GetHP(partner) < hp - 0.15 then
-        local enemies = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
-        if #enemies <= 1 then return SafeLaneTower(bot, tower, enemies, hp) end
-    end
     if not absent then
-        if not J.IsCore(bot) and (partner.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
-            and J.IsCore(partner) and J.GetPosition(partner) == 1
-            and J.IsInRange(partner, tower, 1850) and hp >= 0.58
-            and (#J.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 1550) >= 2 or J.IsRetreating(partner)) then
-            local covered = SafeLaneTower(bot, tower, bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE), hp)
-            if covered then return covered end
-        end
         local partnerHP = J.GetHP(partner)
-        if partnerHP >= 0.32 and not J.IsRetreating(partner) and not partner:HasModifier('modifier_teleporting')
-            and not (partnerHP < 0.72 and partner:WasRecentlyDamagedByAnyHero(5)) then
+        local teleporting = partner:HasModifier('modifier_teleporting')
+        local departing = teleporting or J.IsRetreating(partner)
+        local needsReset = partnerHP < 0.34 or (partnerHP < 0.45 and partner:WasRecentlyDamagedByAnyHero(3))
+        -- A partner continuing to play the wave still needs a lanemate after an ordinary trade.
+        if not departing and not needsReset then
             if J.IsCore(bot) and hp >= 0.45 and J.IsInRange(bot, tower, 1300) then
                 local enemies = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
                 if J.IsLaningUnderPressure(bot, enemies, bot:GetNearbyTowers(1200, true)[1]) then
@@ -1399,7 +1388,7 @@ function J.GetSideLaneHoldTower(bot)
             end
             return nil
         end
-        if not partner:HasModifier('modifier_teleporting') then
+        if not teleporting and (not departing or J.IsRetreating(bot)) then
             local readiness = hp + (J.IsCore(bot) and 0.06 or 0)
             local otherReadiness = partnerHP + (J.IsCore(partner) and 0.06 or 0)
             if readiness < otherReadiness or (readiness == otherReadiness and bot:GetPlayerID() > partner:GetPlayerID()) then return nil end
@@ -1519,9 +1508,9 @@ end
 -- local last-hit scan. This is a walk to experience range, not a commit.
 function J.GetSideLaneReturnPoint(bot, lane)
     local now = DotaTime()
-    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 40 or now >= 720 then return nil end
+    if (lane ~= LANE_TOP and lane ~= LANE_BOT) or now < 40 or not J.IsInLaningPhase(bot) then return nil end
     local core = J.IsCore(bot)
-    if core and now >= 600 or not J.IsInLaningPhase(bot) or J.GetHP(bot) < (core and 0.58 or 0.65)
+    if J.GetHP(bot) < (core and 0.58 or 0.65)
         or not core and bot:GetAttackRange() < 310
         or not bot.DistanceFromFountain or bot:WasRecentlyDamagedByAnyHero(2)
         or bot:HasModifier('modifier_teleporting') or J.IsDisabled(bot)
@@ -1532,6 +1521,8 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local origin, team = bot:GetLocation(), bot:GetTeam()
     local tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
     if not J.IsValidBuilding(tower) then return nil end
+    -- After the initial lane phase, reconnect to a nearby wave without calling a core back across the map.
+    if now >= (J.IsModeTurbo() and 480 or 600) and not J.IsInRange(bot, tower, 2800) then return nil end
     local partner = J.GetLanePartner(bot, true)
     if not core and (not J.IsValidHero(partner) or not J.IsCore(partner) or J.GetHP(partner) < 0.60
         or J.IsDisabled(partner) or J.IsRetreating(partner) or partner:HasModifier('modifier_teleporting')) then return nil end
@@ -2150,6 +2141,42 @@ function J.GetLaningDenyTarget(bot, creeps, tower, enemies)
         end
     end
     return best, reserve, urgent
+end
+
+function J.GetLaningDenyStep(bot, creeps, enemyTower, enemies)
+    local lane, range = bot:GetAssignedLane(), bot:GetAttackRange()
+    if not J.IsCore(bot) or (lane ~= LANE_TOP and lane ~= LANE_BOT) or range >= 310 or not J.IsInLaningPhase(bot)
+        or J.GetHP(bot) < 0.60 or J.IsRetreating(bot) or bot:IsRooted() or bot:IsDisarmed() then return nil end
+    local tower = GetTower(bot:GetTeam(), lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
+    if not J.IsValidBuilding(tower) then return nil end
+    local origin, retreatDistance = bot:GetLocation(), GetUnitToUnitDistance(bot, tower)
+    local attackers
+    for _, creep in ipairs(creeps) do
+        if J.IsValid(creep) and J.CanBeAttacked(creep) and J.GetHP(creep) < 0.5
+            and (J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep)) then
+            local gap = GetUnitToUnitDistance(bot, creep) - range
+            if gap > 0 and gap <= 160 then
+                local point = J.VectorTowards(origin, creep:GetLocation(), gap + 20)
+                if GetUnitToLocationDistance(tower, point) <= retreatDistance + 25
+                    and IsLocationPassable(point) and IsLocationVisible(point)
+                    and (not J.IsValidBuilding(enemyTower) or GetUnitToLocationDistance(enemyTower, point) > 900)
+                    and #J.GetLastSeenEnemiesNearLoc(point, 700) <= #enemies then
+                    attackers = attackers or GetLaneAttackers(bot, enemyTower, enemies,
+                        bot:GetNearbyHeroes(1600, false, BOT_MODE_NONE))
+                    local impact, release = J.GetAttackProDelayTime(bot, creep)
+                    local health = GetLaneCreepHealthAt(creep, impact, attackers)
+                    local damage = LaneAttackDamage(bot, creep, bot:GetAttackDamage())
+                    -- The move and deny use the next swing. Keep it available for our own next last hit.
+                    local occupied = math.max(release, gap / math.max(1, bot:GetCurrentMovementSpeed()) + bot:GetSecondsPerAttack())
+                    if health > 0 and health <= damage
+                        and J.GetVisibleThreatAt(bot, enemies, point, release + 0.7) < bot:GetHealth() * 0.20
+                        and J.CanSpendLaneTradeTime(bot, enemyTower, enemies, occupied) then
+                        return point, creep
+                    end
+                end
+            end
+        end
+    end
 end
 
 local function IsContestForLaneCreep(bot, enemy, enemies)

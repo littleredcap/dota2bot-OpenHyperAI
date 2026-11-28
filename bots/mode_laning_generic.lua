@@ -187,6 +187,8 @@ function GetDesire()
 			and J.GetLaningCreepPosition(bot, botAssignedLane, {hitCreep}, enemyTower, nInRangeEnemy, true) ~= nil then return 0.74 end
 		local deny, reserveDeny, urgentDeny = J.GetLaningDenyTarget(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
 		if urgentDeny and not local_mode_laning_generic then return 0.76 end
+		if not local_mode_laning_generic and not deny and not reserveDeny
+			and J.GetLaningDenyStep(bot, nAllyCreeps, enemyTower, nInRangeEnemy) then return 0.69 end
 		local nearbyTower = J.GetTowerCoveredLaneClash(bot)
 		if not local_mode_laning_generic and hitCreep == nil and not reserve
 			and J.GetSideLaneCreepDrag(bot, nInRangeEnemy, enemyTower) then return 0.73 end
@@ -301,8 +303,10 @@ local function ThinkLane()
 		local wave, covered = J.GetTowerCoveredLaneCreeps(bot, holdTower, bot:GetNearbyLaneCreeps(1000, true), nInRangeEnemy)
 		local current = bot:GetAttackTarget()
 		local hold = J.AdjustLocationWithOffsetTowardsFountain(holdTower:GetLocation(), 300)
+		local pending = J.HasPendingLaningLastHit(bot) and bot.ohaLaningAttackTarget or nil
+		if pending and not underPressure and pending:GetTeam() == bot:GetTeam()
+			and J.IsInRange(pending, holdTower, 875) then return end
 		if #wave > 0 then
-			local pending = J.HasPendingLaningLastHit(bot) and bot.ohaLaningAttackTarget or nil
 			if pending or J.IsFinishingLaningAttack(bot, current) then
 				for _, creep in ipairs(wave) do if (pending or current) == creep then return end end
 			end
@@ -317,6 +321,15 @@ local function ThinkLane()
 			if covered then
 				local point = J.AdjustLocationWithOffsetTowardsFountain(wave[1]:GetLocation(), math.max(240, bot:GetAttackRange() - 50))
 				if IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 900) == 0 then hold = point end
+			end
+		end
+		-- On a real reset, the laner covering the tower can still deny from safety.
+		if not underPressure and J.IsInRange(bot, holdTower, 900) then
+			local deny = J.GetLaningDenyTarget(bot, bot:GetNearbyLaneCreeps(bot:GetAttackRange(), false), enemyTower, nInRangeEnemy)
+			if deny and J.IsInRange(deny, holdTower, 875) then
+				TraceLaneDecision('tower-lane-deny', deny)
+				J.IssueLaningAttack(bot, deny)
+				return
 			end
 		end
 		local enemyTower = bot:GetNearbyTowers(1500, true)[1]
@@ -405,6 +418,15 @@ local function ThinkLane()
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'protect-core-now') end
 		bot:Action_AttackUnit(cover, true)
 		return
+	end
+	if not denyCreep and not reserveDeny and not J.IsFinishingLaningAttack(bot, attackTarget) then
+		local point, deny = J.GetLaningDenyStep(bot, nAllyCreeps, enemyTower, nInRangeEnemy)
+		if point then
+			TraceLaneDecision('deny-step', deny)
+			if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'valuable-deny') end
+			bot:Action_MoveToLocation(point)
+			return
+		end
 	end
 	if not J.IsFinishingLaningAttack(bot, attackTarget) then
 		local target, step, tradeClash = J.GetSideLaneDuoTrade(bot, nInRangeEnemy, enemyTower, botAttackRange)

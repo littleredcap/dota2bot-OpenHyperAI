@@ -408,6 +408,15 @@ local function GetLaningRecoveryDesire()
 	local tower = GetTower(team, towerId)
 	-- A recovering core should pick up a visible, reachable wave on its own
 	-- side before going to a nearby camp. Leave normal on-lane timing alone.
+	if displaced and J.IsValidBuilding(tower) and J.GetHP(bot) >= 0.58 and J.ShouldKeepLaningWave(bot) then
+		local enemies = bot:GetNearbyHeroes(1600, true, BOT_MODE_NONE)
+		local enemyTower = bot:GetNearbyTowers(1200, true)[1]
+		if not J.IsLaningUnderPressure(bot, enemies, enemyTower)
+			and J.GetLaningCreepPosition(bot, lane, bot:GetNearbyLaneCreeps(650, true), enemyTower, enemies, true) then
+			bot.ohaCarryLaneRecoveryUntil = nil
+			return BOT_MODE_DESIRE_NONE
+		end
+	end
 	if time < (turbo and 8 * 60 or 10 * 60) and J.IsValidBuilding(tower)
 		and J.GetHP(bot) >= 0.55 and (displaced or GetAmountAlongLane(lane, bot:GetLocation()).distance > 950) then
 		local bestDistance = 3800
