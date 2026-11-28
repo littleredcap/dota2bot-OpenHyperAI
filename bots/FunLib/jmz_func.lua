@@ -9433,8 +9433,10 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local damaged = bot:WasRecentlyDamagedByAnyHero(2)
 	local losingDuel = empoweredAttacker ~= nil and backup == 0 and J.GetHP(bot) <= 0.8
 		and (J.GetHP(bot) < 0.5 or J.GetHP(empoweredAttacker) > 0.35)
+	local exposedRangedCore = now >= 8 * 60 and backup == 0 and total == 2 and #enemies == 2
+		and J.IsCore(bot) and bot:GetAttackRange() >= 400
 	local closing = 0
-	if now >= 8 * 60 and backup == 0 and total >= 3 and close > 0 and close < 3 then
+	if now >= 8 * 60 and backup == 0 and close > 0 and (exposedRangedCore or (total >= 3 and close < 3)) then
 		for _, enemy in ipairs(enemies) do
 			local distance = GetUnitToUnitDistance(bot, enemy)
 			if J.GetLocationToLocationDistance(enemy:GetExtrapolatedLocation(0.8), location) < distance - 90 then
@@ -9442,13 +9444,22 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 			end
 		end
 	end
+	local losingGank = false
+	if exposedRangedCore and (closing > 0 or underFire) then
+		local window = 4.5
+		local damage, control, contacts = J.GetVisibleThreatAt(bot, enemies, location, window, true)
+		local health = bot:GetHealth() + window * bot:GetHealthRegen()
+		-- Leave a margin for follow-up attacks while a reachable disable prevents escape.
+		losingGank = contacts >= 2 and damage >= health * (control and 0.80 or 1)
+	end
 	local isolated = now >= 8 * 60 and close >= 2 and total >= backup + 2
 		and (backup == 0 or J.GetHP(bot) < 0.7)
 		and (close >= 3 or damaged)
 	local losingExchange = now >= 8 * 60 and damaged and J.GetHP(bot) <= 0.58
 		and (close >= 2 or (underFire and backup == 0)) and total >= backup + 1
 		and not J.WeAreStronger(bot, 1400)
-	if losingDuel or closing >= 2 or isolated or losingExchange or (total >= 4 and (incoming >= 2 or close >= 3) and total >= backup + 3) then
+	if losingDuel or losingGank or (total >= 3 and closing >= 2) or isolated or losingExchange
+		or (total >= 4 and (incoming >= 2 or close >= 3) and total >= backup + 3) then
 		bot.ohaReinforcementRetreatAt = now
 		return true
 	end

@@ -8513,6 +8513,7 @@ function ItemUsageThink()
 end
 
 function X.TraceDefenseMovement(now)
+	if now < 0 then return end
 	local position = bot:GetLocation()
 	local sample = bot.ohaDefenseMovement
 	if sample and now >= sample.sampled and now < sample.sampled + 0.5 then return end

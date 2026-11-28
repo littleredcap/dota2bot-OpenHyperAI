@@ -548,6 +548,20 @@ local function check(opts, id, expected, label)
     assert(#orders==0,label .. ' emitted an order')
 end
 
+do
+    local _, defend, members, orders, lane, _, buildings, _, advanceTime = fixture({time=-80, attackers=1})
+    for _, member in ipairs(members) do
+        for _, id in pairs(lane) do
+            same(defend.GetDefendDesire(member, id), 0, 'zero tower defense desire before the horn')
+            defend.DefendThink(member, id)
+        end
+        assert(not defend.GetBaseCreepResponse(member, buildings.ourAncient), 'no base recall during rune setup')
+    end
+    assert(#orders == 0, 'a stale selected defense mode must not replace opening movement')
+    advanceTime(80)
+    same(defend.GetDefendDesire(members[1], lane.Mid), 0.97, 'real base threats remain actionable after the horn')
+end
+
 check({}, 1, 0.88, '4v2 approach outranks optional farm')
 check({x=7500}, 1, 0.08, 'isolated on high ground')
 check({x=7500,wave=true}, 1, 0.88, 'allied wave supports high ground')

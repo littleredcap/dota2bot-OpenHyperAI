@@ -356,7 +356,7 @@ local function IsStandingHighGroundBuilding(unit)
     return unit ~= nil and not (unit.IsNull and unit:IsNull()) and IsValidBuildingTarget(unit)
 end
 function IsBaseThreatActive()
-    return DotaTime() < (baseThreatUntil or -1)
+    return baseThreatUntil >= 0 and DotaTime() < baseThreatUntil
 end
 local function GetInnerBaseAttacker(ancient)
     if not IsValidBuildingTarget(ancient) then return nil end
@@ -467,7 +467,7 @@ function GetBaseCreepDefender(ancientLoc, alreadyAssigned)
     return best
 end
 function ____exports.GetBaseCreepResponse(bot, ancient)
-    if not IsValidBuildingTarget(ancient) then
+    if DotaTime() < 0 or not IsValidBuildingTarget(ancient) then
         return false, false
     end
     local attackers = GetBaseCreepThreatCount(ancient)
@@ -1026,6 +1026,7 @@ local function GetPrimaryTowerSiege(highGround, earlyResponse)
 end
 
 function ____exports.GetDefendDesireHelper(bot, lane)
+    if DotaTime() < 0 then return BotModeDesire.None end
     if bot.laneToDefend == nil then
         bot.laneToDefend = lane
     end
@@ -1491,7 +1492,7 @@ end
 
 function ____exports.DefendThink(bot, lane)
     local now = DotaTime()
-    if jmz.CanNotUseAction(bot) then
+    if now < 0 or jmz.CanNotUseAction(bot) then
         return
     end
     local response = bot.ohaHighGroundResponse

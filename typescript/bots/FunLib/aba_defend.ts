@@ -246,7 +246,7 @@ function IsStandingHighGroundBuilding(unit: Unit | null): boolean {
     return unit !== null && !unit.IsNull?.() && IsValidBuildingTarget(unit);
 }
 function IsBaseThreatActive(): boolean {
-    return DotaTime() < (baseThreatUntil || -1);
+    return baseThreatUntil >= 0 && DotaTime() < baseThreatUntil;
 }
 
 // Lane entrances also lie within the broad Ancient alert radius. Check what
@@ -372,7 +372,7 @@ function GetBaseCreepDefender(ancientLoc: Vector, alreadyAssigned: Unit[]): Unit
 
 // Both modes ask the same live question; no mode has to run its desire first.
 export function GetBaseCreepResponse(bot: Unit, ancient: Unit | null): LuaMultiReturn<[boolean, boolean]> {
-    if (!IsValidBuildingTarget(ancient)) return $multi(false, false);
+    if (DotaTime() < 0 || !IsValidBuildingTarget(ancient)) return $multi(false, false);
     const attackers = GetBaseCreepThreatCount(ancient);
     if (attackers === 0) return $multi(false, false);
     const ancientHP = ancient.GetHealth() / math.max(ancient.GetMaxHealth(), 1);
@@ -762,6 +762,7 @@ function GetPrimaryTowerSiege(highGround: boolean, earlyResponse = false): LuaMu
 }
 
 export function GetDefendDesireHelper(bot: Unit, lane: Lane): BotModeDesire {
+    if (DotaTime() < 0) return BotModeDesire.None;
     if ((bot as any).laneToDefend == null) (bot as any).laneToDefend = lane;
     if ((bot as any).DefendLaneDesire == null) (bot as any).DefendLaneDesire = [0, 0, 0];
 
@@ -1172,7 +1173,7 @@ function AttackHighGroundWaveFromHere(bot: Unit, tower: Unit, rear: Vector | und
 export function DefendThink(bot: Unit, lane: Lane) {
     const now = DotaTime();
 
-    if (jmz.CanNotUseAction(bot)) return;
+    if (now < 0 || jmz.CanNotUseAction(bot)) return;
     let response = (bot as any).ohaHighGroundResponse;
     if (response && !IsStandingHighGroundBuilding(response.tower)) {
         (bot as any).ohaHighGroundResponse = undefined;

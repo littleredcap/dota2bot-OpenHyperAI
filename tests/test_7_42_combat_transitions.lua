@@ -291,6 +291,30 @@ do
 end
 
 do
+    local state, mode, bot, core, _, enemy, reinforcement, j = fixture(false)
+    state.time, state.hp, bot.core, core.retreating = 13 * 60 + 21, 1, true, true
+    enemy.x, reinforcement.x, reinforcement.alive = 729, 828, true
+    enemy.GetExtrapolatedLocation = function(self) return pos(self.x - 170) end
+    local damage, control = 850, true
+    j.GetVisibleThreatAt = function(unit, enemies, _, seconds, checkControl)
+        assert(unit == bot and #enemies == 2 and seconds == 4.5 and checkControl)
+        return damage, control, #enemies
+    end
+
+    setfenv(assert(loadfile('bots/mode_retreat_generic.lua')), mode)()
+    assert(mode.GetDesire() > mode.BOT_MODE_DESIRE_ABSOLUTE,
+        'an isolated ranged core withdraws before taking damage from two closing threats')
+    state.time, control = state.time + 2, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'nonlethal damage without control leaves an escape margin')
+    damage = 1060
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'two opponents can also threaten lethal damage without control')
+    state.time, core.retreating = state.time + 2, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'available backup prevents the isolated-core rule')
+    core.retreating, reinforcement.visible = true, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'do not use the second opponent through fog')
+end
+
+do
     local state, mode, bot, core = fixture(true)
     core.retreating = true
     bot.ohaOuterTowerHoldUntil = state.time + 3
