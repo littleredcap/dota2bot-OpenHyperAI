@@ -131,18 +131,20 @@ local function CancelFarmOrder()
 end
 
 local function MoveToFarm(location)
-	if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, location, false, true) then CancelFarmOrder(); return end
+	if J.CanTakePostFightTrip and not J.CanTakePostFightTrip(bot, location, false, true) then CancelFarmOrder(); return false end
 	bot:Action_MoveToLocation(location)
 	issuedFarmOrder = true
+	return true
 end
 
 local function AttackFarmTarget(target)
 	if J.CanTakePostFightTrip and target.GetLocation and not J.CanTakePostFightTrip(bot, target:GetLocation(), false, true) then
 		CancelFarmOrder()
-		return
+		return false
 	end
 	bot:Action_AttackUnit(target, true)
 	issuedFarmOrder = true
+	return true
 end
 
 local function IsFarmPathSafe(location)
@@ -446,7 +448,7 @@ end
 
 local shelterFarmSince, shelterFarmTask, shelterFarmScanAt = nil, nil, 0
 local shelterFarmActive = false
-local idleCamp
+local idleCamp, rejectedIdleCamp, retryIdleCampAt
 local function GetShelterCampCreeps(camp, neutrals)
 	local loc, creeps = camp.cattr.location, {}
 	local health = 0
@@ -545,9 +547,16 @@ local function WorkVisibleCamp(camp)
 	if not CanFarmCamp(camp) then return false end
 	local target = J.Site.FindFarmNeutralTarget(GetShelterCampCreeps(camp, bot:GetNearbyNeutralCreeps(1600)))
 	if not J.IsValid(target) then return false end
+	local ordered
+	if J.IsInRange(bot, target, bot:GetAttackRange() + 100) then
+		ordered = AttackFarmTarget(target)
+	else
+		local destination = target:GetLocation()
+		if not IsLocationPassable(destination) then destination = camp.cattr.location end
+		ordered = IsLocationPassable(destination) and MoveToFarm(destination)
+	end
+	if not ordered then return false end
 	bot.ohaFarmCampClaim = {location=camp.cattr.location, expires=DotaTime()+3}
-	if J.IsInRange(bot, target, bot:GetAttackRange() + 100) then AttackFarmTarget(target)
-	else MoveToFarm(target:GetLocation()) end
 	return true
 end
 
@@ -988,6 +997,7 @@ function GetDesireHelper()
 			local point = camp.cattr.location
 			local distance = GetUnitToLocationDistance(bot, point)
 			if distance < gap and camp.cattr.team == team and IsLocationVisible(point)
+				and (camp.cattr ~= rejectedIdleCamp or DotaTime() >= retryIdleCampAt)
 				and #GetShelterCampCreeps(camp, neutrals) > 0 and CanFarmCamp(camp) then
 				idleCamp, gap = camp, distance
 			end
@@ -1022,8 +1032,12 @@ function GetDesireHelper()
 		end
 		if bot.ohaIdleRecoveryOrigin and GetUnitToLocationDistance(bot, bot.ohaIdleRecoveryOrigin) < 700 then
 			local ally = J.GetClosestAlly(bot, 3500, true)
-			local rally = ally and GetUnitToUnitDistance(bot, ally) > 650 and ally:GetLocation() or J.GetTeamFountain()
-			if IsFarmPathSafe(rally) and IsFarmLocationSafe(rally) then idleRally = rally; return 0.72 end
+			local rally = ally and GetUnitToUnitDistance(bot, ally) > 650 and ally:GetLocation()
+			if not rally and bot:DistanceFromFountain() >= 1250 then rally = J.GetTeamFountain() end
+			if rally and IsLocationPassable(rally) and IsFarmPathSafe(rally) and IsFarmLocationSafe(rally) then
+				idleRally = rally
+				return 0.72
+			end
 		end
 	end
 	local shelteredDesire = GetShelteredResourceDesire()
@@ -1415,11 +1429,11 @@ function Think()
 		return
 	end
 	if idleCamp then
-		if (bot.ohaIdleRecoveryUntil or 0) <= DotaTime() or bot:WasRecentlyDamagedByAnyHero(3)
-			or not IsLocationVisible(idleCamp.cattr.location) or not WorkVisibleCamp(idleCamp) then
-			idleCamp, bot.ohaFarmCampClaim = nil, nil
-			CancelFarmOrder()
-		end
+		if (bot.ohaIdleRecoveryUntil or 0) > DotaTime() and not bot:WasRecentlyDamagedByAnyHero(3)
+			and IsLocationVisible(idleCamp.cattr.location) and WorkVisibleCamp(idleCamp) then return end
+		rejectedIdleCamp, retryIdleCampAt = idleCamp.cattr, DotaTime() + 4
+		idleCamp, bot.ohaFarmCampClaim = nil, nil
+		CancelFarmOrder()
 		return
 	end
 	if sideWaveDesire then

@@ -78,6 +78,7 @@ local bot = {
 }
 
 local J = {
+    CheckBotIdleState = no,
     GetUserHeroConfig = function() end,
     GetProperTarget = function() return enemy end,
     GetNearbyHeroes = empty, GetAlliesNearLoc = empty,

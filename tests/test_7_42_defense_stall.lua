@@ -12,6 +12,7 @@ local busy, teleport, unsafe, hostileAtHold = false,false,false,false
 creep.GetLocation = function() return creep.x end
 bot.GetLocation = function() return bot.x end
 bot.GetAttackRange = function() return 700 end
+bot.GetSecondsPerAttack = function() return 1.2 end
 bot.GetNearbyCreeps = empty
 bot.GetNearbyLaneCreeps = function(_, range) return gap(bot.x,creep.x)<=range and {creep} or {} end
 bot.HasModifier = function(_,name) return teleport and name=='modifier_teleporting' end
@@ -22,14 +23,16 @@ bot.GetAttackTarget = function() end
 bot.Action_AttackUnit = function(_,target) assert(target==creep); bot.order='attack' end
 bot.Action_MoveToLocation = function(_,point) bot.order=point end
 local foe1,foe2={},{}
+local now, attacking = 1200, false
 local j = {IsValid=function(u) return u==creep end, IsValidHero=no, CanBeAttacked=yes, GetHP=function() return 0.9 end,
+    IsAttacking=function() return attacking end,
     IsInRange=function(a,b,r) return gap(a.x,b.x)<=r end, GetLastSeenEnemiesNearLoc=empty, GetAlliesNearLoc=empty,
     GetEnemiesNearLoc=function() return hostileAtHold and {foe1,foe2} or {} end,
     AdjustLocationWithOffsetTowardsFountain=function(x,d) return x-d end,
     GetLocationToLocationDistance=gap, GetMidDefensePokeTarget=no,
     VectorTowards=function(a,b,d) return b>a and a+d or a-d end,
     CanCommitToLaneTeleport=function() return not unsafe end}
-local e=setmetatable({J=j, GetOuterTowerHoldPoint=function() return -800 end,
+local e=setmetatable({J=j, DotaTime=function() return now end, GetOuterTowerHoldPoint=function() return -800 end,
     IsLocationPassable=yes, IsLocationVisible=yes,
     GetUnitToLocationDistance=function(a,x) return gap(a.x,x) end,
     GetUnitToUnitDistance=function(a,b) return gap(a.x,b.x) end},{__index=_G})
@@ -37,6 +40,16 @@ setfenv(assert(loadstring(source:sub(a,b-1))),e)()
 assert(j.RunOuterTowerHold(bot,0,1200,false,-800) and bot.order==-745,'only take the small step to enable the attack')
 bot.x,bot.order=bot.order,nil
 assert(j.RunOuterTowerHold(bot,0,1200,false,-800) and bot.order=='attack','next tick attacks instead of ordering a return to the hold point')
+bot.GetAttackTarget=function() return creep end
+now, bot.order, attacking = now+0.30, nil, true
+bot.ohaIdleReplanUntil=now+2
+assert(j.IssueTowerDefenseAttack(bot,creep) and bot.order==nil,'idle replan does not reset a fresh shot')
+now, bot.ohaIdleReplanUntil = now+1, nil
+assert(j.IssueTowerDefenseAttack(bot,creep) and bot.order==nil,'preserve a current attack windup')
+bot.ohaIdleReplanUntil=now+1
+assert(j.IssueTowerDefenseAttack(bot,creep) and bot.order=='attack','stale attack mode must reissue a safe shot')
+bot.GetAttackTarget=function() end
+bot.ohaIdleReplanUntil=nil
 bot.x,bot.order,unsafe=-800,nil,true
 assert(not j.RunOuterTowerHold(bot,0,1200,false,-800) and not bot.order,'do not step into danger')
 unsafe=false

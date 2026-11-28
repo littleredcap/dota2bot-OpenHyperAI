@@ -1486,8 +1486,7 @@ local function AttackHighGroundWaveFromHere(bot, tower, rear)
         end
     end
     if not target or not jmz.CanCommitToLaneTeleport(bot, bot:GetLocation(), true, 850) then return false end
-    if target ~= current then bot:Action_AttackUnit(target, true) end
-    return true
+    return jmz.IssueTowerDefenseAttack(bot, target)
 end
 
 function ____exports.DefendThink(bot, lane)
@@ -1505,9 +1504,13 @@ function ____exports.DefendThink(bot, lane)
         if AttackHighGroundWaveFromHere(bot, response.tower, response.rear) then return end
         if GetUnitToLocationDistance(bot, response.stage) > 350 then
             local point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear)
+            if (not point or GetUnitToLocationDistance(bot, point) <= 180)
+                and (bot.ohaIdleReplanUntil or 0) > now and response.rear then
+                point = jmz.GetHighGroundWalkPoint(bot, response.rear)
+            end
             if point and GetUnitToLocationDistance(bot, point) > 180 then
                 bot:Action_MoveToLocation(point)
-            elseif GetUnitToLocationDistance(bot, response.stage) > 850 and not bot:WasRecentlyDamagedByAnyHero(2) then
+            elseif not point and bot:GetCurrentActionType() == BOT_ACTION_TYPE_MOVE_TO then
                 bot:Action_ClearActions(true)
             end
             return
@@ -1563,7 +1566,7 @@ function ____exports.DefendThink(bot, lane)
         )
         local intruder = GetInnerBaseAttacker(ancient)
         if intruder and jmz.CanBeAttacked(intruder) and jmz.IsInRange(bot, intruder, bot:GetAttackRange()) then
-            if bot:GetAttackTarget() ~= intruder then bot:Action_AttackUnit(intruder, true) end
+            jmz.IssueTowerDefenseAttack(bot, intruder)
             return
         end
         local toAnc = GetUnitToUnitDistance(bot, ancient)
@@ -1676,7 +1679,7 @@ function ____exports.DefendThink(bot, lane)
         and jmz.GetAvailableFightAllies(bot, hub, 1500) < math.max(2, #enemiesAtHub - 2) then
         -- No scripted contest was assigned: hold behind the tower instead of
         -- letting the first melee defender start a fight before the backline.
-        jmz.RunOuterTowerHold(bot, jmz.AdjustLocationWithOffsetTowardsFountain(hub, 650), attackRange, false)
+        jmz.RunOuterTowerHold(bot, hub, attackRange, false, jmz.AdjustLocationWithOffsetTowardsFountain(hub, 650))
         return
     end
     if #enemiesAtHub >= 2 and not ds.weAreStronger then

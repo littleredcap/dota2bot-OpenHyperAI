@@ -145,7 +145,10 @@ function X.Think()
 	end
 
 	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
-	local harassTarget = J.GetLaningHarassTarget(bot, tEnemyHeroes, tEnemyTowers[1], #bot:GetNearbyLaneCreeps(600, true))
+	local tradeHasTime = botAssignedLane == LANE_MID
+		or J.CanSpendLaneTradeTime(bot, tEnemyTowers[1], tEnemyHeroes, bot:GetSecondsPerAttack())
+	local harassTarget = tradeHasTime
+		and J.GetLaningHarassTarget(bot, tEnemyHeroes, tEnemyTowers[1], #bot:GetNearbyLaneCreeps(600, true))
 	if harassTarget ~= nil then
 		bot:Action_AttackUnit(harassTarget, true)
 		return

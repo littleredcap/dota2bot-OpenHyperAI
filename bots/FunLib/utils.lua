@@ -2260,6 +2260,8 @@ function ____exports.IsBotThinkingMeaningfulAction(bot, thinkLess, ____type)
     if ____type == nil then
         ____type = "all"
     end
+    if (bot.ohaIdleReplanUntil or 0) > DotaTime() and not bot:IsUsingAbility() and not bot:IsCastingAbility()
+        and not bot:IsChanneling() and not bot:HasModifier("modifier_teleporting") then return false end
     if thinkLess < 0 then
         thinkLess = 0
     elseif thinkLess > 10 then

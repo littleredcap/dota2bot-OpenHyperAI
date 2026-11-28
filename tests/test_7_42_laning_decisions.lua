@@ -55,6 +55,7 @@ local function fixture(core, overridden, startMid)
     bot.GetAttackCombatProficiency = function() return state.proficiency or 1 end
     bot.GetSecondsPerAttack = function() return 1.5 end
     bot.GetLastAttackTime = function() return state.previousShot or 0 end
+    bot.GetIncomingTrackingProjectiles = empty
     bot.GetAttackTarget = function() return state.attackTarget end
     bot.IsInvulnerable, bot.IsIllusion, bot.IsDisarmed = no, no, no
     bot.IsAlive, bot.IsHero, bot.IsUsingAbility, bot.IsChanneling = yes, yes, no, no
@@ -113,6 +114,8 @@ local function fixture(core, overridden, startMid)
             return state.towerDive and (state.threatSpot == nil or state.threatSpot == location) and {6, 7} or {}
         end,
         GetEnemiesNearLoc = empty,
+        GetLocationToLocationDistance = function(a, b) return math.abs(a - b) end,
+        VectorTowards = function(a, b, d) return a + (b > a and d or -d) end,
         GetLanePartner = function() return state.partner and partner or nil end,
         CanFollowLaneFight = function() return state.partner and not state.partnerRetreat end,
         IsInRange = function(a, b, range) return math.abs(a.x - b.x) <= range end,
@@ -206,6 +209,21 @@ do
     assert(not bot.ohaIdleRecoveryUntil,'stationary farming with effective attacks is productive')
     for t=0,12 do state.time=1370+t; env.J.CheckBotIdleState() end
     assert(bot.ohaIdleRecoveryUntil>state.time,'a stuck attack order with no further shots can yield to recovery')
+    bot.x, state.time = 330, 1383
+    env.J.CheckBotIdleState()
+    assert(bot.ohaIdleRecoveryUntil>state.time and not bot.ohaIdleReplanUntil,
+        'meaningful travel removes the stale-order flag, keeping the approved recovery route active')
+    state.time, state.previousShot = 1384, 1384
+    env.J.CheckBotIdleState()
+    assert(not bot.ohaIdleRecoveryUntil, 'a real attack ends the recovery override')
+    env.J.IsDefending=yes
+    bot.x = 400
+    for t=0,10 do state.time=40+t; env.J.CheckBotIdleState() end
+    assert(bot.ohaIdleReplanUntil>state.time and not bot.ohaIdleRecoveryUntil,
+        'stationary early defenders can replace a stale order without leaving for farm')
+    bot.x, state.time = 700, 51
+    env.J.CheckBotIdleState()
+    assert(not bot.ohaIdleReplanUntil,'new progress clears the stale-order override')
 end
 
 do
@@ -635,6 +653,34 @@ for _, overridden in ipairs({false, true}) do
     expect(state, mode, 'move', -450)
 end
 print('PASS: first-wave commitment reaches the assigned lane and cores position behind their wave')
+
+do
+    local s, lane, creep, enemy, bot = fixture(false)
+    s.time, s.noCreeps, s.partner = 14, true, true
+    creep.x, creep.GetLocation = 1050, function(self) return self.x end
+    bot.x, s.allies = 1650, {creep}
+    assert(lane.GetDesire() == 0.72)
+    expect(s, lane, 'move', 1280)
+
+    bot.x, creep.x, s.partnerHP, s.allies = 0, 550, 0.8, {creep, creep}
+    local j = lane.J
+    assert(j.GetLaningCreepPosition(bot, lane.LANE_BOT, {creep}, nil, {}) == 205)
+    s.creepAggro = true
+    assert(not j.GetLaningCreepPosition(bot, lane.LANE_BOT, {creep}, nil, {}), 'yield when creeps already switched aggro')
+    s.creepAggro, s.towerDive = false, true
+    assert(not j.GetLaningCreepPosition(bot, lane.LANE_BOT, {creep}, nil, {}), 'do not stage into recently seen opponents')
+
+    creep.x, s.creepHP, s.towerDive = 220, 28, false
+    local core = j.GetLanePartner(bot)
+    assert(not j.CanSupportTakeLaneLastHit(bot, creep), 'in-range core gets its uncommitted last hit while ready')
+    core.IsChanneling = yes
+    assert(j.CanSupportTakeLaneLastHit(bot, creep), 'a channeling core cannot reserve its next attack')
+
+    s.hp, s.incomingDamage, s.creepProjectiles = 0.50, 450, 60
+    assert(j.IsLaningUnderPressure(bot, {enemy}), 'already launched attacks can make a safe-looking exchange lethal')
+    s.creepProjectiles = 0
+    assert(not j.IsLaningUnderPressure(bot, {enemy}), 'evaluate only actual incoming projectiles')
+end
 
 for _, overridden in ipairs({false, true}) do
     local state, mode, creep, enemy, bot = fixture(true, overridden)

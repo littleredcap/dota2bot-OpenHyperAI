@@ -1268,8 +1268,9 @@ function J.IsLaningUnderPressure(bot, enemies, tower)
     if J.IsValidBuilding(tower) and tower:GetAttackTarget() == bot then return true end
 
     local hp = J.GetHP(bot)
-    if hp < 0.55 and #enemies > 0 then
-        local damage = J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 3)
+    if hp < 0.55 then
+        local damage = #enemies > 0 and J.GetVisibleThreatAt(bot, enemies, bot:GetLocation(), 3) or 0
+        if bot.GetIncomingTrackingProjectiles then damage = damage + J.GetCreepAttackProjectileWillRealDamage(bot, 3, true) end
         if damage >= bot:GetHealth() then return true end
     end
     local recentlyHit = bot:WasRecentlyDamagedByAnyHero(2)
@@ -1318,9 +1319,15 @@ function J.GetTowerCoveredLaneCreeps(bot, tower, creeps, enemies)
     local covered = #enemies == 0 and J.GetHP(bot) >= 0.55 and #bot:GetNearbyLaneCreeps(900, false) > 0
     local safe = {}
     for _, creep in ipairs(creeps) do
-        if J.IsValid(creep) and (J.IsInRange(creep, tower, 780) or (covered and J.IsInRange(creep, tower, 1400)
-            and #J.GetLastSeenEnemiesNearLoc(creep:GetLocation(), 1100) == 0)) then
-            safe[#safe + 1] = creep
+        if J.IsValid(creep) then
+            local limit = covered and 1400 or 1050
+            if J.IsInRange(creep, tower, 780) then
+                safe[#safe + 1] = creep
+            elseif (covered or J.GetHP(bot) >= 0.65 and J.IsInRange(bot, creep, bot:GetAttackRange())
+                and #J.GetEnemiesNearLoc(creep:GetLocation(), 750) == 0)
+                and J.IsInRange(creep, tower, limit) and #J.GetLastSeenEnemiesNearLoc(creep:GetLocation(), 1100) == 0 then
+                safe[#safe + 1] = creep
+            end
         end
     end
     return safe, covered
@@ -2447,13 +2454,15 @@ end
 
 function J.GetLaningCreepPosition(bot, lane, creeps, tower, enemies, approachingLastHit)
     local range = bot:GetAttackRange()
-    if not J.IsCore(bot) then return nil end
+    local core = J.IsCore(bot)
     local melee = range < 310
     local hp = J.GetHP(bot)
+    local sideRanged = not melee and (lane == LANE_TOP or lane == LANE_BOT)
+    if not core and not sideRanged then return nil end
     if melee then
         -- Stand close enough to wind up while the creep is still losing health.
         if hp < 0.52 then return nil end
-    elseif (lane ~= LANE_MID and not approachingLastHit) or hp < 0.65 then
+    elseif hp < 0.65 or (lane ~= LANE_MID and not approachingLastHit and not sideRanged) then
         return nil
     end
 
@@ -2465,6 +2474,15 @@ function J.GetLaningCreepPosition(bot, lane, creeps, tower, enemies, approaching
         end
     end
     if closest == nil then return nil end
+    if sideRanged and not approachingLastHit then
+        local partner = J.GetLanePartner(bot)
+        if distance > range + 250 or bot:WasRecentlyDamagedByAnyHero(2)
+            or bot:WasRecentlyDamagedByCreep(1)
+            or J.IsValidBuilding(tower) and GetUnitToLocationDistance(tower, bot:GetLocation()) <= 850
+            or #bot:GetNearbyLaneCreeps(750, false) < 2
+            or not J.IsValidHero(partner) or not J.IsInRange(bot, partner, 800)
+            or J.IsRetreating(partner) or J.GetHP(partner) < 0.50 then return nil end
+    end
     if melee then
         if distance > 1200 then return nil end
         if distance > range + 550 then
@@ -2479,11 +2497,18 @@ function J.GetLaningCreepPosition(bot, lane, creeps, tower, enemies, approaching
     end
     if distance <= range - (melee and 12 or 55) then return bot:GetLocation() end
     local rear = GetLaneFrontLocation(GetTeam(), lane, -1450)
-    if GetUnitToLocationDistance(closest, rear) < range then return nil end
+    if GetUnitToLocationDistance(closest, rear) < range then
+        if IsLocationPassable(rear) and not (J.IsValidBuilding(tower) and GetUnitToLocationDistance(tower, rear) <= 850)
+            and #J.GetEnemiesNearLoc(rear, 800) == 0
+            and #J.GetLastSeenEnemiesNearLoc(rear, 850) == 0 then return rear end
+        return nil
+    end
     local hold = J.GetLocationTowardDistanceLocation(closest, rear, math.max(50, range - (melee and 35 or 105)))
     if not IsLocationPassable(hold) or (J.IsValidBuilding(tower) and GetUnitToLocationDistance(tower, hold) <= 850) then
         return nil
     end
+    local travel = GetUnitToLocationDistance(bot, hold)
+    if travel > 160 and #J.GetLastSeenEnemiesNearLoc(hold, 750) > 0 then return nil end
     local threats, safeOffset = 0, 0
     for _, enemy in ipairs(enemies) do
         if J.IsValidHero(enemy) and not J.IsSuspiciousIllusion(enemy)
@@ -2533,6 +2558,8 @@ function J.CanSupportTakeLaneLastHit(bot, creep)
         if ally ~= bot and J.IsValidHero(ally) and J.IsCore(ally)
             and not ally:IsDisarmed() and not J.IsDisabled(ally) and not J.IsRetreating(ally)
             and not ally:HasModifier('modifier_teleporting')
+            and not (ally.IsChanneling and ally:IsChanneling())
+            and not (ally.IsCastingAbility and ally:IsCastingAbility() and ally:GetAttackTarget() ~= creep)
             and J.IsInRange(ally, creep, ally:GetAttackRange() + 500)
         then
             local displacement = (ally.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
@@ -8821,8 +8848,7 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 						end
 					end
 					if target then
-						if bot:GetAttackTarget() ~= target then bot:Action_AttackUnit(target, true) end
-						return true
+						return J.IssueTowerDefenseAttack(bot, target)
 					end
 				end
 			end
@@ -8833,8 +8859,7 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 	if cover then
 		for _, enemy in ipairs(hostile) do
 			if J.IsInRange(bot, enemy, bot:GetAttackRange()) and J.CanBeAttacked(enemy) then
-				bot:Action_AttackUnit(enemy, true)
-				return true
+				return J.IssueTowerDefenseAttack(bot, enemy)
 			end
 		end
 	end
@@ -8846,11 +8871,12 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 		end
 	end
 	local range = bot:GetAttackRange()
-	local microStep = not cover and formation ~= nil and range >= 350 and not awayFromHold
+	local microStep = not cover and range >= 350 and not awayFromHold
 		and (not bot.IsRooted or not bot:IsRooted()) and J.GetHP(bot) >= 0.55
 		and not bot:WasRecentlyDamagedByAnyHero(2)
 	local nextPoint, nextPriority = nil, 0
-	local scan = canStepUp and math.min(1600, range + 650) or microStep and math.min(1600, range + 180) or range
+	local shortStep = formation and 180 or 210
+	local scan = canStepUp and math.min(1600, range + 650) or microStep and math.min(1600, range + shortStep) or range
 	for _, creep in ipairs(bot:GetNearbyLaneCreeps(scan, true)) do
 		if J.IsValid(creep) and J.CanBeAttacked(creep) then
 			local siege = string.find(creep:GetUnitName(), 'siege', 1, true) ~= nil
@@ -8868,15 +8894,15 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 			if J.IsInRange(bot, creep, range) or canStepUp and (closeToHub or siegeStep) then
 				local weight = siege and 2 or 1
 				if weight > priority then target, priority = creep, weight end
-			elseif microStep and (closeToHub or siege and GetUnitToLocationDistance(creep, hub) <= 950)
+			elseif microStep and (closeToHub or siege and GetUnitToLocationDistance(creep, hub) <= 1150)
 				and (not creep.CanBeSeen or creep:CanBeSeen()) then
 				local gap = GetUnitToUnitDistance(bot, creep) - range
 				local weight = siege and 2 or 1
-				if gap > 0 and gap <= 180 and weight > nextPriority then
+				if gap > 0 and gap <= shortStep and weight > nextPriority then
 					local origin = bot:GetLocation()
 					local point = J.VectorTowards(origin, creep:GetLocation(), gap + 30)
 					local mid = J.VectorTowards(origin, point, (gap + 30) * 0.5)
-					if J.GetLocationToLocationDistance(point, hold) <= 200
+					if J.GetLocationToLocationDistance(point, hold) <= 235
 						and IsLocationPassable(point) and IsLocationVisible(point) and IsLocationPassable(mid)
 						and J.CanCommitToLaneTeleport(bot, point, true, 950)
 						and J.CanCommitToLaneTeleport(bot, mid, true, 950) then
@@ -8887,8 +8913,7 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 		end
 	end
 	if target ~= nil then
-		bot:Action_AttackUnit(target, true)
-		return true
+		return J.IssueTowerDefenseAttack(bot, target)
 	end
 	if nextPoint then
 		bot:Action_MoveToLocation(nextPoint)
@@ -8896,7 +8921,7 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 	end
 	if range >= 425 and not bot:IsDisarmed() then
 		local poke, point = J.GetMidDefensePokeTarget(bot, range - 25, hold)
-		if poke then bot:Action_AttackUnit(poke, true); return true end
+		if poke then return J.IssueTowerDefenseAttack(bot, poke) end
 		if point then bot:Action_MoveToLocation(point); return true end
 	end
 	if awayFromHold then
@@ -8906,6 +8931,21 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage)
 		bot:Action_ClearActions(true)
 	end
 	return false
+end
+
+-- A target handle can survive a completed or interrupted once-only attack.
+-- Reissue when the order is stale without resetting a fresh windup.
+function J.IssueTowerDefenseAttack(bot, target)
+	local now = DotaTime()
+	local last = bot.ohaTowerAttack
+	local attackTime = math.max(0.26, bot:GetSecondsPerAttack())
+	if bot:GetAttackTarget() == target then
+		if last and last.target == target and now - last.issued < attackTime then return true end
+		if (bot.ohaIdleReplanUntil or 0) <= now and J.IsAttacking(bot) then return true end
+	end
+	bot.ohaTowerAttack = {target=target, issued=now}
+	bot:Action_AttackUnit(target, true)
+	return true
 end
 
 function J.GetTowerDefenseTarget(bot)
@@ -10590,37 +10630,46 @@ end
 function J.CheckBotIdleState()
 	local bot = GetBot()
 	local now = DotaTime()
-	if now < 8 * 60 or not bot:IsAlive() then bot.ohaMoveSample = nil; return false end
-	if (bot.ohaIdleRecoveryUntil or 0) > now then return true end
-	local action = bot:GetCurrentActionType()
-	local travelling = action == BOT_ACTION_TYPE_MOVE_TO or action == BOT_ACTION_TYPE_PICK_UP_RUNE
-	local inactive = action == BOT_ACTION_TYPE_NONE or action == BOT_ACTION_TYPE_IDLE or action == BOT_ACTION_TYPE_ATTACK
-	local recovering = J.IsRetreating(bot)
-	local needsRecovery = recovering and (J.GetHP(bot) < 0.80 or J.GetMP(bot) < 0.40
-		or #J.GetLastSeenEnemiesNearLoc(bot:GetLocation(), 1600) > 0)
-	if not (travelling or inactive or bot:GetActiveMode() == BOT_MODE_FARM)
-		or bot:DistanceFromFountain() < 850 or J.CanNotUseAction(bot) or bot:IsRooted()
-		or J.IsTryingtoUseAbility(bot) or J.IsAttacking(bot) or J.IsDefending(bot) or needsRecovery
-		or J.IsDoingRoshan(bot) or J.IsDoingTormentor(bot) or bot:WasRecentlyDamagedByAnyHero(3)
-		or (bot.ohaOuterTowerHoldUntil or 0) > now then
-		bot.ohaMoveSample = nil
+	if now < 40 or not bot:IsAlive()
+		or bot:DistanceFromFountain() < 850 and (J.GetHP(bot) < 0.88 or J.GetMP(bot) < 0.65)
+		or J.CanNotUseAction(bot) or bot:IsRooted() or J.IsTryingtoUseAbility(bot)
+		or bot:HasModifier('modifier_teleporting') then
+		bot.ohaMoveSample, bot.ohaIdleRecoveryUntil, bot.ohaIdleReplanUntil = nil, nil, nil
 		return false
 	end
 	local sample = bot.ohaMoveSample
-	local attack = bot:GetLastAttackTime()
-	if sample == nil or sample.attack ~= attack or GetUnitToLocationDistance(bot, sample.location) > 180 then
-		bot.ohaMoveSample = {location = bot:GetLocation(), time = now, attack = attack}
-	elseif now - sample.time >= 9 and #J.GetEnemiesNearLoc(bot:GetLocation(), 1400) == 0 then
-		bot.ohaMoveSample = nil
-		bot.ohaIdleRecoveryUntil = now + 15
-		bot.ohaIdleRecoveryOrigin = bot:GetLocation()
-		if J.Customize and J.Customize.TraceLaneDecisions then
-			print('[OHA idle]', now, bot:GetUnitName(), 'mode', bot:GetActiveMode(), 'action', action,
-				'stationary', now - sample.time, 'lastAttack', attack)
-		end
-		return true
+	local elapsed = sample and now - sample.sampled
+	if elapsed and elapsed >= 0 and elapsed < 0.50 then
+		return (bot.ohaIdleRecoveryUntil or 0) > now
 	end
-	return false
+	local attack = bot:GetLastAttackTime()
+	local location = bot:GetLocation()
+	local reset = sample == nil or elapsed < 0 or elapsed > 2 or sample.attack ~= attack
+	if reset or GetUnitToLocationDistance(bot, sample.location) > 180 then
+		if reset then bot.ohaIdleRecoveryUntil = nil end
+		bot.ohaMoveSample = {location=location, time=now, sampled=now, attack=attack}
+		bot.ohaIdleReplanUntil = nil
+		return (bot.ohaIdleRecoveryUntil or 0) > now
+	end
+	sample.sampled = now
+	if now - sample.time < 6 then return false end
+	-- Let the current mode replace a stale queue even on defense or near enemies.
+	-- Only a quiet, unassigned hero may switch to local farm or a rally point.
+	bot.ohaIdleReplanUntil = now + 1.25
+	if now - sample.time < 9 or (bot.ohaIdleRecoveryUntil or 0) > now then
+		return (bot.ohaIdleRecoveryUntil or 0) > now
+	end
+	if J.IsDefending(bot) or J.IsDoingRoshan(bot) or J.IsDoingTormentor(bot)
+		or (bot.ohaOuterTowerHoldUntil or 0) > now or bot:WasRecentlyDamagedByAnyHero(3)
+		or J.IsRetreating(bot) and (J.GetHP(bot) < 0.80 or J.GetMP(bot) < 0.40)
+		or #J.GetEnemiesNearLoc(location, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(location, 1200) > 0 then return false end
+	bot.ohaIdleRecoveryUntil = now + 15
+	bot.ohaIdleRecoveryOrigin = location
+	if J.Customize and J.Customize.TraceLaneDecisions then
+		print('[OHA idle]', now, bot:GetUnitName(), 'mode', bot:GetActiveMode(), 'action', bot:GetCurrentActionType(),
+			'stationary', now - sample.time, 'lastAttack', attack)
+	end
+	return true
 end
 
 function J.AreTreesBetween(bot, loc, r)

@@ -107,6 +107,7 @@ export interface Unit {
 
     GetItemInSlot(slot: number): Item | null;
     NumQueuedActions(): number;
+    GetCurrentActionType(): BotActionType;
 
     GetQueuedActionType(index: number): BotActionType;
 

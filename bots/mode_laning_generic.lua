@@ -72,7 +72,22 @@ local function GetOpeningLaneDestination(lane, enemies)
 	local tower = towerId ~= nil and GetTower(GetTeam(), towerId) or nil
 	if not J.IsValidBuilding(tower) then return nil end
 	if J.IsInRange(bot, tower, 850) then
-		firstWaveReached = true
+		if now >= 0 and now < 30 and (lane == LANE_TOP or lane == LANE_BOT)
+			and #enemies == 0 and #bot:GetNearbyLaneCreeps(800, true) == 0 then
+			local anchor = tower:GetLocation()
+			local front = GetLaneFrontLocation(GetTeam(), lane, 0)
+			for _, ally in ipairs(bot:GetNearbyLaneCreeps(850, false)) do
+				if J.IsValid(ally) and GetUnitToLocationDistance(ally, front) < J.GetLocationToLocationDistance(anchor, front)
+					and GetUnitToLocationDistance(ally, anchor) > 320 then
+					local point = J.VectorTowards(anchor, ally:GetLocation(), 320)
+					if GetUnitToLocationDistance(bot, point) > 95 and IsLocationPassable(point)
+						and #J.GetLastSeenEnemiesNearLoc(point, 950) == 0 then return point end
+					break
+				end
+			end
+		elseif now >= 30 or #bot:GetNearbyLaneCreeps(800, true) > 0 then
+			firstWaveReached = true
+		end
 		return nil
 	end
 	if J.IsLaningUnderPressure(bot, enemies, nil) then return nil end
@@ -392,7 +407,8 @@ local function ThinkLane()
 
 	-- Real last hits remain first. Pressure the returning offlaner before an
 	-- optional support deny, and only move a short distance with lane cover.
-	if not nearbyTower and not J.IsCore(bot) and not J.IsFinishingLaningAttack(bot, attackTarget) then
+	if not nearbyTower and not J.IsCore(bot) and not J.IsFinishingLaningAttack(bot, attackTarget)
+		and J.CanSpendLaneTradeTime(bot, enemyTower, nInRangeEnemy, bot:GetSecondsPerAttack()) then
 		local press = J.GetSideLanePressureTarget(bot, nInRangeEnemy, enemyTower, botAttackRange)
 		if press ~= nil then
 			TraceLaneDecision('side-pressure-shot', press)
@@ -425,7 +441,10 @@ local function ThinkLane()
 
 	if J.IsFinishingLaningAttack(bot, attackTarget) then return end
 	if ShootAtLaneClash(nInRangeEnemy, enemyTower, nearbyTower) then return end
-	local harassTarget = not nearbyTower and J.GetLaningHarassTarget(bot, nInRangeEnemy, enemyTower, #bot:GetNearbyLaneCreeps(600, true))
+	local tradeHasTime = botAssignedLane == LANE_MID
+		or J.CanSpendLaneTradeTime(bot, enemyTower, nInRangeEnemy, bot:GetSecondsPerAttack())
+	local harassTarget = not nearbyTower and tradeHasTime
+		and J.GetLaningHarassTarget(bot, nInRangeEnemy, enemyTower, #bot:GetNearbyLaneCreeps(600, true))
 	if harassTarget then
 		bot:Action_AttackUnit(harassTarget, true)
 		return

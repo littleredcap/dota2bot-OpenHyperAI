@@ -8549,6 +8549,7 @@ function AbilityUsageThink()
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
 	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) and bot.isBear == nil then return end
 	bot.lastAbilityFrameProcessTime = DotaTime()
+	J.CheckBotIdleState()
 	if Customize.TraceLaneDecisions then X.TraceDefenseMovement(bot.lastAbilityFrameProcessTime) end
 	local protectingShot = bot.ohaLaningAttackTarget ~= nil and J.HasPendingLaningLastHit(bot)
 	if not protectingShot and bot.ohaEngineMid and J.IsLaning(bot) and J.IsInLaningPhase(bot) then

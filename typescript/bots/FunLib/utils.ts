@@ -2053,7 +2053,9 @@ const meaningfulActivities = [
  * @returns {boolean} True if the bot is doing something meaningful, false otherwise
  */
 export function IsBotThinkingMeaningfulAction(bot: Unit, thinkLess: number = 1, type: string = "all"): boolean {
-    // return false; // TODO: remove this when we have a better way to check if the bot is thinking meaningful actions
+    if (((bot as any).ohaIdleReplanUntil ?? 0) > DotaTime()
+        && !bot.IsUsingAbility() && !bot.IsCastingAbility() && !bot.IsChanneling()
+        && !bot.HasModifier("modifier_teleporting")) return false;
     if (thinkLess < 0) {
         thinkLess = 0;
     } else if (thinkLess > 10) {

@@ -26,7 +26,6 @@ local nTpSolt = 15
 
 local beInitDone, IsSupport, IsHeroCore, bePvNMode = false, false, false, false
 local ShouldAttackSpecialUnit = false
-local lastIdleStateCheck = -1
 local rescueAlly, rescueEnemy, issuedRescueTarget
 local nearbyAllies, nearbyEnemies
 local focusEnemy, issuedFocusTarget
@@ -108,11 +107,6 @@ function GetDesireHelper()
 
     bot.laneToPush   = bot.ohaPostFightPushLane or J.GetMostPushLaneDesire()
     bot.laneToDefend = J.GetMostDefendLaneDesire()
-
-    if DotaTime() - lastIdleStateCheck >= 1 then
-        J.CheckBotIdleState()
-        lastIdleStateCheck = DotaTime()
-    end
 
     if not beInitDone then
         beInitDone = true

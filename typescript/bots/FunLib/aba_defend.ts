@@ -1,5 +1,6 @@
 // let TS accept these Lua globals
 declare function GetScriptDirectory(): string;
+declare const BOT_ACTION_TYPE_MOVE_TO: number;
 
 import * as jmz from "bots/FunLib/jmz_func";
 // Avoid static resolution; mirror Lua's pcall(require(...))
@@ -1165,8 +1166,7 @@ function AttackHighGroundWaveFromHere(bot: Unit, tower: Unit, rear: Vector | und
         }
     }
     if (!target || !jmz.CanCommitToLaneTeleport(bot, bot.GetLocation(), true, 850)) return false;
-    if (target !== current) bot.Action_AttackUnit(target, true);
-    return true;
+    return jmz.IssueTowerDefenseAttack(bot, target);
 }
 
 export function DefendThink(bot: Unit, lane: Lane) {
@@ -1183,10 +1183,14 @@ export function DefendThink(bot: Unit, lane: Lane) {
             || bot.IsUsingAbility()) return;
         if (AttackHighGroundWaveFromHere(bot, response.tower, response.rear)) return;
         if (GetUnitToLocationDistance(bot, response.stage) > 350) {
-            const point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear);
+            let point = jmz.GetHighGroundWalkPoint(bot, response.stage, response.rear);
+            if ((!point || GetUnitToLocationDistance(bot, point) <= 180)
+                && ((bot as any).ohaIdleReplanUntil ?? 0) > now && response.rear) {
+                point = jmz.GetHighGroundWalkPoint(bot, response.rear);
+            }
             if (point && GetUnitToLocationDistance(bot, point) > 180) {
                 bot.Action_MoveToLocation(point);
-            } else if (GetUnitToLocationDistance(bot, response.stage) > 850 && !bot.WasRecentlyDamagedByAnyHero(2)) {
+            } else if (!point && bot.GetCurrentActionType() === BOT_ACTION_TYPE_MOVE_TO) {
                 bot.Action_ClearActions(true);
             }
             return;
@@ -1235,7 +1239,7 @@ export function DefendThink(bot: Unit, lane: Lane) {
 
         const intruder = GetInnerBaseAttacker(ancient);
         if (intruder && jmz.CanBeAttacked(intruder) && jmz.IsInRange(bot, intruder, bot.GetAttackRange())) {
-            if (bot.GetAttackTarget() !== intruder) bot.Action_AttackUnit(intruder, true);
+            jmz.IssueTowerDefenseAttack(bot, intruder);
             return;
         }
         const toAnc = GetUnitToUnitDistance(bot, ancient);
@@ -1343,7 +1347,7 @@ export function DefendThink(bot: Unit, lane: Lane) {
     if (IsValidBuildingTarget(bld) && enemiesAtHub.length >= 3
         && jmz.GetAvailableFightAllies(bot, hub, 1500) < Math.max(2, enemiesAtHub.length - 2)) {
         // Hold behind the tower until the backline can join.
-        jmz.RunOuterTowerHold(bot, jmz.AdjustLocationWithOffsetTowardsFountain(hub, 650), attackRange, false);
+        jmz.RunOuterTowerHold(bot, hub, attackRange, false, jmz.AdjustLocationWithOffsetTowardsFountain(hub, 650));
         return;
     }
     if (enemiesAtHub.length >= 2 && !ds.weAreStronger) {

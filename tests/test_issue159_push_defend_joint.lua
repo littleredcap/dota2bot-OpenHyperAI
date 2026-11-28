@@ -50,6 +50,7 @@ local function fixture(opts)
             GetPlayerID=function() return i end, GetCurrentMovementSpeed=function() return 300 end,
             GetUnitName=function() return 'npc_dota_hero_mock' end, GetLevel=function() return 20 end,
             GetActiveMode=function() return 0 end, GetActiveModeDesire=function() return opts.defending and 0.95 or 0 end,
+            GetCurrentActionType=function() return 0 end,
             GetAssignedLane=function() return Lan.Mid end, GetLocation=function(self) return loc(self.x) end,
             GetAttackTarget=function() return nil end, WasRecentlyDamagedByAnyHero=no, WasRecentlyDamagedByTower=no,
             GetAttackRange=function() return 650 end, GetNearbyTowers=empty, GetNearbyCreeps=empty,
