@@ -41,7 +41,7 @@ local function fixture(plan, custom)
         Skill = {GetTalentList = empty, GetAbilityList = function() return {'spell_c'} end},
         Utils = {CombineTablesUnique = function(_, spells) return spells end},
     }
-    local modules = {['bots/FunLib/jmz_func'] = j, ['bots/FunLib/oha_banish'] = {},
+    local modules = {['bots/FunLib/jmz_func'] = j, ['bots/FunLib/oha_banish'] = {}, ['bots/FunLib/opening_rune'] = {},
         ['bots/Customize/general'] = {}, ['bots/FunLib/utils'] = {}, ['bots/FunLib/localization'] = {}}
     local env = setmetatable({
         GetBot = function() return bot end, GetScriptDirectory = function() return 'bots' end,

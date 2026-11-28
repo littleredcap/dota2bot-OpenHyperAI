@@ -1,6 +1,5 @@
 -- Estimate what a visible opponent can do before a move or channel completes.
 local M = {}
-local observed = {}
 
 local rootEffects = {'root', 'frostbite', 'overgrowth', 'rod_of_atos', 'gungir', 'searing_chains', 'ensnare'}
 local silenceEffects = {'silence', 'orchid_malevolence_debuff', 'bloodthorn_debuff', 'ancient_seal', 'waning_rift'}
@@ -29,19 +28,6 @@ local function spellWindow(J, enemy, distance, seconds, rooted, silence, checkIn
     local earliest, physicalSpell, interrupt = math.huge, math.huge, false
     local mana = enemy:GetMana()
     local hasStun = checkInterrupt and (enemy:GetStunDuration(true) > 0 or enemy:IsSilenced())
-    local now = DotaTime()
-    local id = enemy:GetPlayerID()
-    local spent = observed[id] or {}
-    observed[id] = spent
-    if enemy:IsUsingAbility() and not enemy:IsCastingAbility() then
-        local cast = enemy:GetCurrentActiveAbility()
-        if cast and not cast:IsNull() and not cast:IsPassive() and not enemy:IsChanneling() then
-            -- Only discount a cast we actually witnessed, and only briefly.
-            if not cast:GetName():find('^item_') and cast:GetSpecialValueInt('max_charges') == 0 then
-                spent[cast:GetName()] = now + math.min(4, math.max(0, cast:GetCooldown()) * 0.5)
-            end
-        end
-    end
     for slot = 0, 8 do
         local spell = enemy:GetAbilityInSlot(slot)
         if spell and not spell:IsNull() and spell:IsTrained() and not spell:IsHidden()
@@ -55,7 +41,9 @@ local function spellWindow(J, enemy, distance, seconds, rooted, silence, checkIn
                 local reach = math.max(0, spell:GetCastRange()) + (unitTarget and not aimed and 0 or radius)
                 local cast = math.max(0, spell:GetCastPoint())
                 local contact = travelTime(distance, reach, enemy, rooted)
-                local ready = math.max(silence, contact, (spent[spell:GetName()] or now) - now)
+                -- An enemy ability handle cannot report its cooldown. Count a
+                -- reachable control if the visible caster can pay for it.
+                local ready = math.max(silence, contact)
                 if ready + cast < seconds then
                     earliest = math.min(earliest, ready)
                     if spell.GetDamageType and spell:GetDamageType() == DAMAGE_TYPE_PHYSICAL then
@@ -68,7 +56,7 @@ local function spellWindow(J, enemy, distance, seconds, rooted, silence, checkIn
                         local otherControl = name == 'shadow_shaman_shackles' or name == 'shadow_shaman_voodoo'
                             or name == 'lion_voodoo' or spell:GetSpecialValueFloat('root_duration') > 0
                         -- The aggregate engine estimate can omit a named, known disable.
-                        -- Mana, contact time and witnessed spell use still bound it.
+                        -- Mana and contact time still bound it.
                         if stun or otherControl then interrupt = true end
                     end
                 end

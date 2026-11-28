@@ -11,6 +11,7 @@ local function fixture()
     for slot, hero in ipairs(heroes) do
         hero.action, hero.orders = 1, {}
         hero.GetPlayerID = function() return slot end
+        hero.GetTeam = function() return 2 end
         hero.IsAlive = function(self) return not self.dead end
         hero.IsBot = function(self) return not self.human end
         hero.GetLocation = function(self) return self.x end
@@ -51,14 +52,17 @@ local function fixture()
     for i=1,2 do
         local hero = heroes[i]
         local env = setmetatable({GetBot=function() return hero end, GetScriptDirectory=function() return 'bots' end,
-            require=function(name) return name:find('jmz_func',1,true) and j or {} end,
             GetTeamPlayers=function() return {1,2,3} end, GetTeamMember=function(n) return heroes[n] end,
             GameTime=function() return state.time end, DotaTime=function() return state.time end,
             GetGameMode=function() return 0 end, GAMEMODE_1V1MID=1, GAMEMODE_MO=2,
             GetAncient=function() return {x=9000, GetLocation=function(self) return self.x end} end, GetTeam=function() return 2 end,
             GetTower=function() end, GetOpposingTeam=function() return 3 end,
             GetRuneStatus=function(id) return state.status[id] end, GetRuneType=function(id) return id == power1 and 8 or 0 end,
-            GetRuneSpawnLocation=function(id) return state.spots[id] end, GetUnitToLocationDistance=distance,
+            GetRuneSpawnLocation=function(id)
+                assert(type(id)=='number' and state.spots[id]~=nil, 'the client requires a valid integer rune location')
+                return state.spots[id]
+            end,
+            GetUnitToLocationDistance=distance, IsLocationPassable=function() return true end,
             Vector=function(x) return x end, Clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end,
             RemapValClamped=function(n,lo,hi,a,b) return a + (b-a)*math.max(0,math.min(1,(n-lo)/(hi-lo))) end,
             RUNE_BOUNTY_1=bounty1, RUNE_BOUNTY_2=bounty2, RUNE_POWERUP_1=power1, RUNE_POWERUP_2=power2,
@@ -66,6 +70,11 @@ local function fixture()
             TEAM_RADIANT=2, TEAM_DIRE=3, LANE_TOP=1, LANE_MID=2, LANE_BOT=3, BOT_MODE_NONE=0, BOT_ACTION_TYPE_IDLE=1,
             BOT_ACTION_TYPE_PICK_UP_RUNE=2, BOT_MODE_DESIRE_NONE=0, BOT_MODE_DESIRE_MODERATE=0.5, BOT_MODE_DESIRE_HIGH=0.75
         }, {__index=_G})
+        env.require = function(name)
+            if name == 'bots/FunLib/jmz_func' then return j end
+            if name == 'bots/FunLib/opening_rune' then return setfenv(assert(loadfile(name .. '.lua')), env)() end
+            return {}
+        end
         setfenv(assert(loadfile('bots/mode_rune_generic.lua')), env)()
         modes[i] = env
     end
@@ -75,6 +84,16 @@ end
 local function order(hero, kind, target)
     local last = hero.orders[#hero.orders]
     assert(last and last[1] == kind and last[2] == target, 'expected ' .. kind .. ' ' .. tostring(target))
+end
+
+do
+    local s, h, m = fixture()
+    s.time, h[1].x = -50, -6500
+    local opening = m[1].require('bots/FunLib/opening_rune')
+    assert(opening.Walk(h[1], opening.Target(h[1])))
+    order(h[1], 'move', s.spots[power1])
+    m[1].Think()
+    assert(#h[1].orders == 1, 'the mode shares the opening order issued outside mode arbitration')
 end
 
 do
@@ -101,6 +120,11 @@ do
     m[1].Think()
     order(h[1], 'pick', power1)
     s.status[power1] = missing
+    m[1].Think()
+    order(h[1], 'cancel')
+    h[1].rune.normal.location = nil
+    m[1].Think()
+    assert(#h[1].orders == 3, 'an uninitialized regular target causes no engine lookup or new order')
     assert(m[1].GetDesire() == 0, 'release the lane as soon as the rune is gone')
 end
 

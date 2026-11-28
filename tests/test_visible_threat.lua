@@ -13,13 +13,14 @@ local j = {IsValidHero=yes, IsSuspiciousIllusion=no, IsStunProjectileSpell=funct
     GetFightHardControlRemaining=function(e) return e.disabled or 0 end,
     Utils={AbilityBehaviorHasFlag=function(n,flag) return n==flag end}}
 local bot = {GetLocation=value(0), IsMagicImmune=no, GetActualIncomingDamage=function(_, raw) return raw * 0.75 end,
-    GetHealth=value(341), GetHealthRegen=value(4), x=0, WasRecentlyDamagedByAnyHero=no,
+    GetHealth=value(341), GetHealthRegen=value(4), x=0, WasRecentlyDamagedByAnyHero=no, HasModifier=no,
     GetNearbyCreeps=function() return {} end, GetNearbyTowers=function() return {} end}
 local function caster(id, x, mana, range, cost, name)
     local ability={GetName=value(name), IsNull=no, IsTrained=yes, IsHidden=no, IsPassive=no,
         GetManaCost=value(cost), GetBehavior=value(8), GetTargetTeam=value(2), GetTargetFlags=value(0), GetCastRange=value(range),
         GetCastPoint=value(0.2), GetAOERadius=value(0), GetDamageType=value(2), GetAbilityDamage=value(70),
-        GetSpecialValueFloat=value(0), GetSpecialValueInt=value(0), GetCooldown=value(12), IsItem=no}
+        GetSpecialValueFloat=value(0), GetSpecialValueInt=value(0), IsItem=no,
+        GetCooldown=function() error('opponent cooldown queries are rejected by the client') end}
     local e={x=x,mana=mana,visible=true,GetPlayerID=value(id),CanBeSeen=function(self) return self.visible end,
         IsRooted=no,IsSilenced=no,IsCastingAbility=no,IsChanneling=no,IsUsingAbility=no,IsDisarmed=no,
         NumModifiers=function(self) return self.effect and 1 or 0 end,
@@ -69,7 +70,7 @@ assert(not j.CanStartTeleportHere(bot),'a short silence wears off before the ene
 dk.IsSilenced,dk.GetStunDuration=no,value(0)
 assert(not j.CanStartTeleportHere(bot),'a reachable named stun remains a threat despite a zero aggregate estimate')
 dk.GetStunDuration,dk.IsUsingAbility=value(1.5),yes
-assert(j.CanStartTeleportHere(bot),'a witnessed spell release does not become a fresh interrupt')
+assert(not j.CanStartTeleportHere(bot),'a visible, affordable control remains possible without teammate-only cooldown data')
 now=now+6;dk.IsUsingAbility=no
 local wl=caster(8,854,347,700,110,'warlock_shadow_word')
 dk.x,dk.magic,wl.magic=572,75,170
@@ -90,6 +91,14 @@ do
     assert(not j.CanStartTeleportHere(bot),'already released lethal shots remain even when no hero is in sight')
     j.GetCreepAttackProjectileWillRealDamage=value(0)
     assert(j.CanStartTeleportHere(bot),'allow a cleared escape point')
+    enemies={dk}
+    dk.x, dk.GetAttackDamage = 140, value(94)
+    bot.WasRecentlyDamagedByAnyHero, bot.HasModifier = yes, yes
+    assert(not j.CanStartTeleportHere(bot),'reserve health for ongoing shared damage even when the enemy is out of mana')
+    bot.HasModifier = no
+    assert(j.CanStartTeleportHere(bot),'allow the same nonlethal channel after the link wears off')
+    bot.WasRecentlyDamagedByAnyHero = no
+    enemies={}
     local golem={x=140,CanBeSeen=yes,IsAlive=yes,IsDisarmed=no,GetAttackTarget=value(bot),
         GetAttackRange=value(150),GetSecondsPerAttack=value(1.4),GetAttackProjectileSpeed=value(0),
         GetLastAttackTime=value(now-1),GetAttackDamage=value(120)}

@@ -1255,7 +1255,9 @@ function J.CanStartTeleportHere(bot)
     damage = damage + inFlight + focused
     local health = bot:GetHealth() + channel * bot:GetHealthRegen()
     -- Keep a margin for attack variance and damage already ticking in a contested lane.
-    if contacts >= 2 and J.GetHP(bot) <= 0.30 then
+    if bot:HasModifier('modifier_warlock_fatal_bonds') and bot:WasRecentlyDamagedByAnyHero(2) then
+        health = health * 0.80
+    elseif contacts >= 2 and J.GetHP(bot) <= 0.30 then
         health = health * 0.85
     elseif (contacts >= 2 or contacts >= 1 and focused > 0) and bot:WasRecentlyDamagedByAnyHero(2) then
         health = health * 0.90
@@ -2158,12 +2160,21 @@ function J.GetLaningDenyStep(bot, creeps, enemyTower, enemies)
     local origin, retreatDistance = bot:GetLocation(), GetUnitToUnitDistance(bot, tower)
     local attackers
     for _, creep in ipairs(creeps) do
-        if J.IsValid(creep) and J.CanBeAttacked(creep) and J.GetHP(creep) < 0.5
-            and (J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep)) then
+        if J.IsValid(creep) and J.CanBeAttacked(creep) and J.GetHP(creep) < 0.5 then
             local gap = GetUnitToUnitDistance(bot, creep) - range
             if gap > 0 and gap <= 160 then
+                local valuable = J.IsKeyWordUnit('_ranged', creep) or J.IsKeyWordUnit('_siege', creep)
+                    or J.IsKeyWordUnit('_flagbearer', creep)
+                local contested = false
+                for _, enemy in ipairs(enemies) do
+                    if J.IsValidHero(enemy) and enemy:GetAttackTarget() == creep and J.IsAttacking(enemy) then
+                        contested = true
+                        break
+                    end
+                end
                 local point = J.VectorTowards(origin, creep:GetLocation(), gap + 20)
-                if GetUnitToLocationDistance(tower, point) <= retreatDistance + 25
+                if (contested and GetUnitToLocationDistance(tower, point) <= 1150
+                    or valuable and GetUnitToLocationDistance(tower, point) <= retreatDistance + 25)
                     and IsLocationPassable(point) and IsLocationVisible(point)
                     and (not J.IsValidBuilding(enemyTower) or GetUnitToLocationDistance(enemyTower, point) > 900)
                     and #J.GetLastSeenEnemiesNearLoc(point, 700) <= #enemies then

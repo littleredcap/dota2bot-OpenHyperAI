@@ -901,7 +901,11 @@ do
     env.GetRuneStatus = function() return runeStatus end
     env.GetRuneSpawnLocation = function() return runeDistance end
     local requireFixture = env.require
-    env.require = function(name) return name == 'bots/Customize/general' and {} or requireFixture(name) end
+    env.require = function(name)
+        if name == 'bots/Customize/general' then return {} end
+        if name == 'bots/FunLib/opening_rune' then return setfenv(assert(loadfile(name .. '.lua')), env)() end
+        return requireFixture(name)
+    end
     local runeFile = assert(io.open('bots/mode_rune_generic.lua', 'rb'))
     local runeSource = runeFile:read('*a')
     runeFile:close()

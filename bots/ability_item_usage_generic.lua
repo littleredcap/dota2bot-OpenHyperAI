@@ -2,13 +2,15 @@ local X = {}
 local bot = GetBot()
 if bot == nil then return end
 local botName = bot:GetUnitName()
-if bot:IsInvulnerable() or not bot:IsHero() or not string.find(botName, "hero") or bot:IsIllusion() then return end
+if not bot:IsHero() or not string.find(botName, "hero") or bot:IsIllusion()
+	or bot:IsInvulnerable() and DotaTime() >= 0 then return end
 if not bot.frameProcessTime then bot.frameProcessTime = 0.1 end
 
 local team = GetTeam()
 local bDebugMode = ( 10 == 10 )
 
 local J = require( GetScriptDirectory()..'/FunLib/jmz_func' )
+local OpeningRune = require(GetScriptDirectory() .. '/FunLib/opening_rune')
 local Banish = require( GetScriptDirectory()..'/FunLib/oha_banish' )
 local Utils = require( GetScriptDirectory()..'/FunLib/utils' )
 local BotBuild = dofile( GetScriptDirectory().."/BotLib/"..string.gsub( botName, "npc_dota_", "" ) )
@@ -8545,12 +8547,17 @@ end
 
 function AbilityUsageThink()
 	if RefreshBotHandle() then return end
+	if GetGameState() == GAME_STATE_PRE_GAME and DotaTime() < 0 and not bot:IsIllusion()
+		and DotaTime() >= (bot.ohaOpeningRuneStepAt or -math.huge) then
+		local spot, location = OpeningRune.Target(bot)
+		if OpeningRune.Walk(bot, spot, location) then return end
+	end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end
 	if bot.lastAbilityFrameProcessTime == nil then bot.lastAbilityFrameProcessTime = DotaTime() end
 	if DotaTime() > 30 and (DotaTime() - bot.lastAbilityFrameProcessTime < (bot.frameProcessTime * (1 + Customize.ThinkLess))) and bot.isBear == nil then return end
 	bot.lastAbilityFrameProcessTime = DotaTime()
 	J.CheckBotIdleState()
-	if Customize.TraceLaneDecisions then X.TraceDefenseMovement(bot.lastAbilityFrameProcessTime) end
+	if J.Customize and J.Customize.TraceLaneDecisions then X.TraceDefenseMovement(bot.lastAbilityFrameProcessTime) end
 	local protectingShot = bot.ohaLaningAttackTarget ~= nil and J.HasPendingLaningLastHit(bot)
 	if not protectingShot and bot.ohaEngineMid and J.IsLaning(bot) and J.IsInLaningPhase(bot) then
 		local target = bot:GetAttackTarget()

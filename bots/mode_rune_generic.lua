@@ -1,5 +1,6 @@
 local X = {}
 local J = require(GetScriptDirectory()..'/FunLib/jmz_func')
+local Opening = require(GetScriptDirectory()..'/FunLib/opening_rune')
 local Customize = require(GetScriptDirectory()..'/Customize/general')
 Customize.ThinkLess = Customize.Enable and Customize.ThinkLess or 1
 
@@ -54,10 +55,9 @@ local nShrineOfWisdomTime = 0
 local nShrineOfWisdomTeam = TEAM_RADIANT
 local pursueWisdom, issuedBountySpot = false, nil
 local issuedRiverMove = false
-local tracedOpeningRune
 
 local function IsBountySpot(rune)
-	return rune == RUNE_BOUNTY_1 or rune == RUNE_BOUNTY_2
+	return type(rune) == 'number' and (rune == RUNE_BOUNTY_1 or rune == RUNE_BOUNTY_2)
 end
 
 local function IsMidPowerRuneWindow()
@@ -110,8 +110,8 @@ function GetDesire()
 		end
 	end
 
-	if MustStayForObjective() then return BOT_MODE_DESIRE_NONE end
-	if X.GetOpeningRune() then return 0.93 end
+	if DotaTime() >= 0 and MustStayForObjective() then return BOT_MODE_DESIRE_NONE end
+	if Opening.Target(bot) then return 0.93 end
 	if DotaTime() < 0 then return BOT_MODE_DESIRE_NONE end
 
 	-- Wisdom Rune
@@ -266,20 +266,15 @@ function Think()
 		CancelRiverMove()
 		return
 	end
-	local openingRune, openingLocation = X.GetOpeningRune()
+	local openingRune, openingLocation = Opening.Target(bot)
 	if openingRune then
-		if J.Customize and J.Customize.TraceLaneDecisions and tracedOpeningRune ~= openingRune then
-			tracedOpeningRune = openingRune
-			print('[OHA opening rune]', now, bot:GetPlayerID(), openingRune)
-		end
 		if now >= 0 then
 			if bot:GetCurrentActionType() ~= BOT_ACTION_TYPE_PICK_UP_RUNE or issuedBountySpot ~= openingRune then
 				bot:Action_PickUpRune(openingRune)
 			end
 			issuedBountySpot = openingRune
-		elseif GetUnitToLocationDistance(bot, openingLocation) > 110 then
+		elseif Opening.Walk(bot, openingRune, openingLocation) then
 			issuedBountySpot = openingRune
-			bot:Action_MoveToLocation(openingLocation)
 		end
 		return
 	end
@@ -362,7 +357,10 @@ function Think()
 			issuedBountySpot = assigned
 			return
 		end
-		if rune.location == -1 then CancelRiverMove(); return end
+		if type(rune.location) ~= 'number' or rune.location < 0 then
+			CancelRiverMove()
+			return
+		end
 
 		local vRuneLocation = GetRuneSpawnLocation(rune.location)
 		local distance = GetUnitToLocationDistance(bot, vRuneLocation)
@@ -400,7 +398,7 @@ function X.InitRune()
 			normal = {
 				time = 0,
 				type = nil,
-				location = nil,
+				location = -1,
 				distance = 0,
 				status = RUNE_STATUS_MISSING,
 			},
@@ -729,41 +727,6 @@ function X.GetScaledDesire(nBase, nCurrDist, nMaxDist)
 		resDesire = RemapValClamped(hp, 0, 0.8, 0, resDesire)
 	end
 	return resDesire
-end
-
-local function OpeningSpot(member)
-	local lane = member:GetAssignedLane()
-	if GetTeam() == TEAM_RADIANT then
-		return lane == LANE_BOT and RUNE_BOUNTY_2 or RUNE_POWERUP_1
-	end
-	return lane == LANE_TOP and RUNE_BOUNTY_1 or RUNE_POWERUP_2
-end
-
-function X.GetOpeningRune()
-	local now = DotaTime()
-	local mode = GetGameMode()
-	if now > 6 or mode == GAMEMODE_1V1MID or mode == GAMEMODE_MO or not bot:IsAlive() then return nil end
-	if J.GetHP(bot) < 0.70 and bot:WasRecentlyDamagedByAnyHero(2) then return nil end
-	local spot = OpeningSpot(bot)
-	local location = GetRuneSpawnLocation(spot)
-	if not location or IsHumanClaimingRune(spot) or X.IsPingedByHumanPlayer(location, math.huge) then return nil end
-	local allies, enemies = 0, #J.GetEnemiesNearLoc(location, 850)
-	local distance = GetUnitToLocationDistance(bot, location)
-	local closest, closestDistance = bot, distance
-	for slot = 1, #GetTeamPlayers(GetTeam()) do
-		local member = GetTeamMember(slot)
-		if J.IsValidHero(member) then
-			local gap = GetUnitToLocationDistance(member, location)
-			if gap <= 900 then allies = allies + 1 end
-			if member:IsBot() and not J.IsRetreating(member) and OpeningSpot(member) == spot
-				and (gap < closestDistance or gap == closestDistance and member:GetPlayerID() < closest:GetPlayerID()) then
-				closest, closestDistance = member, gap
-			end
-		end
-	end
-	if enemies >= 2 and enemies > allies then return nil end
-	if now >= 0 and (GetRuneStatus(spot) ~= RUNE_STATUS_AVAILABLE or closest ~= bot or distance > 700) then return nil end
-	return spot, location
 end
 
 function X.CouldBlink(vLocation)
