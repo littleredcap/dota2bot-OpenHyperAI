@@ -41,6 +41,22 @@ setfenv(assert(loadstring(source:sub(a,b-1))),e)()
 assert(j.RunOuterTowerHold(bot,0,1200,false,-800) and bot.order==-745,'only take the small step to enable the attack')
 bot.x,bot.order=bot.order,nil
 assert(j.RunOuterTowerHold(bot,0,1200,false,-800) and bot.order=='attack','next tick attacks instead of ordering a return to the hold point')
+do
+    local start = assert(source:find('function J.IsSiegeSummon', 1, true))
+    local after = assert(source:find('function J.GetOuterTowerThreat', start, true))
+    setfenv(assert(loadstring(source:sub(start, after - 1))), e)()
+    bot.GetNearbyCreeps = function() return {creep} end
+    bot.order = nil
+    assert(j.RunOuterTowerHold(bot, 0, 1200, false, -800) and bot.order == 'attack',
+        'a normal creep in both scans does not abort the tower defense')
+    local name = creep.GetUnitName
+    creep.GetUnitName = function() return 'npc_dota_shadow_shaman_ward_1' end
+    bot.GetNearbyLaneCreeps, bot.order = empty, nil
+    assert(j.RunOuterTowerHold(bot, 0, 1200, false, -800) and bot.order == 'attack',
+        'the defender can clear a summoned ward even without a lane creep in range')
+    creep.GetUnitName, bot.GetNearbyCreeps = name, empty
+    bot.GetNearbyLaneCreeps = function(_, range) return gap(bot.x, creep.x) <= range and {creep} or {} end
+end
 bot.GetAttackTarget=function() return creep end
 now, bot.order, attacking = now+0.30, nil, true
 bot.ohaIdleReplanUntil=now+2

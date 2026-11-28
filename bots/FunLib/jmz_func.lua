@@ -9506,7 +9506,7 @@ function J.RunOuterTowerHold(bot, hub, reach, cover, stage, assignment)
 	end
 	local target, priority = nil, 0
 	for _, unit in ipairs(bot:GetNearbyCreeps(bot:GetAttackRange(), true)) do
-		if J.IsValid(unit) and J.CanBeAttacked(unit) and IsSiegeSummon(unit:GetUnitName()) then
+		if J.IsValid(unit) and J.CanBeAttacked(unit) and J.IsSiegeSummon(unit:GetUnitName()) then
 			target, priority = unit, 3
 			break
 		end
@@ -9941,6 +9941,8 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local exposedMeleeHero = now >= 8 * 60 and #enemies >= 2 and bot:GetAttackRange() < 310
 		and not J.IsValidBuilding(bot:GetNearbyTowers(850, false)[1])
 		and not HasImmediateFightCover(bot, location, enemies)
+	local unsupportedRangedSupport = isolatedLaner and close >= 2 and not J.IsCore(bot)
+		and bot:GetAttackRange() >= 400 and not J.IsValidBuilding(bot:GetNearbyTowers(850, false)[1])
 	local closing = 0
 	if close > 0 and (isolatedLaner or exposedRangedHero or exposedMeleeHero
 		or now >= 8 * 60 and backup == 0 and total >= 3 and close < 3) then
@@ -9954,19 +9956,21 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	local losingGank, keepLeaving = false, false
 	local advancing = closing > 0 or underFire
 	local exposureUntil = bot.ohaExposureRetreatUntil or 0
-	if (isolatedLaner or exposedRangedHero or exposedMeleeHero) and (advancing or exposureUntil > now) then
+	if (isolatedLaner or exposedRangedHero or exposedMeleeHero)
+		and (advancing or exposureUntil > now or unsupportedRangedSupport) then
 		local window = isolatedLaner and 5.0 or 4.5
 		local damage, control, contacts = J.GetVisibleThreatAt(bot, enemies, location, window, true)
 		local health = bot:GetHealth() + window * bot:GetHealthRegen()
 		-- Leave a margin for follow-up attacks while a reachable disable prevents escape.
-		losingGank = advancing and contacts >= 2 and (exposedRangedHero or control)
-			and damage >= health * (control and 0.80 or 1)
+		local unsafeLaneHold = unsupportedRangedSupport and control and damage >= health * 0.65
+		losingGank = contacts >= 2 and (unsafeLaneHold
+			or advancing and (exposedRangedHero or control) and damage >= health * (control and 0.80 or 1))
 		keepLeaving = exposureUntil > now and backup == 0 and control and contacts >= 2 and damage >= health * 0.60
 		if losingGank then bot.ohaExposureRetreatUntil = now + 4.0 end
 		if losingGank and J.Customize and J.Customize.TraceLaneDecisions
 			and now - (bot.ohaReinforcementRetreatAt or -math.huge) > 1.25 then
-			print(string.format('[OHA retreat-exposure] %.2f player=%d health=%.0f damage=%.0f control=%s allies=%d',
-				now, bot:GetPlayerID(), health, damage, tostring(control), backup))
+			print(string.format('[OHA retreat-exposure] %.2f player=%d health=%.0f damage=%.0f control=%s allies=%d lane-hold=%s',
+				now, bot:GetPlayerID(), health, damage, tostring(control), backup, tostring(unsafeLaneHold)))
 		end
 	end
 	local isolated = now >= 8 * 60 and close >= 2 and total >= backup + 2

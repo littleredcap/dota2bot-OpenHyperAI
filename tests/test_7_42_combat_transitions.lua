@@ -379,6 +379,33 @@ do
 end
 
 do
+    local state, mode, bot, core, _, enemy, reinforcement, j = fixture(false)
+    mode.LANE_TOP, mode.LANE_BOT = 1, 3
+    state.time, state.lane, state.hp = 8 * 60 + 33, mode.LANE_TOP, 1
+    bot.GetAttackRange = function() return 600 end
+    j.IsInLaningPhase = yes
+    enemy.x, reinforcement.x, reinforcement.alive, core.x = 643, 899, true, -2500
+    local control = true
+    j.GetVisibleThreatAt = function(_, enemies, _, window)
+        assert(window == 5)
+        return 675, control, #enemies
+    end
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot),
+        '8:33: a lone support outside tower cover yields to two visible threats before the first disable')
+    state.time = state.time + 5
+    control = false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'retain a safe window for laning when control cannot reach')
+    control, core.x = true, -350
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'available allies can cover a support staying for the wave')
+    core.x, reinforcement.visible = -2500, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'a hidden opponent does not force a retreat')
+    reinforcement.visible = true
+    j.IsValidBuilding = yes
+    bot.GetNearbyTowers = function(_, _, hostile) return hostile and {} or {{}} end
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'the lane rule keeps an unpressured support in tower cover')
+end
+
+do
     local state, mode, bot, core = fixture(true)
     core.retreating = true
     bot.ohaOuterTowerHoldUntil = state.time + 3
