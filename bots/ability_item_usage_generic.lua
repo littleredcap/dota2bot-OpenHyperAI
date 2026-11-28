@@ -5117,7 +5117,11 @@ X.ConsiderItemDesire["item_tpscroll"] = function( hItem )
 	local recoveringSideCore = (bot.ohaCarryLaneRecoveryUntil or 0) > DotaTime()
 		and bot:DistanceFromFountain() < 1400 and botHP >= 0.82 and botMP >= 0.40
 		and nEnemyCount == 0 and J.IsInLaningPhase(bot)
-	if nMode == BOT_MODE_LANING or recoveringSideCore
+	local homeLane, now = bot:GetAssignedLane(), DotaTime()
+	local recoveredSideLaner = laning and (homeLane == LANE_TOP or homeLane == LANE_BOT)
+		and now >= 40 and now < (J.IsModeTurbo() and 480 or 600) and nEnemyCount == 0
+		and botHP > 0.90 and botMP > 0.80 and bot:DistanceFromFountain() < 1300
+	if nMode == BOT_MODE_LANING or recoveringSideCore or recoveredSideLaner
 		or laning and nMode == BOT_MODE_FARM and nEnemyCount == 0
 		and not midCover and bot:DistanceFromFountain() <= 1400
 	then
@@ -8550,6 +8554,10 @@ function AbilityUsageThink()
 	if GetGameState() == GAME_STATE_PRE_GAME and DotaTime() < 0 and not bot:IsIllusion()
 		and DotaTime() >= (bot.ohaOpeningRuneStepAt or -math.huge) then
 		local spot, location = OpeningRune.Target(bot)
+		if J.Customize and J.Customize.TraceLaneDecisions and not bot.ohaOpeningRuneTick then
+			bot.ohaOpeningRuneTick = true
+			print('[OHA pregame]', DotaTime(), bot:GetPlayerID(), bot:GetAssignedLane(), spot, bot:GetActiveMode())
+		end
 		if OpeningRune.Walk(bot, spot, location) then return end
 	end
 	if bot:IsInvulnerable() or not bot:IsHero() or not bot:IsAlive() or not string.find(botName, "hero") or bot:IsIllusion() then return end

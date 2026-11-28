@@ -154,6 +154,7 @@ local function fixture(core, overridden, startMid)
         BOT_ACTION_DESIRE_NONE = NONE, BOT_MODE_DESIRE_NONE = NONE, BOT_MODE_DESIRE_VERYLOW = 0.1,
     }, {__index = _G})
     env.dofile = function(path) return setfenv(assert(loadfile(path .. '.lua')), env)() end
+    modules['bots/FunLib/opening_rune'] = env.dofile('bots/FunLib/opening_rune')
     setfenv(laneSafety, env)()
     j.GetVisibleThreatAt = function() return state.incomingDamage or 0 end
     j.GetCreepAttackProjectileWillRealDamage = function() return state.creepProjectiles or 0 end
@@ -352,6 +353,18 @@ do
     expect(state, mode, 'move', -325)
     state.incomingDamage = 260
     expect(state, mode, 'move', -300)
+end
+
+do
+    local state, mode, creep, _, bot = fixture(false, false)
+    state.partner, state.partnerAtBase, state.creepHP = true, true, 35
+    mode.GetTower().x, bot.x, creep.x = 0, -330, 200
+    mode.J.GetLanePartner(bot).x = -8000
+    creep.GetLocation = function(self) return self.x end
+    assert(mode.GetDesire() == 0.82)
+    expect(state, mode, 'move', -226)
+    bot.x = -226
+    expect(state, mode, 'attack', creep)
 end
 
 do
@@ -741,6 +754,19 @@ for _, overridden in ipairs({false, true}) do
     expect(state, mode, 'move', -450)
 end
 print('PASS: first-wave commitment reaches the assigned lane and cores position behind their wave')
+
+do
+    local state, mode, _, _, bot = fixture(false)
+    state.time, state.noCreeps = -50, true
+    mode.RUNE_BOUNTY_2 = 0
+    mode.GetRuneSpawnLocation = function() return 5300 end
+    assert(mode.GetDesire() == 0.93, 'laning and rune modes can both protect the same opening route')
+    expect(state, mode, 'move', 5300)
+    bot.x = 5240
+    local orders = #state.orders
+    mode.Think()
+    assert(#state.orders == orders, 'laning mode holds the opening rune instead of moving back to the tower')
+end
 
 do
     local s, lane, creep, _, bot = fixture(false)

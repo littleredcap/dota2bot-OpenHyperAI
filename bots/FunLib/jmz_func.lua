@@ -1525,14 +1525,15 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local origin, team = bot:GetLocation(), bot:GetTeam()
     local tower = GetTower(team, lane == LANE_TOP and TOWER_TOP_1 or TOWER_BOT_1)
     if not J.IsValidBuilding(tower) then return nil end
-    -- After the initial lane phase, reconnect to a nearby wave without calling a core back across the map.
-    if now >= (J.IsModeTurbo() and 480 or 600) and not J.IsInRange(bot, tower, 2800) then return nil end
+    -- After the initial lane phase, reconnect only to a nearby wave.
+    local early = now < (J.IsModeTurbo() and 480 or 600)
+    if not early and not J.IsInRange(bot, tower, 2800) then return nil end
+    local returning = early and (recovered or (bot.ohaSideLaneReturnUntil or 0) > now)
     local partner = J.GetLanePartner(bot, true)
     local partnerReady = J.IsValidHero(partner) and J.GetHP(partner) >= 0.60
         and not J.IsDisabled(partner) and not J.IsRetreating(partner) and not partner:HasModifier('modifier_teleporting')
-    if not core and (not J.IsValidHero(partner) or not J.IsCore(partner)) then return nil end
-    local fromFountain = not core and recovered
-    local hub, wave, distance = tower:GetLocation(), nil, (core or fromFountain) and 20000 or 4800
+    if not core and not returning and (not J.IsValidHero(partner) or not J.IsCore(partner)) then return nil end
+    local hub, wave, distance = tower:GetLocation(), nil, (core or returning) and 20000 or 4800
     local front = GetLaneFrontLocation(team, lane, 0)
     -- Don't turn a distant recovery route into a chase into enemy territory.
     for _, creep in ipairs(GetUnitList(UNIT_LIST_ENEMY_CREEPS)) do
@@ -1545,7 +1546,7 @@ function J.GetSideLaneReturnPoint(bot, lane)
         end
     end
     if not wave then
-        if not fromFountain then return nil end
+        if not returning then return nil end
         distance = GetUnitToUnitDistance(bot, tower)
     end
     if distance <= math.max(600, bot:GetAttackRange() + 370) then return nil end
@@ -1556,9 +1557,9 @@ function J.GetSideLaneReturnPoint(bot, lane)
     local distanceToTower = J.GetLocationToLocationDistance(point, hub)
     -- A healthy support can return to a defending partner even if neither
     -- can safely advance into the enemy wave yet.
-    local towerOnly = not core and (not partnerReady or not covered or distance > 2200)
-    if towerOnly and (J.GetHP(bot) < 0.75 or distanceToTower > 1750
-        or not J.IsInRange(partner, tower, fromFountain and 1250 or 800)) then return nil end
+    local towerOnly = not wave or not core and (not partnerReady or not covered or distance > 2200)
+    if towerOnly and (J.GetHP(bot) < 0.75 or J.IsInRange(bot, tower, 650)
+        or not returning and (distanceToTower > 1750 or not J.IsInRange(partner, tower, 800))) then return nil end
     local hasLaneCover = false
     for _, creep in ipairs(GetUnitList(UNIT_LIST_ALLIED_CREEPS)) do
         if J.IsValid(creep) and string.find(creep:GetUnitName(), 'npc_dota_creep_', 1, true)
@@ -1585,7 +1586,7 @@ function J.GetSideLaneReturnPoint(bot, lane)
             and #J.GetLastSeenEnemiesNearLoc(mid, threatRadius) == 0
             and #J.GetEnemiesNearLoc(step, threatRadius) == 0
             and #J.GetLastSeenEnemiesNearLoc(step, threatRadius) == 0 then
-            return step
+            return step, recovered and early
         end
     end
 end

@@ -85,6 +85,15 @@ bot.x, wave.x, ally.x = -3100, 1200, 100
 assert(j.GetSideLaneReturnPoint(bot,1)==0,'a healthy support rejoins its own tower instead of idling when the core is recovering')
 state.enemy = -1550
 assert(not j.GetSideLaneReturnPoint(bot,1),'the support cannot cross an enemy on the way to the tower')
+state.enemy, state.fountainDistance, state.hp = nil, 500, 0.95
+bot.x, wave.x, ally.x = -10000, 2500, -9500
+local point, recovered = j.GetSideLaneReturnPoint(bot,1)
+assert(point == 0 and recovered, 'a recovered support can leave for its protected tower while the core is still away')
+state.fountainDistance, bot.ohaSideLaneReturnUntil = 2500, 600
+assert(j.GetSideLaneReturnPoint(bot,1)==0,'keep the tower route after the first step out of the fountain')
+state.enemy = -500
+assert(not j.GetSideLaneReturnPoint(bot,1),'cancel a recovery route when the tower approach becomes unsafe')
+state.fountainDistance, bot.ohaSideLaneReturnUntil, state.hp = nil, nil, 0.9
 state.enemy, state.support, state.allyHP, state.time = nil, false, nil, nil
 bot.GetAttackRange=function() return 150 end
 bot.x, wave.x, ally.x = 200, 2250, 1700

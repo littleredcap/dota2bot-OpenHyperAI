@@ -1,6 +1,7 @@
 local Utils = require( GetScriptDirectory()..'/FunLib/utils')
 local J = require( GetScriptDirectory()..'/FunLib/jmz_func')
 local LaneCamp = require(GetScriptDirectory() .. '/FunLib/lane_camp')
+local OpeningRune = require(GetScriptDirectory() .. '/FunLib/opening_rune')
 
 local Version      = require(GetScriptDirectory()..'/FunLib/version')
 local Localization = require(GetScriptDirectory()..'/FunLib/localization')
@@ -74,6 +75,10 @@ local function GetOpeningLaneDestination(lane, enemies)
 	local now = DotaTime()
 	if firstWaveReached or now < -90 or now > 100
 		or GetGameMode() == GAMEMODE_MO or GetGameMode() == GAMEMODE_1V1MID then return nil end
+	if now < 0 then
+		local spot, location = OpeningRune.Target(bot)
+		if spot ~= nil then return location, spot end
+	end
 	local towerId = laneTierOne[lane]
 	local tower = towerId ~= nil and GetTower(GetTeam(), towerId) or nil
 	if not J.IsValidBuilding(tower) then return nil end
@@ -121,12 +126,12 @@ function GetDesire()
 	else
 		botAssignedLane = bot:GetAssignedLane()
 	end
-	local enemyTower = bot:GetNearbyTowers(1200, true)[1]
-	local underPressure = J.IsLaningUnderPressure(bot, nInRangeEnemy, enemyTower)
-
-	if GetOpeningLaneDestination(botAssignedLane, nInRangeEnemy) ~= nil then return 0.72 end
+	local opening, openingRune = GetOpeningLaneDestination(botAssignedLane, nInRangeEnemy)
+	if opening ~= nil then return openingRune ~= nil and 0.93 or 0.72 end
 	if GetGameMode() == 23 then currentTime = currentTime * 1.65 end
 	if currentTime < 0 then return BOT_ACTION_DESIRE_NONE end
+	local enemyTower = bot:GetNearbyTowers(1200, true)[1]
+	local underPressure = J.IsLaningUnderPressure(bot, nInRangeEnemy, enemyTower)
 
 	-- if DotaTime() > 20 and DotaTime() - skipLaningState.lastCheckTime < skipLaningState.checkGap then
 	-- 	if skipLaningState.count > 6 then
@@ -276,8 +281,9 @@ local function ThinkLane()
 		end
 	end
 	if bot.ohaCreepDrag and J.RunSideLaneCreepDrag(bot, nInRangeEnemy, nil, true) then return end
-	local opening = GetOpeningLaneDestination(botAssignedLane or bot:GetAssignedLane(), nInRangeEnemy)
+	local opening, spot = GetOpeningLaneDestination(botAssignedLane or bot:GetAssignedLane(), nInRangeEnemy)
 	if opening ~= nil then
+		if spot ~= nil then OpeningRune.Walk(bot, spot, opening); return end
 		if DotaTime() < 0 and bot.ohaOpeningRuneSpot ~= nil and DotaTime() < (bot.ohaOpeningRuneStepAt or -math.huge) then return end
 		bot:Action_MoveToLocation(opening)
 		return
@@ -295,8 +301,9 @@ local function ThinkLane()
 	end
 	if not local_mode_laning_generic and not J.HasPendingLaningLastHit(bot)
 		and J.GetSideLaneReturnPoint then
-		local point = J.GetSideLaneReturnPoint(bot, botAssignedLane or bot:GetAssignedLane())
+		local point, recovered = J.GetSideLaneReturnPoint(bot, botAssignedLane or bot:GetAssignedLane())
 		if point then
+			if recovered then bot.ohaSideLaneReturnUntil = DotaTime() + 50 end
 			TraceLaneDecision('side-wave-reentry')
 			if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'side-wave-reentry') end
 			bot:Action_MoveToLocation(point)
@@ -318,21 +325,18 @@ local function ThinkLane()
 			local creep, approach, reserve = J.GetLaningLastHitTarget(bot, wave, nil, J.GetLaningAttackDamage(bot), nInRangeEnemy, true)
 			if creep ~= nil and not approach then J.IssueLaningAttack(bot, creep); return end
 			if reserve then J.HoldLaningAttack(bot, current); return end
-			if approach and not J.IsLaningUnderPressure(bot, nInRangeEnemy, nil)
+			if approach and bot:GetAttackRange() < 310 and not J.IsLaningUnderPressure(bot, nInRangeEnemy, nil)
 				and #J.GetEnemiesNearLoc(creep:GetLocation(), 750) == 0 then
 				bot:Action_MoveToUnit(creep)
 				return
 			end
-			if covered then
-				local point = J.AdjustLocationWithOffsetTowardsFountain(wave[1]:GetLocation(), math.max(240, bot:GetAttackRange() - 50))
-				if IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 900) == 0 then hold = point end
-			elseif not underPressure and J.GetHP(bot) >= 0.70 and not bot:WasRecentlyDamagedByAnyHero(2)
+			if (approach or not covered) and not underPressure and J.GetHP(bot) >= 0.70 and not bot:WasRecentlyDamagedByAnyHero(2)
 				and not J.IsFinishingLaningAttack(bot, current) then
-				local front = wave[1]
+				local front = approach and creep or wave[1]
 				local gap = GetUnitToUnitDistance(bot, front) - bot:GetAttackRange()
-				if gap > 90 and J.IsInRange(front, holdTower, 780) then
+				if (gap > 90 or approach and gap > 0) and J.IsInRange(front, holdTower, 780) then
 					local here = bot:GetLocation()
-					local stride = math.min(gap - 45, 325)
+					local stride = math.min(gap + (approach and 24 or -45), 325)
 					local point = J.VectorTowards(here, front:GetLocation(), stride)
 					local midpoint = J.VectorTowards(here, point, stride * 0.5)
 					if GetUnitToLocationDistance(holdTower, point) <= 700 and IsLocationVisible(point)
@@ -345,6 +349,10 @@ local function ThinkLane()
 						return
 					end
 				end
+			end
+			if covered then
+				local point = J.AdjustLocationWithOffsetTowardsFountain(wave[1]:GetLocation(), math.max(240, bot:GetAttackRange() - 50))
+				if IsLocationPassable(point) and #J.GetLastSeenEnemiesNearLoc(point, 900) == 0 then hold = point end
 			end
 		end
 		-- On a real reset, the laner covering the tower can still deny from safety.
