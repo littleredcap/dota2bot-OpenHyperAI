@@ -167,10 +167,14 @@ function ____exports.GetPushDesireHelper(bot, lane)
         or (jmz.CanTakePostFightTrip and not jmz.CanTakePostFightTrip(bot, GetLaneFrontLocation(team, lane, 0))) then
         return BotModeDesire.None
     end
+    if bot.ohaPostFightPushLane and gameState.aliveEnemyCount > (bot.ohaPostFightPushEnemyCount or 5) then
+        if not bot._ohaIssuedPushOrder then bot.ohaPostFightPushLane, bot.ohaPostFightPushEnemyCount = nil, nil end
+        return BotModeDesire.None
+    end
     local tradeLane = not criticalBaseCreeps and GetPreferredCounterPushLane(bot, gameState.enemyTeam)
     if tradeLane then
         if tradeLane ~= lane then return BotModeDesire.VeryLow end
-        bot.ohaPostFightPushLane = nil
+        bot.ohaPostFightPushLane, bot.ohaPostFightPushEnemyCount = nil, nil
         bot.ohaOuterTowerPush = nil
         bot.ohaCounterPushLane = lane
         bot.laneToPush = lane
@@ -198,6 +202,7 @@ function ____exports.GetPushDesireHelper(bot, lane)
                 if advanced > 0.025 or GetHeightLevel(plan.staging) > GetHeightLevel(point) then return BotModeDesire.VeryLow end
             end
             bot.ohaPostFightPushLane = lane
+            bot.ohaPostFightPushEnemyCount = gameState.aliveEnemyCount
             bot.ohaCounterPushLane = nil
             bot.ohaOuterTowerPush = nil
             bot.laneToPush = lane
@@ -1002,14 +1007,19 @@ local function GetPostFightWavePlan(gameState, ready, availableTime)
 end
 
 function GetPostFightPushPlan(gameState)
-    if gameState.currentTime < StartToPushTime or gameState.aliveEnemyCount > 3
+    local singlePick = gameState.aliveEnemyCount == 4 and gameState.aliveAllyCount == 5
+    if gameState.currentTime < (singlePick and 8 * 60 or StartToPushTime)
+        or (gameState.aliveEnemyCount > 3 and not singlePick)
+        or (singlePick and gameState.reinforcementWindow < 6)
         or gameState.aliveAllyCount <= gameState.aliveEnemyCount or gameState.aliveAllyCoreCount == 0 then return nil end
     return getCachedData("postFightPushPlan", 0.35, function()
         local ready, count = {}, 0
         local reserve = jmz.GetExposedMidCover and jmz.GetExposedMidCover(gameState.team)
         for slot = 1, #GetTeamPlayers(gameState.team) do
             local ally = GetTeamMember(slot)
-            if reserve ~= ally and jmz.IsValidHero(ally) and (not jmz.GetPostFightDuty or not jmz.GetPostFightDuty(ally)) and ally:IsBot() and not ally:IsIllusion() and jmz.GetHP(ally) >= 0.55
+            if reserve ~= ally and jmz.IsValidHero(ally) and (not jmz.GetPostFightDuty or not jmz.GetPostFightDuty(ally)) and ally:IsBot() and not ally:IsIllusion()
+                and jmz.GetHP(ally) >= (singlePick and 0.65 or 0.55)
+                and (not singlePick or not jmz.IsValidHero(ally:GetAttackTarget()) and not ally:WasRecentlyDamagedByAnyHero(2))
                 and not jmz.IsRetreating(ally) and not ally:IsChanneling() and not ally:HasModifier("modifier_teleporting")
                 and not ally:IsStunned() and not ally:IsHexed() and not ally:IsNightmared() and not ally:IsDisarmed()
                 and not jmz.IsDoingRoshan(ally) and not jmz.IsDoingTormentor(ally)
@@ -1022,7 +1032,7 @@ function GetPostFightPushPlan(gameState)
         if count < 2 then return false end
 
         local availableTime = math.max(0, gameState.reinforcementWindow - 1.5)
-        if gameState.aliveAllyCount == gameState.aliveEnemyCount + 1 then
+        if not singlePick and gameState.aliveAllyCount == gameState.aliveEnemyCount + 1 then
             return GetPostFightWavePlan(gameState, ready, availableTime)
         end
         local creeps = GetUnitList(UnitType.AlliedCreeps)
@@ -1031,8 +1041,11 @@ function GetPostFightPushPlan(gameState)
         for _, lane in ipairs({Lane.Mid, Lane.Top, Lane.Bot}) do
             local tower = GetFirstOuterTower(lane, gameState.enemyTeam, IsStandingBuilding)
             local highGround = tower == nil
-            if highGround then tower = GetHighGroundObjective(lane, gameState.enemyTeam) end
-            if IsStandingBuilding(tower) then
+            if highGround and not singlePick then tower = GetHighGroundObjective(lane, gameState.enemyTeam) end
+            if IsStandingBuilding(tower) and (not singlePick or (jmz.IsValidBuilding(tower)
+                and IsLocationVisible(tower:GetLocation())
+                and #jmz.GetLastSeenEnemiesNearLoc(tower:GetLocation(), 2000) == 0
+                and #jmz.GetEnemiesNearLoc(tower:GetLocation(), 2000) == 0)) then
                 local location = tower:GetLocation()
                 local front = GetLaneFrontLocation(gameState.team, lane, 0)
                 local targetProgress = GetAmountAlongLane(lane, location).amount * direction
@@ -1059,8 +1072,9 @@ function GetPostFightPushPlan(gameState)
                 local immediateChip = not highGround and secondCreepETA == 0
                     and #jmz.GetLastSeenEnemiesNearLoc(location, 1800) == 0
                     and #jmz.GetEnemiesNearLoc(location, 2000) == 0
-                local budget = immediateChip and math.max(availableTime, 4) or availableTime
-                if wave and secondCreepETA <= budget then
+                local budget = not singlePick and immediateChip and math.max(availableTime, 4) or availableTime
+                local arrivalBudget = singlePick and math.min(3, budget) or budget
+                if wave and secondCreepETA <= arrivalBudget then
                     local waveDistance = GetLocationToLocationDistance(wave, location)
                     local staging = waveDistance <= 1200 and GetLaneStaging(location, lane, 900)
                         or GetLaneStaging(wave, lane, 280)
@@ -1073,10 +1087,12 @@ function GetPostFightPushPlan(gameState)
                                 and (not jmz.CanTakePostFightTrip or jmz.CanTakePostFightTrip(ally, location)) then
                                 local distance = reach == 0 and 0 or math.max(reach, GetUnitToLocationDistance(ally, staging))
                                 local eta = distance / math.max(1, ally:GetCurrentMovementSpeed())
-                                if eta <= budget and (budget == availableTime or eta <= 0.7) then arriving[ally:GetPlayerID()] = ally end
-                                if eta < first then first, second = eta, first
-                                elseif eta < second then second = eta end
-                                if jmz.IsCore(ally) then core = math.min(core, eta) end
+                                if eta <= arrivalBudget then
+                                    if budget == availableTime or eta <= 0.7 then arriving[ally:GetPlayerID()] = ally end
+                                    if eta < first then first, second = eta, first
+                                    elseif eta < second then second = eta end
+                                    if jmz.IsCore(ally) then core = math.min(core, eta) end
+                                end
                             end
                         end
                         -- First creep or arrival at the staging point alone cannot start the siege.
@@ -1112,7 +1128,7 @@ function GetPostFightPushPlan(gameState)
                 end
             end
         end
-        return best or GetPostFightWavePlan(gameState, ready, availableTime)
+        return best or (not singlePick and GetPostFightWavePlan(gameState, ready, availableTime))
     end)
 end
 
@@ -1239,7 +1255,9 @@ end
 local fNextMovementTime = 0
 function ____exports.CancelPushOrder(bot, lane)
     if lane ~= nil and bot.ohaOuterTowerPush and bot.ohaOuterTowerPush.lane == lane then bot.ohaOuterTowerPush = nil end
-    if lane ~= nil and bot.ohaPostFightPushLane == lane then bot.ohaPostFightPushLane = nil end
+    if lane ~= nil and bot.ohaPostFightPushLane == lane then
+        bot.ohaPostFightPushLane, bot.ohaPostFightPushEnemyCount = nil, nil
+    end
     if lane ~= nil and bot.ohaCounterPushLane == lane then bot.ohaCounterPushLane = nil end
     if not bot._ohaIssuedPushOrder then return end
     if not jmz.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
@@ -1320,9 +1338,13 @@ function ____exports.PushThink(bot, lane)
     local gameState = getGlobalGameState()
     local locationState = getGlobalLocationState()
     if bot.ohaPostFightPushLane == lane and gameState.enemyAncient and CanFinishAncient(bot, gameState.enemyAncient) then
-        bot.ohaPostFightPushLane = nil
+        bot.ohaPostFightPushLane, bot.ohaPostFightPushEnemyCount = nil, nil
     end
     if bot.ohaPostFightPushLane == lane then
+        if gameState.aliveEnemyCount > (bot.ohaPostFightPushEnemyCount or 5) then
+            ____exports.CancelPushOrder(bot, lane)
+            return
+        end
         local advance = not criticalBaseCreeps and (bot.ohaOuterTowerHoldUntil or 0) <= now and GetPostFightPushPlan(gameState)
         if not advance or advance.lane ~= lane or not advance.ready[bot:GetPlayerID()] or jmz.GetHP(bot) < 0.55
             or not jmz.CanCommitToLaneTeleport(bot, advance.staging) then

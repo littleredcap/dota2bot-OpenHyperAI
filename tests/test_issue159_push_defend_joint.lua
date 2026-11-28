@@ -1919,6 +1919,24 @@ do
 end
 
 do
+    local opts = {postFight=true, direct=true, x=6550, time=12*60, allyCount=5, enemyAliveAtStart=4,
+        fightWaves={[2]=6830}, reinforcementWindow=18, localAllies=true, captureTargets=true}
+    local push, _, members, orders, lane, _, buildings, jmz = fixture(opts)
+    for i=3,5 do members[i].x = 3000 end
+    same(push.GetPushDesire(members[1], lane.Mid), 0.88, 'a single pick allows immediate local outer-tower pressure before 16 minutes')
+    assert(push.GetPushDesire(members[3], lane.Mid) ~= 0.88, 'do not pull distant farmers into the brief window')
+    push.PushThink(members[1], lane.Mid)
+    assert(orders[#orders] == buildings.fightTower, 'the local core actually hits the selected tower')
+    opts.visibleDefenders = 1
+    push.PushThink(members[1], lane.Mid)
+    assert(orders[#orders] == 'cancel', 'a newly visible defender ends the local siege')
+    opts.visibleDefenders = 0
+    local original = jmz.IsValidBuilding
+    jmz.IsValidBuilding = function(unit) return unit ~= buildings.fightTower and original(unit) end
+    assert(push.GetPushDesire(members[1], lane.Mid) ~= 0.88, 'a pick does not grant vision of a tower')
+end
+
+do
     local opts = {postFight=true, x=6550, allyCount=5, enemyAliveAtStart=3,
         fightWaves={[2]=6830}, reinforcementWindow=12}
     local push, _, members, _, lane = fixture(opts)

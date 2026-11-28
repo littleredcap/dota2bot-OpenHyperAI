@@ -7453,9 +7453,12 @@ function J.GetSupportedFightTarget(bot, enemies, allies)
 					and J.GetHP(attacked)<0.62 and HasFightContact(enemy,attacked,150)
 				local exposed = HasFightContact(bot, enemy, 120) and inRange > 0
 					and (J.GetHP(enemy) <= 0.72 or burstReady or dangerousChannel)
+				local pickoff = inRange > 0 and J.GetHP(bot) >= 0.65 and J.GetHP(enemy) <= 0.55
+					and HasFightContact(bot, enemy, 70) and #J.GetEnemiesNearLoc(location, 1250) == 1
+					and (burst >= enemy:GetHealth() * 1.15 or interval and interval.low >= enemy:GetHealth() * 1.05)
 				-- Do not drag the team toward a full-health backline just because of its roster role.
 				if (inRange > 0 or selfLethal or localFollow and controlling[enemy])
-					and (committed > 0 or peel and HasFightContact(bot,enemy,100) or localFollow
+					and (committed > 0 or pickoff or peel and HasFightContact(bot,enemy,100) or localFollow
 						or engaged and exposed and (spellThreat > 0 or damageThreat >= 1))
 					and J.GetAvailableFightAllies(bot, location, 1250) + 1 >= #J.GetEnemiesNearLoc(location, 1250) then
 					local score = math.min(committed, 2) * 0.5 + (1 - J.GetHP(enemy)) * 1.8
@@ -9434,6 +9437,14 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	end
 	local backup = total > 0 and J.GetAvailableFightAllies(bot, location, 1400) or 0
 	local damaged = bot:WasRecentlyDamagedByAnyHero(2)
+	if close > 0 and (J.GetHP(bot) <= 0.75 or underFire and close >= 2) then
+		for _, tower in ipairs(bot:GetNearbyTowers(950, true)) do
+			if J.IsValidBuilding(tower) and tower:GetAttackTarget() == bot then
+				bot.ohaReinforcementRetreatAt = now
+				return true
+			end
+		end
+	end
 	local losingDuel = empoweredAttacker ~= nil and backup == 0 and J.GetHP(bot) <= 0.8
 		and (J.GetHP(bot) < 0.5 or J.GetHP(empoweredAttacker) > 0.35)
 	local exposedRangedCore = now >= 8 * 60 and backup == 0 and total == 2 and #enemies == 2

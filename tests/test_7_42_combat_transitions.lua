@@ -395,6 +395,33 @@ do
 end
 
 do
+    local state, _, bot, core, _, enemy, reinforcement, j = fixture(false)
+    state.time = 11 * 60
+    j.GetHP = function(unit) return unit == enemy and 0.4 or 0.9 end
+    enemy.GetHealth = function() return 200 end
+    bot.GetEstimatedDamageToTarget = function() return 125 end
+    core.GetEstimatedDamageToTarget = function() return 115 end
+    assert(j.GetSupportedFightTarget(bot, {enemy}, {core}) == enemy,
+        'two available allies in range take a short lethal pick without waiting for a first attack')
+    reinforcement.alive = true
+    assert(not j.GetSupportedFightTarget(bot, {enemy, reinforcement}, {core}), 'another defender closes the pick window')
+    reinforcement.alive = false
+    core.GetEstimatedDamageToTarget = function() return 80 end
+    assert(not j.GetSupportedFightTarget(bot, {enemy}, {core}), 'weak damage does not initiate a pick')
+end
+
+do
+    local state, _, bot, _, _, enemy, _, j = fixture(false)
+    state.time, state.hp = 20 * 60, 0.7
+    local tower = {GetAttackTarget = function() return bot end}
+    bot.GetNearbyTowers = function() return {tower} end
+    j.IsValidBuilding = function(unit) return unit == tower end
+    assert(j.ShouldRetreatFromEnemyReinforcements(bot), 'leave a tower shot when a defender can follow up')
+    state.time, enemy.visible = state.time + 2, false
+    assert(not j.ShouldRetreatFromEnemyReinforcements(bot), 'unseen hero pressure does not invent a retreat')
+end
+
+do
     local state, _, bot, core, backup, enemy, control, j = fixture(false)
     state.time = 15 * 60
     control.alive, control.x, core.x, backup.x, enemy.x = true, 500, 450, 450, 500
