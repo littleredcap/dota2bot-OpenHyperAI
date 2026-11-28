@@ -192,6 +192,8 @@ function GetDesire()
 			if J.GetPosition(bot) <= 3 then return 0.9 end
 			if GetUnitToUnitDistance(bot, hitCreep) <= botAttackRange then return 0.55 end
 		end
+		if not engineMid and not local_mode_laning_generic and J.GetLaningTowerJointHit(bot,
+			bot:GetNearbyTowers(1050, false)[1], nInRangeEnemy) then return J.IsCore(bot) and 0.88 or 0.75 end
 		if supportStep then return 0.55 end
 		if reserve and botAssignedLane ~= LANE_MID then return J.IsCore(bot) and 0.78 or 0.55 end
 		if urgentApproach and J.IsCore(bot)
@@ -328,6 +330,8 @@ local function ThinkLane()
 			end
 			local creep, approach, reserve = J.GetLaningLastHitTarget(bot, wave, nil, J.GetLaningAttackDamage(bot), nInRangeEnemy, true)
 			if creep ~= nil and not approach then J.IssueLaningAttack(bot, creep); return end
+			local together = not underPressure and J.GetLaningTowerJointHit(bot, holdTower, nInRangeEnemy)
+			if together then TraceLaneDecision('joint-tower-hit', together); J.IssueLaningAttack(bot, together); return end
 			if reserve then J.HoldLaningAttack(bot, current); return end
 			if approach and bot:GetAttackRange() < 310 and not J.IsLaningUnderPressure(bot, nInRangeEnemy, nil)
 				and #J.GetEnemiesNearLoc(creep:GetLocation(), 750) == 0 then
@@ -445,6 +449,13 @@ local function ThinkLane()
 		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'last-hit-now') end
 		bot:SetTarget(hitCreep)
 		J.IssueLaningAttack(bot, hitCreep)
+		return
+	end
+	local together = J.GetLaningTowerJointHit(bot, bot:GetNearbyTowers(1050, false)[1], nInRangeEnemy)
+	if together then
+		TraceLaneDecision('joint-tower-hit', together)
+		if bot.ohaLaneCamp then LaneCamp.Cancel(bot, 'joint-tower-hit') end
+		J.IssueLaningAttack(bot, together)
 		return
 	end
 	if reserve then

@@ -580,8 +580,9 @@ local function CourierUsageComplement()
 
 	local supply = require(GetScriptDirectory() .. '/FunLib/lane_supply')
 	if X.IsCourierTargetedByUnit( npcCourier )
-		or not bot.ohaLaneSupply and bAliveBot and nCourierState == COURIER_STATE_DELIVERING_ITEMS
-			and not supply.CanDeliverCourier(bot, npcCourier, false)
+		or nCourierState == COURIER_STATE_DELIVERING_ITEMS and (not bAliveBot
+			or bot:HasModifier('modifier_teleporting')
+			or not bot.ohaLaneSupply and not supply.CanDeliverCourier(bot, npcCourier, false))
 	then
 		bot.ohaCourierUnsafeUntil = currentTime + protectCourierCD
 		if currentTime > nCourierReturnTime + protectCourierCD

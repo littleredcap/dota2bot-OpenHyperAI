@@ -97,9 +97,9 @@ function J.IsTryingtoUseAbility(bot)
 	or bot:IsChanneling()
 end
 
-function J.CanNotUseAction( bot, allowInvulnerable )
+function J.CanNotUseAction( bot, allowInvulnerable, ignoreQueue )
 	return not bot:IsAlive()
-			or J.HasQueuedAction( bot )
+			or (not ignoreQueue and J.HasQueuedAction(bot))
 			or (not allowInvulnerable and bot:IsInvulnerable() and not bot:HasModifier('modifier_fountain_invulnerability') and not bot:HasModifier('modifier_dazzle_nothl_projection_soul_debuff'))
 			or bot:IsCastingAbility()
 			or bot:IsUsingAbility()
@@ -1934,6 +1934,41 @@ function J.GetLaningLastHitTarget(bot, creeps, tower, attackDamage, enemies, cov
     end
     if best ~= nil then return best, false end
     return approach, approach ~= nil, holdsAttack, urgentApproach, supportStep
+end
+
+-- The tower is about to take a creep neither laner can finish alone.
+function J.GetLaningTowerJointHit(bot, tower, enemies)
+    if not J.IsValidBuilding(tower) or not J.IsInLaningPhase(bot) then return nil end
+    local creep = tower:GetAttackTarget()
+    if not creep or not J.IsValid(creep) or not creep:IsCreep() or creep:GetTeam() == bot:GetTeam()
+        or not J.CanBeAttacked(creep) or not J.IsInRange(bot, creep, bot:GetAttackRange()) then return nil end
+    local partner = J.GetLanePartner(bot)
+    if not J.IsValidHero(partner) or not partner:IsBot() or J.IsDisabled(partner) or partner:IsDisarmed()
+        or partner:IsChanneling() or partner:HasModifier('modifier_teleporting') or J.GetHP(partner) < 0.55
+        or J.IsRetreating(partner) or not J.IsInRange(partner, creep, partner:GetAttackRange())
+        or J.HasPendingLaningLastHit(partner) and partner.ohaLaningAttackTarget ~= creep then return nil end
+    for _, enemy in ipairs(enemies) do
+        if J.IsValidHero(enemy) and J.IsInRange(enemy, creep, math.max(800, enemy:GetAttackRange() + 180)) then return nil end
+    end
+
+    local hp = creep:GetHealth()
+    local own = LaneAttackDamage(bot, creep, J.GetLaningAttackDamage(bot))
+    local other = LaneAttackDamage(partner, creep, J.GetLaningAttackDamage(partner))
+    if hp <= math.max(own, other) or hp > own + other
+        or hp > LaneAttackDamage(tower, creep, tower:GetAttackDamage()) then return nil end
+
+    local deadline, release = J.GetAttackProDelayTime(tower, creep, true)
+    if release <= 0 then deadline = math.huge end
+    for _, shot in ipairs(creep:GetIncomingTrackingProjectiles()) do
+        if shot.is_attack and shot.caster == tower then
+            deadline = math.min(deadline, GetUnitToLocationDistance(creep, shot.location)
+                / math.max(1, tower:GetAttackProjectileSpeed()))
+        end
+    end
+    if deadline == math.huge then return nil end
+    local first, _, wait = J.GetAttackProDelayTime(bot, creep)
+    local second, _, partnerWait = J.GetAttackProDelayTime(partner, creep)
+    if wait <= 0.20 and partnerWait <= 0.20 and math.max(first, second) + 0.05 < deadline then return creep end
 end
 
 -- Optional lane spells contend for the same time as the next farm order.
@@ -9599,17 +9634,18 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 	end
 	local losingDuel = empoweredAttacker ~= nil and backup == 0 and J.GetHP(bot) <= 0.8
 		and (J.GetHP(bot) < 0.5 or J.GetHP(empoweredAttacker) > 0.35)
-	local earlySideSupport = false
-	if now >= 40 and now < 6 * 60 and #enemies >= 2 and backup == 0 and not J.IsCore(bot) then
+	local isolatedLaner = false
+	if now >= 40 and now < 14 * 60 and #enemies >= 2 and backup == 0 and J.IsInLaningPhase(bot)
+		and (bot:GetAttackRange() >= 400 or J.GetHP(bot) <= 0.74) then
 		local lane = bot:GetAssignedLane()
-		earlySideSupport = lane == LANE_TOP or lane == LANE_BOT
+		isolatedLaner = lane == LANE_TOP or lane == LANE_BOT
 	end
-	local exposedRangedHero = (now >= 6 * 60 or earlySideSupport) and #enemies >= 2 and bot:GetAttackRange() >= 400
+	local exposedRangedHero = now >= 6 * 60 and #enemies >= 2 and bot:GetAttackRange() >= 400
 		and (backup == 0 or now >= 8 * 60 and J.IsCore(bot)
 			and not J.IsValidBuilding(bot:GetNearbyTowers(850, false)[1])
 			and not HasImmediateFightCover(bot, location, enemies))
 	local closing = 0
-	if close > 0 and (exposedRangedHero or now >= 8 * 60 and backup == 0 and total >= 3 and close < 3) then
+	if close > 0 and (isolatedLaner or exposedRangedHero or now >= 8 * 60 and backup == 0 and total >= 3 and close < 3) then
 		for _, enemy in ipairs(enemies) do
 			local distance = GetUnitToUnitDistance(bot, enemy)
 			if J.GetLocationToLocationDistance(enemy:GetExtrapolatedLocation(0.8), location) < distance - 90 then
@@ -9618,12 +9654,12 @@ function J.ShouldRetreatFromEnemyReinforcements(bot)
 		end
 	end
 	local losingGank = false
-	if exposedRangedHero and (closing > 0 or underFire) then
-		local window = earlySideSupport and 5.0 or 4.5
+	if (isolatedLaner or exposedRangedHero) and (closing > 0 or underFire) then
+		local window = isolatedLaner and 5.0 or 4.5
 		local damage, control, contacts = J.GetVisibleThreatAt(bot, enemies, location, window, true)
 		local health = bot:GetHealth() + window * bot:GetHealthRegen()
 		-- Leave a margin for follow-up attacks while a reachable disable prevents escape.
-		losingGank = contacts >= 2 and (not earlySideSupport or control and (closing > 0 or underFire))
+		losingGank = contacts >= 2 and (exposedRangedHero or control)
 			and damage >= health * (control and 0.80 or 1)
 		if losingGank and J.Customize and J.Customize.TraceLaneDecisions
 			and now - (bot.ohaReinforcementRetreatAt or -math.huge) > 1.25 then
@@ -11045,7 +11081,7 @@ function J.CheckBotIdleState()
 	local now = DotaTime()
 	if now < 40 or not bot:IsAlive()
 		or bot:DistanceFromFountain() < 850 and (J.GetHP(bot) < 0.88 or J.GetMP(bot) < 0.65)
-		or J.CanNotUseAction(bot) or bot:IsRooted() or J.IsTryingtoUseAbility(bot)
+		or J.CanNotUseAction(bot, false, true) or bot:IsRooted() or J.IsTryingtoUseAbility(bot)
 		or bot:HasModifier('modifier_teleporting') then
 		bot.ohaMoveSample, bot.ohaIdleRecoveryUntil, bot.ohaIdleReplanUntil = nil, nil, nil
 		return false
@@ -11076,6 +11112,7 @@ function J.CheckBotIdleState()
 		or (bot.ohaOuterTowerHoldUntil or 0) > now or bot:WasRecentlyDamagedByAnyHero(3)
 		or J.IsRetreating(bot) and (J.GetHP(bot) < 0.80 or J.GetMP(bot) < 0.40)
 		or #J.GetEnemiesNearLoc(location, 1400) > 0 or #J.GetLastSeenEnemiesNearLoc(location, 1200) > 0 then return false end
+	if J.HasQueuedAction(bot) and not bot:GetAttackTarget() then bot:Action_ClearActions(false) end
 	bot.ohaIdleRecoveryUntil = now + 15
 	bot.ohaIdleRecoveryOrigin = location
 	if J.Customize and J.Customize.TraceLaneDecisions then

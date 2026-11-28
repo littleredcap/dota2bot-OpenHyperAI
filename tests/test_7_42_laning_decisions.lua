@@ -58,6 +58,7 @@ local function fixture(core, overridden, startMid)
     bot.GetIncomingTrackingProjectiles = empty
     bot.GetAttackTarget = function() return state.attackTarget end
     bot.IsInvulnerable, bot.IsIllusion, bot.IsDisarmed, bot.IsRooted = no, no, no, no
+    bot.IsCreep = no
     bot.IsAlive, bot.IsHero, bot.IsUsingAbility, bot.IsChanneling = yes, yes, no, no
     bot.HasModifier = function(_, name) return name == 'modifier_tango_heal' end
     bot.WasRecentlyDamagedByAnyHero = function() return state.pressure or state.wasHit end
@@ -233,6 +234,7 @@ do
     bot.GetActiveMode, bot.DistanceFromFountain = function() return 8 end, function() return 4000 end
     bot.IsRooted = no
     env.J.IsTryingtoUseAbility, env.J.IsDefending, env.J.IsDoingRoshan, env.J.IsDoingTormentor = no, no, no, no
+    env.J.HasQueuedAction = no
     for t = 0, 11 do
         state.time, bot.x = 1260 + t, t % 2 == 0 and 0 or 105
         env.J.CheckBotIdleState()
@@ -266,6 +268,35 @@ do
     bot.x, state.time = 700, 51
     env.J.CheckBotIdleState()
     assert(not bot.ohaIdleReplanUntil,'new progress clears the stale-order override')
+    env.J.IsDefending, env.J.HasQueuedAction = no, yes
+    bot.GetAttackTarget = function() return nil end
+    for t=0,10 do state.time=60+t; env.J.CheckBotIdleState() end
+    assert(bot.ohaIdleRecoveryUntil>state.time and state.orders[#state.orders][1]=='hold'
+        and state.orders[#state.orders][2]==false,
+        'release a stationary empty queue before replanning')
+end
+
+do
+    local state, mode, creep, _, bot, tower = fixture(true, false)
+    local j = mode.J
+    state.partner, state.creepHP, state.towerIdle = true, 83, true
+    local partner = j.GetLanePartner(bot)
+    partner.IsBot = yes
+    tower.GetAttackTarget = function() return creep end
+    tower.GetAttackDamage = function() return 125 end
+    local towerImpact = 0.76
+    local delay = j.GetAttackProDelayTime
+    j.GetAttackProDelayTime = function(unit, target)
+        if unit == tower then return towerImpact, 0.15, 0 end
+        return delay(unit, target)
+    end
+    assert(j.GetLaningTowerJointHit(bot, tower, {})==creep, 'two timely hits can recover a creep the tower would kill')
+    assert(mode.GetDesire()==0.88, 'the joint hit can win normal lane mode arbitration')
+    expect(state, mode, 'attack', creep)
+    towerImpact = 0.23
+    assert(j.GetLaningTowerJointHit(bot,tower,{})==nil, 'do not attempt a combined hit after the lethal tower shot')
+    towerImpact, state.creepHP = 0.76, 39
+    assert(j.GetLaningTowerJointHit(bot,tower,{})==nil, 'a solo last hit needs no second swing')
 end
 
 do

@@ -60,12 +60,14 @@ local function IsBountySpot(rune)
 	return type(rune) == 'number' and (rune == RUNE_BOUNTY_1 or rune == RUNE_BOUNTY_2)
 end
 
+local bountyInterval = GetGameMode() == GAMEMODE_TURBO and 180 or 240
+
 local function BountySpawnApproaching(now)
-	return now >= 170 and now % 180 >= 170
+	return now >= bountyInterval - 10 and now % bountyInterval >= bountyInterval - 10
 end
 
 local function BountyJustSpawned(now)
-	return now >= 180 and now % 180 <= 12
+	return now >= bountyInterval and now % bountyInterval <= 12
 end
 
 local function BountyScoutRange(member)
@@ -91,6 +93,7 @@ end
 local function CancelBountyMove()
 	if issuedBountySpot ~= nil and not J.CanNotUseAction(bot) then bot:Action_ClearActions(true) end
 	issuedBountySpot = nil
+	bot.ohaBountyTask = nil
 end
 
 local function CancelRiverMove()
@@ -207,6 +210,8 @@ function GetDesire()
 
 			if IsBountySpot(rune.location) then
 				local now = DotaTime()
+				if rune.status == RUNE_STATUS_AVAILABLE and rune.distance <= 375 and botHP >= 0.55
+					and #nEnemyHeroes == 0 and not J.HasPendingLaningLastHit(bot) then return 0.86 end
 				if not J.IsCore(bot) and botHP >= 0.68 and #nEnemyHeroes == 0
 					and #bot:GetNearbyLaneCreeps(850, true) == 0 then
 					-- The roster assignment has already checked the route and
@@ -388,10 +393,13 @@ function Think()
 				print('[OHA bounty]', now, bot:GetPlayerID(), assigned, status, math.floor(distance), location.x, location.y)
 				bot.ohaLastBountyStatus = status
 			end
-			if status == RUNE_STATUS_AVAILABLE then
-				if not picking or issuedBountySpot ~= assigned then bot:Action_PickUpRune(assigned) end
-			elseif distance > 150 then
+			if issuedBountySpot ~= assigned or bot.ohaBountyTask == nil then
+				bot.ohaBountyTask = {spot=assigned, expires=now + 3 + distance / math.max(1, bot:GetCurrentMovementSpeed()) * 1.35}
+			end
+			if distance > 150 then
 				bot:Action_MoveToLocation(location)
+			elseif status == RUNE_STATUS_AVAILABLE then
+				if not picking or issuedBountySpot ~= assigned then bot:Action_PickUpRune(assigned) end
 			elseif BountySpawnApproaching(now) then
 				issuedBountySpot = assigned
 				return
@@ -491,7 +499,7 @@ end
 --------------------------------------------------------------------
 -- Assign bounty spots from the same allied roster in every bot's VM.
 --------------------------------------------------------------------
-local function BountyTravelCost(member, location, distance)
+local function BountyTravelCost(member, spot, location, distance)
 	if not member:IsBot() or J.GetHP(member) < 0.5 or member:IsChanneling()
 		or J.IsRetreating(member) or J.IsGoingOnSomeone(member) or member:WasRecentlyDamagedByAnyHero(3)
 		or J.IsDoingRoshan(member) or J.IsDoingTormentor(member)
@@ -523,7 +531,9 @@ local function BountyTravelCost(member, location, distance)
 			if #J.GetLastSeenEnemiesNearLoc(halfway, 850) > 0 then return nil end
 		end
 	end
-	return distance / math.max(1, member:GetCurrentMovementSpeed()) + (core and 2 or 0)
+	local trip = member.ohaBountyTask
+	local kept = trip and trip.spot == spot and trip.expires > DotaTime() and 4 or 0
+	return distance / math.max(1, member:GetCurrentMovementSpeed()) + (core and 2 or 0) - kept
 end
 
 function X.GetBountyAssignment()
@@ -561,7 +571,7 @@ function X.GetBountyAssignment()
 						scoutRange = math.min(1700, member:GetCurrentMovementSpeed() * 5)
 					end
 					if (not awaitingSpawn or support) and distance <= (available and 2400 or scoutRange) then
-						local cost = BountyTravelCost(member, location, distance)
+						local cost = BountyTravelCost(member, spot, location, distance)
 						if cost then candidates[#candidates + 1] = {member = member, spot = spot, distance = distance,
 							cost = cost, available = available} end
 					end

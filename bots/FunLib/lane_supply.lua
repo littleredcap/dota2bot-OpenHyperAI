@@ -47,10 +47,19 @@ local function almostOutOfTangos(bot, held)
     return charges == 1 or charges == 0 and bot:HasModifier('modifier_tango_heal')
 end
 
+local function safeCourierPoint(point)
+    if #J.GetLastSeenEnemiesNearLoc(point, 850) > 0 then return false end
+    for _, enemy in ipairs(J.GetEnemiesNearLoc(point, 1650)) do
+        local reach = math.max(850, enemy:GetAttackRange() + enemy:GetCurrentMovementSpeed() * 1.2 + 100)
+        if GetUnitToLocationDistance(enemy, point) <= reach then return false end
+    end
+    return true
+end
+
 local function safeCourierLeg(start, finish)
     for _, part in ipairs({0.25, 0.5, 0.75}) do
         local point = (start * (1 - part)) + (finish * part)
-        if #J.GetLastSeenEnemiesNearLoc(point, 850) > 0 or #J.GetEnemiesNearLoc(point, 850) > 0 then return false end
+        if not safeCourierPoint(point) then return false end
     end
     return true
 end
@@ -62,9 +71,7 @@ function Supply.CanDeliverCourier(bot, courier, collectStash)
         if courier:DistanceFromFountain() > 800 and not safeCourierLeg(start, fountain) then return false end
         start = fountain
     end
-    return #J.GetEnemiesNearLoc(destination, 925) == 0
-        and #J.GetLastSeenEnemiesNearLoc(destination, 925) == 0
-        and safeCourierLeg(start, destination)
+    return safeCourierPoint(destination) and safeCourierLeg(start, destination)
 end
 
 local function deliveryTime(bot, courier, aboard, tower)

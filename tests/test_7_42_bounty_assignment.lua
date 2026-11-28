@@ -41,6 +41,7 @@ local function fixture()
         IsInLaningPhase=function() return state.time < 600 end, GetLaningHoldTower=function(h) return h.hold end,
         GetLanePartner=function() end, IsPushing=no, IsGoingOnSomeone=no, IsDoingRoshan=no, IsDoingTormentor=no,
         IsDefending=no, IsMeepoClone=no, IsInTeamFight=no, IsThereCoreNearby=no, IsEarlyGame=no, IsLateGame=no,
+        IsModeTurbo=no, HasPendingLaningLastHit=no,
         GetDistanceFromEnemyFountain=function() return 8000 end,
         CanNotUseAction=function(h, allowInvulnerable)
             return h.blocked or h:IsInvulnerable() and not allowInvulnerable
@@ -133,12 +134,16 @@ do
     h[1].x, h[1].wave = 200, true
     assert(m[1].GetDesire() == 0 and m[2].GetDesire() == 0.78, 'an unoccupied nearby support collects the visible rune while mid takes the wave')
     m[2].Think()
+    order(h[2], 'move', s.spots[bounty2])
+    h[2].x = s.spots[bounty2] - 80
+    assert(m[2].GetDesire() == 0.86, 'finish the nearby safe collection without relinquishing walking orders')
+    m[2].Think()
     order(h[2], 'pick', bounty2)
     h[1].x, h[1].wave, s.status[bounty1] = -800, false, available
     assert(m[1].GetDesire() > 0 and m[2].GetDesire() > 0)
     m[1].Think(); m[2].Think()
     order(h[1], 'pick', bounty1); order(h[2], 'pick', bounty2)
-    assert(#h[2].orders == 1, 'the second bot keeps its existing request')
+    assert(#h[2].orders == 2, 'the second bot keeps its existing request')
     s.defend = true
     m[2].Think()
     order(h[2], 'cancel')
@@ -157,15 +162,18 @@ end
 
 do
     local s, h, m, j = fixture()
-    s.time, s.status[bounty2], h[1].wave = 1436, missing, true
+    s.time, s.status[bounty2], h[1].wave = 176, missing, true
+    h[1].role = 1
+    assert(m[2].GetDesire() == 0, 'normal matches have no three-minute spawn')
+    s.time = 236
     assert(m[2].GetDesire() == 0.70 and m[1].GetDesire() == 0)
     m[2].Think()
     order(h[2], 'move', s.spots[bounty2])
     h[2].x = s.spots[bounty2] - 70
     m[2].Think()
     assert(#h[2].orders == 1, 'wait at the nearby spawn without ordering a pickup before it exists')
-    s.time, s.status[bounty2] = 1441, available
-    assert(m[2].GetDesire() == 0.78)
+    s.time, s.status[bounty2] = 241, available
+    assert(m[2].GetDesire() == 0.86)
     m[2].Think()
     order(h[2], 'pick', bounty2)
     j.CanTakePostFightTrip = no
@@ -192,12 +200,17 @@ do
     h[1].role = 5
     assert(m[2].GetDesire() == 0 and m[1].GetDesire() > 0, 'both bots resolve an exact tie to the same collector')
     m[1].Think()
+    order(h[1], 'move', s.spots[bounty2])
+    h[2].x = 200
+    assert(m[1].GetDesire() > 0 and m[2].GetDesire() == 0, 'a safe trip keeps the same owner when another bot becomes slightly closer')
+    h[1].x = s.spots[bounty2] - 80
+    m[1].Think()
     order(h[1], 'pick', bounty2)
     h[2].retreat, s.status[bounty1], s.status[bounty2] = true, available, missing
     assert(m[1].GetDesire() > 0)
     m[1].Think()
     assert(h[1].orders[#h[1].orders-1][1] == 'cancel', 'cancel the old pickup even after selection moved to the other spot')
-    order(h[1], 'pick', bounty1)
+    order(h[1], 'move', s.spots[bounty1])
     s.status[bounty1] = missing
     m[1].Think()
     order(h[1], 'cancel')
@@ -251,7 +264,7 @@ do
     s.time, h[1].x, h[2].x, h[2].level = 420, -7000, -100, 6
     assert(m[2].GetDesire() > 0)
     m[2].Think()
-    order(h[2], 'pick', bounty2)
+    order(h[2], 'move', s.spots[bounty2])
 end
 do
     local s, h, m = fixture()
@@ -259,7 +272,7 @@ do
     h[1].role, h[2].x = 5, -1500
     assert(m[1].GetDesire() > 0 and m[2].GetDesire() > 0)
     m[1].Think(); m[2].Think()
-    order(h[1], 'pick', bounty2); order(h[2], 'pick', bounty1)
+    order(h[1], 'move', s.spots[bounty2]); order(h[2], 'move', s.spots[bounty1])
 end
 print('PASS: independent bots assign, release and reassign bounty runes while preserving lane and objective duties')
 
